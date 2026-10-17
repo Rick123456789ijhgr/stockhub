@@ -143,3 +143,34 @@
 - 多階段建置，uv 0.13.1 只在 build stage；runtime 是 `python:3.12-slim-bookworm`，以 uid 10001 非 root 執行。
 - 映像不含 dbmate 和遷移檔；正式環境的遷移在部署前由本機或 CI 執行。
 - 開發機沒有 Docker，映像的建置驗證交給 CI（T8）。
+
+## 2026-10-18 M0 / T7 Web 外殼
+
+### D-031 Auth.js v5（`next-auth@5.0.0-beta.32`）
+- v4 不支援 App Router 的 `auth()` 用法；v5 雖然還標示 beta，但已宣告支援 Next 16，也是官方文件主推的版本。版本鎖死，升級時要看 changelog。
+- JWT session（14 天），不建 session 表。登入條件：Google 回傳 `email_verified` 且 email 在 `ALLOWED_EMAIL` 內。
+- 每次請求都**重新比對白名單**（proxy 與 `getCurrentUser()` 都會），從 `ALLOWED_EMAIL` 移除的帳號，已發出的 session 也會立刻失效。
+
+### D-032 三層保護：proxy、頁面、API
+- `src/proxy.ts`（Next 16 的 middleware）：除 `/login`、`/api/auth/*` 與靜態檔外全部攔截；頁面導向 `/login?callbackUrl=...`，API 回 401 JSON。
+- **App Router 的 layout 與 page 是並行渲染的**，layout 裡的檢查擋不住 page 讀資料（production build 時實際踩到）。所以凡是讀資料的頁面，都要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。這條已加入 CLAUDE.md 的慣例。
+- `callbackUrl` 只接受站內相對路徑，避免 open redirect。
+
+### D-033 漲跌色 token
+- `--color-up` / `--color-down` / `--color-flat` 是語意 token（Tailwind 的 `text-up` 等）；`<html data-price-colors="tw|intl">` 切換紅漲綠跌或綠漲紅跌，M0 固定為 `tw`，M2 的個人設定再接上切換。
+- `PriceChange` 元件另外加上 ▲▼ 符號，不只靠顏色表達方向。
+- 任務失敗等「狀態」用 shadcn 的 destructive 色，與價格的漲跌 token 分開。
+
+### D-034 手機版導覽
+- 底部列放 4 個主要項目（首頁、持股、個股、市場），再加「更多」頁收篩選器、回測、狀態、設定；桌機版側邊欄列出全部 8 項。這樣做不需要 client 端的抽屜選單。
+
+### D-035 環境變數載入改用 `web/scripts/next.mjs`
+- 用 `process.loadEnvFile` 讀 repo 根目錄的 `.env` 後，再啟動 `next` 子行程。原因有兩個：在 next.config 裡呼叫 `@next/env` 時，Next 的 build worker 會把環境變數還原成啟動時的快照；`node --env-file` 則會被 Next 轉進 `NODE_OPTIONS` 而被拒絕。
+- 在 Vercel 上檔案不存在，直接使用專案設定的環境變數。
+
+### D-036 其他
+- shadcn CLI 產生的元件 import `cn` 套件（shadcn 官方維護，取代 clsx + tailwind-merge），保留。
+- 新增 `server-only`，避免 DB 與 session 模組被打包進 client。
+- 新增 `/api/status`（JSON，需要 session），之後給 TanStack Query 做 client 端刷新用。
+- `admin` 頁的稽核紀錄讀取函式放在 `src/lib/audit.ts`（M0.md 要求預留）。
+- 驗收方式：本機沒有 Google OAuth 憑證，所以用 Auth.js 的 `encode` 和本機 `AUTH_SECRET` 簽出測試 session，實測三種情況（未登入、非白名單、白名單）的頁面與 API 回應，並用 headless Chrome 在 375px 與 1280px 檢查畫面（無水平捲動）。真正的 Google 登入要等使用者提供 OAuth 憑證。

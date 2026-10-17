@@ -68,3 +68,4 @@ uv run python -m stockhub.etl run heartbeat   # 執行一個排程任務
 - 新增依賴要說明理由；優先沿用既有套件。
 - 不確定的需求先問，不要自行擴大範圍。M0 的範圍外清單見 `docs/M0.md`。
 - 學到值得保留的慣例，更新本檔。
+- Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。

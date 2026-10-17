@@ -5,7 +5,9 @@ SHELL := bash
 PY  := cd py && uv run
 WEB := cd web && pnpm
 
-.PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status 	migrate-test db-new db-types py-install py-test py-fmt web-install web-dev web-check check
+.PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
+	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat \
+	web-install web-dev web-build web-check check
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -29,13 +31,17 @@ db-local-down: ## Docker-free: stop the local cluster
 	scripts/local-pg.sh stop
 
 migrate: ## Apply db/migrations to DATABASE_URL (creates the database if missing)
-	@if ls db/migrations/*.sql >/dev/null 2>&1; then $(DBMATE) --wait up; 	else $(DBMATE) --wait status && echo "no migrations yet; database reachable"; fi
+	@if ls db/migrations/*.sql >/dev/null 2>&1; then \
+		$(DBMATE) --wait up; \
+	else $(DBMATE) --wait status && echo "no migrations yet; database reachable"; fi
 
 migrate-status: ## Show migration status
 	$(DBMATE) status
 
 migrate-test: ## Apply migrations to TEST_DATABASE_URL
-	@if ls db/migrations/*.sql >/dev/null 2>&1; then $(DBMATE) --env TEST_DATABASE_URL --wait up; 	else $(DBMATE) --env TEST_DATABASE_URL --wait status; fi
+	@if ls db/migrations/*.sql >/dev/null 2>&1; then \
+		$(DBMATE) --env TEST_DATABASE_URL --wait up; \
+	else $(DBMATE) --env TEST_DATABASE_URL --wait status; fi
 
 db-new: ## Create a migration: make db-new name=add_foo
 	$(DBMATE) new $(name)
@@ -56,11 +62,20 @@ py-fmt: ## Auto-fix and format Python code
 	$(PY) ruff check --fix
 	$(PY) ruff format
 
+etl-list: ## List ETL jobs
+	$(PY) python -m stockhub.etl list
+
+etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
+	$(PY) python -m stockhub.etl run heartbeat
+
 web-install: ## Install web deps
 	$(WEB) install --frozen-lockfile
 
 web-dev: ## Next.js dev server
 	$(WEB) dev
+
+web-build: ## Production build of the web app
+	$(WEB) build
 
 web-check: ## lint + typecheck + test
 	$(WEB) check
