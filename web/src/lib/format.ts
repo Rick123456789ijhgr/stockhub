@@ -1,6 +1,6 @@
 /** Display-layer formatting. Storage is UTC / Taipei trading dates; convert only here. */
 
-const TAIPEI_DATETIME = new Intl.DateTimeFormat("zh-TW", {
+const TAIPEI_DATETIME = new Intl.DateTimeFormat("en-US", {
   timeZone: "Asia/Taipei",
   year: "numeric",
   month: "2-digit",
@@ -11,11 +11,17 @@ const TAIPEI_DATETIME = new Intl.DateTimeFormat("zh-TW", {
   hourCycle: "h23",
 });
 
-/** "2026/10/18 09:05:03" in Asia/Taipei. */
+/**
+ * "2026/10/18 09:05:03" in Asia/Taipei. Assembled from parts because ICU versions differ
+ * in the separators and invisible marks they emit for zh-TW.
+ */
 export function formatTaipeiDateTime(value: Date | string | null | undefined): string {
   if (!value) return "—";
   const date = typeof value === "string" ? new Date(value) : value;
-  return TAIPEI_DATETIME.format(date);
+  const part = Object.fromEntries(
+    TAIPEI_DATETIME.formatToParts(date).map((p) => [p.type, p.value]),
+  ) as Record<Intl.DateTimeFormatPartTypes, string>;
+  return `${part.year}/${part.month}/${part.day} ${part.hour}:${part.minute}:${part.second}`;
 }
 
 /** Human duration: 850 ms, 12.3 s, 4 分 05 秒, 1 小時 02 分. */

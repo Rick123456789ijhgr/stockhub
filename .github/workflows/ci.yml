@@ -61,7 +61,7 @@ jobs:
       DATABASE_URL: postgresql://stockhub:stockhub@localhost:5432/stockhub_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           working-directory: py
           enable-cache: true
