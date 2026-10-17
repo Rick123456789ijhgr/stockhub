@@ -5,13 +5,13 @@ SHELL := bash
 PY  := cd py && uv run
 WEB := cd web && pnpm
 
-.PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status 	migrate-test db-new py-install py-test py-fmt web-install web-dev web-check check
+.PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status 	migrate-test db-new db-types py-install py-test py-fmt web-install web-dev web-check check
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 # dbmate reads DATABASE_URL from the environment or the root .env file.
-DBMATE := dbmate --migrations-dir db/migrations --schema-file db/schema.sql
+DBMATE := dbmate --migrations-dir db/migrations --no-dump-schema
 
 db-up: ## Start local Postgres via docker compose
 	docker compose up -d --wait
@@ -35,15 +35,18 @@ migrate-status: ## Show migration status
 	$(DBMATE) status
 
 migrate-test: ## Apply migrations to TEST_DATABASE_URL
-	@if ls db/migrations/*.sql >/dev/null 2>&1; then $(DBMATE) --env TEST_DATABASE_URL --no-dump-schema --wait up; 	else $(DBMATE) --env TEST_DATABASE_URL --wait status; fi
+	@if ls db/migrations/*.sql >/dev/null 2>&1; then $(DBMATE) --env TEST_DATABASE_URL --wait up; 	else $(DBMATE) --env TEST_DATABASE_URL --wait status; fi
 
 db-new: ## Create a migration: make db-new name=add_foo
 	$(DBMATE) new $(name)
 
+db-types: ## Regenerate web/src/lib/db/types.gen.ts from DATABASE_URL (run after migrate)
+	$(WEB) db:types
+
 py-install: ## Install Python deps (uv sync)
 	cd py && uv sync
 
-py-test: ## ruff + mypy + pytest
+py-test: migrate-test ## ruff + mypy + pytest (migrates the test DB first)
 	$(PY) ruff check
 	$(PY) ruff format --check
 	$(PY) mypy
