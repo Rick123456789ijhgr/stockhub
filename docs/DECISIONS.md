@@ -174,3 +174,40 @@
 - 新增 `/api/status`（JSON，需要 session），之後給 TanStack Query 做 client 端刷新用。
 - `admin` 頁的稽核紀錄讀取函式放在 `src/lib/audit.ts`（M0.md 要求預留）。
 - 驗收方式：本機沒有 Google OAuth 憑證，所以用 Auth.js 的 `encode` 和本機 `AUTH_SECRET` 簽出測試 session，實測三種情況（未登入、非白名單、白名單）的頁面與 API 回應，並用 headless Chrome 在 375px 與 1280px 檢查畫面（無水平捲動）。真正的 Google 登入要等使用者提供 OAuth 憑證。
+
+## 2026-10-18 M0 / T8 CI
+
+### D-037 CI 結構
+- `CI` workflow 每個 PR 都跑三項（web、py、migrations），不設路徑過濾，確保「開 PR 時三項檢查都會跑」。
+- web 另外跑 `next build`，因為 Cache Components 的 prerender 錯誤只有 build 時才會出現。
+- migrations：空資料庫套用 → 逐一回滾到零張表 → 重新套用 → `kysely-codegen --verify`。這同時驗證 down 段、可重複執行，以及 PG 16 相容性（本機是 17，見 D-007）。
+- `ETL image`：PR 只建置並做冒煙測試（列出任務、確認以 uid 10001 執行）；推送到 Artifact Registry 用 `workflow_dispatch` 加 `push=true` 觸發，而且只有在設定了 GCP repository variables 後才會執行。驗證方式採 Workload Identity Federation，不存服務帳號金鑰。
+- Action 版本：setup-uv 沒有主版本標籤，要寫完整版本（`v10.3.0`）。
+
+### D-038 時間格式化不依賴 ICU 的 zh-TW 輸出
+- CI 的 Node 在 `zh-TW` 格式中會插入不可見字元，和 Windows 的輸出不同。`formatTaipeiDateTime` 改用 `formatToParts` 自己組字串。
+
+### D-039 GitHub 儲存庫
+- 依使用者「照建議實作」的指示，建立 **private** repo `Rick123456789ijhgr/stockhub`；`main` 只有規劃文件，M0 在 `m0` 分支，以 PR #1 合併。
+
+## 2026-10-18 M0 / T9 文件
+
+### D-040 文件分工
+- `README.md`：給使用者的快速開始、環境變數、部署、CI、備份計畫。
+- `infra/README.md`：GCP 指令細節。
+- `CLAUDE.md`：開發慣例（新增 provider、任務、schema、頁面時的規則）。
+- 本檔：所有選擇與偏離。
+
+## 待使用者提供或確認（M0 結束時）
+
+| 項目 | 現況 | 影響 |
+|---|---|---|
+| Google OAuth Client ID／Secret | 未提供 | 無法實際用 Google 登入；登入流程以簽發測試 session 驗證（D-036） |
+| `ALLOWED_EMAIL` | 本機 `.env` 暫填 `me@example.com` | 請換成自己的 Google 帳號 |
+| Neon 專案 | 未提供 | 用本機 Postgres（D-007）；照 README 建立後套用遷移即可 |
+| GCP 專案、bucket、Cloud Run／Scheduler 權限 | 未提供 | 只有文件與指令（infra/README.md）；CI 推送映像先停用 |
+| SMTP 或 Email API | 未提供 | 用 `ConsoleNotifier`；`EmailNotifier`（SMTP）已實作並有測試 |
+| Docker Desktop | 開發機沒有 | 用 `scripts/local-pg.sh`；compose 檔已備妥，CI 用 PG 16 驗證 |
+| Vercel 專案 | 未建立 | README 有步驟（Root Directory = `web`） |
+| `freshness_check` 傍晚同日檢查 | 依 M0.md 只比上一個交易日 | M1 依實際入庫時間補（D-028） |
+| 官方休市表 | 用週末規則當種子 | M1 匯入（D-013、D-018） |

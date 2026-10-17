@@ -35,15 +35,17 @@ docs/                規劃、任務、決策紀錄
 
 註：規劃書原寫 `etl/` 與 `engine/` 兩個目錄，這裡合併為單一 Python 專案 `py/` 以共用資料存取層。
 
-## 常用指令（M0 完成後應全部可用）
+## 常用指令
 
 ```
-docker compose up -d          # 本機 Postgres
-make migrate                  # 套用 db/migrations
-make py-test                  # ruff + 型別檢查 + pytest
-make web-dev                  # Next.js 開發伺服器
+make db-up                    # 本機 Postgres（docker compose，port 5433）
+make db-local-up              # 沒有 Docker 時：scripts/local-pg.sh 的本機叢集（同 port、同帳密）
+make migrate                  # 套用 db/migrations（dbmate）；新增遷移：make db-new name=xxx
+make db-types                 # 遷移後重新產生 web 的 Kysely 型別（CI 會檢查是否過期）
+make py-test                  # 先遷移測試庫，再 ruff + mypy + pytest
+make web-dev                  # Next.js 開發伺服器（web/scripts/next.mjs 會載入根目錄 .env）
 make web-check                # lint + typecheck + test
-uv run python -m stockhub.etl run heartbeat   # 執行一個排程任務
+make etl-heartbeat            # = cd py && uv run python -m stockhub.etl run heartbeat
 ```
 
 ## 不可違反的規則
@@ -68,4 +70,7 @@ uv run python -m stockhub.etl run heartbeat   # 執行一個排程任務
 - 新增依賴要說明理由；優先沿用既有套件。
 - 不確定的需求先問，不要自行擴大範圍。M0 的範圍外清單見 `docs/M0.md`。
 - 學到值得保留的慣例，更新本檔。
+- 新資料源：在 `stockhub/etl/providers/` 實作介面的 `fetch_*`（只做 I/O）與 `parse_*`（純函式），用 `@register_provider` 註冊；擷取一律透過 `ProviderRouter`，由它把原始回應存進 RawStore，任務不要自己呼叫 provider 的 `fetch_*`。
+- 新排程任務：繼承 `Job`、用 `@register_job` 註冊，並在 `stockhub/etl/jobs/__init__.py` 匯入；寫入一律用 `upsert()`，長任務用 `ctx.save_checkpoint()`。
+- 新 schema：只加遷移檔（`make db-new`），必附 `COMMENT ON`、`down` 段與 pytest schema 測試，再跑 `make db-types`。
 - Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
