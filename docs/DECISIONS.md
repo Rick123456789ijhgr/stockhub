@@ -98,3 +98,21 @@
 - 逗號分隔的清單（`ALERT_EMAIL_TO`、`PROVIDERS_*`）直接用字串，不要求寫成 JSON。
 - 相對路徑的 `RAWSTORE_LOCAL_DIR` 以 repo 根目錄為基準（在 checkout 內時），否則以工作目錄為基準。
 - 依後端決定的必要設定（GCS bucket、SMTP）在啟動時一起檢查，錯誤訊息一次列出所有缺少的變數。
+
+## 2026-10-18 M0 / T5 Provider adapter 框架
+
+### D-021 介面拆成 `fetch_*`（I/O，回傳原始回應）與 `parse_*`（純函式）
+- 原因：由 `ProviderRouter` 在兩步之間把原始回應存進 RawStore，「先落地再解析」由框架保證，adapter 不必自己記得。
+- M0.md 的「依日期區間取日線」：`fetch_daily_prices(start, end, symbols=None)`，`None` 表示全市場（證交所的端點本來就是一次回傳全市場）。
+
+### D-022 錯誤分類與切換規則
+- `TransientProviderError` 與未知例外：同一來源重試（預設 3 次，指數退避 1s、2s…，上限 30s，加 10% jitter）。
+- `PermanentProviderError` 與解析失敗：不重試，直接切下一個來源；解析失敗時原始檔已經保存。
+- 全部失敗時拋 `AllProvidersFailedError`，訊息列出每個來源每次嘗試的錯誤。切換到備援時寫 WARNING log，`Fetched.attempts` 也保留失敗紀錄，供任務寫進 `job_runs`。
+- 限速：每個來源各有 `min_interval`（同一個 router 內同名來源共用），時鐘與 sleep 可以注入，測試不用真的等。
+
+### D-023 用測試強制規則 6
+- `test_data_source_packages_are_only_imported_by_providers` 掃描 `stockhub/` 的 import：`providers/` 以外不得 import twstock、yfinance、FinMind。
+
+### D-024 mypy 關閉 `type-abstract`
+- 原因：router 需要把抽象介面類別當參數做 `isinstance` 檢查；這是 mypy 已知的誤報類型。
