@@ -1,24 +1,34 @@
 """Shared pytest fixtures.
 
 Database tests run against TEST_DATABASE_URL (env var or the repo-root .env), which must
-already be migrated (`make migrate-test`; `make py-test` does it for you). Each test runs
-inside a transaction that is rolled back, so tests never see each other's rows.
+already be migrated (`make migrate-test`; `make py-test` does it for you).
+
+- `pg` / `sa_conn`: a connection whose work is rolled back after the test.
+- `clean_db`: an engine on freshly truncated tables, for code that commits on its own
+  connections (RawStore, job runner).
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from pathlib import Path
 
 import psycopg
 import pytest
+from sqlalchemy import Connection, Engine, text
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from stockhub.common.db import make_engine
+from stockhub.common.settings import PROJECT_ROOT
+
+# Every table the app writes to; trading_calendar keeps its migration seed.
+MUTABLE_TABLES = (
+    "stocks, prices_daily, corporate_actions, financial_item_map, financials, monthly_revenue, "
+    "raw_objects, job_runs, settings, audit_log, watchlist, portfolio_transactions"
+)
 
 
 def _env_file_value(key: str) -> str | None:
-    env_file = REPO_ROOT / ".env"
+    env_file = PROJECT_ROOT / ".env"
     if not env_file.exists():
         return None
     for line in env_file.read_text(encoding="utf-8").splitlines():
@@ -38,7 +48,8 @@ def test_database_url() -> str:
 
 @pytest.fixture(scope="session")
 def pg_session_conn(test_database_url: str) -> Iterator[psycopg.Connection]:
-    with psycopg.connect(test_database_url) as conn:
+    # autocommit: no implicit transaction lingers between tests holding table locks.
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
         migrated = conn.execute("SELECT to_regclass('public.job_runs') IS NOT NULL").fetchone()
         if not migrated or not migrated[0]:
             pytest.fail("test database is not migrated; run `make migrate-test`")
@@ -50,3 +61,28 @@ def pg(pg_session_conn: psycopg.Connection) -> Iterator[psycopg.Connection]:
     """A psycopg connection whose work is rolled back after the test."""
     with pg_session_conn.transaction(force_rollback=True):
         yield pg_session_conn
+
+
+@pytest.fixture(scope="session")
+def engine(test_database_url: str, pg_session_conn: psycopg.Connection) -> Iterator[Engine]:
+    eng = make_engine(test_database_url)
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture
+def sa_conn(engine: Engine) -> Iterator[Connection]:
+    """A SQLAlchemy connection whose work is rolled back after the test."""
+    with engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            yield conn
+        finally:
+            trans.rollback()
+
+
+@pytest.fixture
+def clean_db(engine: Engine) -> Engine:
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE {MUTABLE_TABLES} RESTART IDENTITY CASCADE"))
+    return engine

@@ -73,3 +73,28 @@
 
 ### D-015 測試資料庫
 - pytest 連 `TEST_DATABASE_URL`；`make py-test` 會先跑 `migrate-test`。每個測試包在一個最後會回滾的交易裡。
+
+## 2026-10-18 M0 / T4 Python 共用層
+
+### D-016 RawStore 先寫檔、再用自己的連線登錄並立即提交
+- 原因：CLAUDE.md 規則 5「解析失敗也要有原始檔可重算」。如果 `raw_objects` 跟著任務交易一起回滾，就會留下沒有登錄的孤兒檔。
+- 順序：先算 SHA-256 → 已登錄就直接回傳既有物件 → 寫檔（本機用原子 rename；GCS 用 `if_generation_match=0`）→ `INSERT ... ON CONFLICT (sha256) DO NOTHING`。
+- 路徑中的日期採 **UTC** 擷取日（M0.md 沒有指定，時間戳一律 UTC 的慣例）。
+- `get()` 讀回時重新驗證雜湊。
+
+### D-017 upsert 以反射取得表定義，回傳實際寫入列數
+- 不在 Python 重複定義 schema；`upsert()` 只更新內容有變的列（`IS DISTINCT FROM`），因此重跑時回報 0 列，`job_runs.rows_written` 能反映真實變動。
+
+### D-018 交易日曆遇到缺漏日期就拋 `CalendarGapError`，不回退成週末規則
+- 原因：安靜地回退會掩蓋休市表匯入失敗。種子資料涵蓋 2005–2027，超出範圍要先補資料。
+
+### D-019 新增依賴
+- `sqlalchemy`、`pydantic`、`pydantic-settings`：技術棧指定。
+- `psycopg[binary]`：技術棧指定的 driver，用 binary wheel 免編譯。
+- `google-cloud-storage`：GCS RawStore（套件沒有型別資訊，mypy 對它設 `ignore_missing_imports`）。
+- `tzdata`：`zoneinfo("Asia/Taipei")` 在精簡容器與 Windows 上都需要。
+
+### D-020 設定的小慣例
+- 逗號分隔的清單（`ALERT_EMAIL_TO`、`PROVIDERS_*`）直接用字串，不要求寫成 JSON。
+- 相對路徑的 `RAWSTORE_LOCAL_DIR` 以 repo 根目錄為基準（在 checkout 內時），否則以工作目錄為基準。
+- 依後端決定的必要設定（GCS bucket、SMTP）在啟動時一起檢查，錯誤訊息一次列出所有缺少的變數。
