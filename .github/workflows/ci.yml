@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DBMATE_VERSION: v2.36.0
+
+jobs:
+  web:
+    name: web (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      # Catches Cache Components / prerender errors that typecheck cannot see.
+      - run: pnpm build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  py:
+    name: py (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stockhub
+          POSTGRES_PASSWORD: stockhub
+          POSTGRES_DB: stockhub_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stockhub -d stockhub_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://stockhub:stockhub@localhost:5432/stockhub_test?sslmode=disable
+      DATABASE_URL: postgresql://stockhub:stockhub@localhost:5432/stockhub_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          working-directory: py
+          enable-cache: true
+          cache-dependency-glob: py/uv.lock
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate \
+            "https://github.com/amacneil/dbmate/releases/download/${DBMATE_VERSION}/dbmate-linux-amd64"
+          sudo chmod +x /usr/local/bin/dbmate
+      - run: cd py && uv sync --locked
+      # Migrates the test database, then ruff + format check + mypy + pytest.
+      - run: make py-test
+
+  migrations:
+    name: migrations (fresh apply, rollback, re-apply, type drift)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stockhub
+          POSTGRES_PASSWORD: stockhub
+          POSTGRES_DB: stockhub
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stockhub -d stockhub"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://stockhub:stockhub@localhost:5432/stockhub?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate \
+            "https://github.com/amacneil/dbmate/releases/download/${DBMATE_VERSION}/dbmate-linux-amd64"
+          sudo chmod +x /usr/local/bin/dbmate
+      - name: Apply all migrations to an empty database
+        run: make migrate
+      - name: Roll back every migration
+        run: |
+          count=$(ls db/migrations/*.sql | wc -l)
+          for _ in $(seq "$count"); do
+            dbmate --migrations-dir db/migrations --no-dump-schema rollback
+          done
+          remaining=$(psql "$DATABASE_URL" -Atc \
+            "select count(*) from pg_tables where schemaname = 'public' and tablename <> 'schema_migrations'")
+          test "$remaining" = "0"
+      - name: Re-apply from scratch
+        run: make migrate
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Generated DB types are up to date
+        working-directory: web
+        # .kysely-codegenrc.json points at ../.env; an empty one lets DATABASE_URL come from the job env.
+        run: |
+          touch ../.env
+          pnpm install --frozen-lockfile
+          pnpm db:types:verify
