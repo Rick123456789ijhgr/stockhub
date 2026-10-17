@@ -1,0 +1,8 @@
+# Only py/ is needed for the ETL image.
+*
+!py/pyproject.toml
+!py/uv.lock
+!py/.python-version
+!py/stockhub
+!py/stockhub/**
+**/__pycache__

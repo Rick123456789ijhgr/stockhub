@@ -116,3 +116,30 @@
 
 ### D-024 mypy 關閉 `type-abstract`
 - 原因：router 需要把抽象介面類別當參數做 `isinstance` 檢查；這是 mypy 已知的誤報類型。
+
+## 2026-10-18 M0 / T6 排程任務框架
+
+### D-025 失敗通知由 `run_job` 統一處理，以任務名稱判斷連續失敗
+- 失敗時，只有在「同一任務名稱上一次結束的執行」不是失敗時才寄信；連續失敗合併成一封。之後第一次成功寄「恢復」通知（info）。
+- 用任務名稱而不是（名稱＋參數）判斷，因為每日任務的 `date` 參數天天不同，跨日的連續失敗仍應視為同一串。
+- `freshness_check` 判定落後時讓任務失敗（`JobError`，不記 traceback），自動套用同一套合併規則。這是 M0.md 的「落後則經 Notifier 發 Email」的實作方式。
+- 通知寄送失敗只記 log，不改變 `job_runs` 的結果。
+
+### D-026 檢查點與續跑規則
+- 同一（任務, 參數）最近一次結束的執行如果是 failed 且有 checkpoint，新的執行就從該 checkpoint 開始；最近一次是成功就從頭跑（靠冪等寫入保證不重複）。
+- `ctx.save_checkpoint()` 用獨立交易立即提交；成功結束時清掉 checkpoint。
+- 同一（任務, 參數）同時只能有一筆 running（部分唯一索引）。超過任務 `timeout`（預設 1 小時）的 running 紀錄視為行程已死，標記為 failed（`abandoned`）後允許新的執行。CLI 結束碼：0 成功或略過、1 失敗、2 用法或設定錯誤、3 已在執行中。
+
+### D-027 `--date` 預設為台北當天日期並寫進 params
+- 讓 `job_runs.params` 永遠是具體日期，冪等與續跑判斷不會因為「預設值」而失準。
+
+### D-028 `freshness_check` 的比較基準照 M0.md（上一個交易日）
+- 所以排程放在平日早上。傍晚檢查「當日」日線的需求（PLAN.md 第 5 節）留到 M1，依實際入庫時間再加。
+
+### D-029 RawStore 本機預設目錄改為 `.local/rawstore`
+- 物件 key 本來就以 `raw/` 開頭，避免出現 `.local/raw/raw/...`。路徑日期採 UTC（D-016），所以台北凌晨的執行會落在 UTC 的前一天目錄。
+
+### D-030 ETL 映像
+- 多階段建置，uv 0.13.1 只在 build stage；runtime 是 `python:3.12-slim-bookworm`，以 uid 10001 非 root 執行。
+- 映像不含 dbmate 和遷移檔；正式環境的遷移在部署前由本機或 CI 執行。
+- 開發機沒有 Docker，映像的建置驗證交給 CI（T8）。

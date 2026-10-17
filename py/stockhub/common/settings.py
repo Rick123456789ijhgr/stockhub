@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
 
     rawstore_backend: Literal["local", "gcs"] = "local"
-    rawstore_local_dir: Path = Path(".local/raw")
+    rawstore_local_dir: Path = Path(".local/rawstore")
     rawstore_gcs_bucket: str | None = None
 
     notifier: Literal["console", "email"] = "console"
@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     @classmethod
     def _resolve_local_dir(cls, value: Path) -> Path:
         # Relative paths are relative to the repo root (when running from a checkout),
-        # so `make` targets that cd into py/ still share one .local/raw directory.
+        # so `make` targets that cd into py/ still share one .local/rawstore directory.
         if value.is_absolute():
             return value
         base = PROJECT_ROOT if (PROJECT_ROOT / "db" / "migrations").is_dir() else Path.cwd()
