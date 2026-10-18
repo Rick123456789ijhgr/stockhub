@@ -2,6 +2,7 @@ import { LogOut } from "lucide-react";
 
 import { signOut } from "@/auth";
 import { Button } from "@/components/ui/button";
+import { isAuthDisabled } from "@/lib/auth/mode";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export async function UserMenu() {
@@ -12,7 +13,7 @@ export async function UserMenu() {
       <span className="truncate text-xs text-muted-foreground" title={user.email}>
         {user.email}
       </span>
-      <SignOutButton />
+      {isAuthDisabled() ? null : <SignOutButton />}
     </div>
   );
 }
