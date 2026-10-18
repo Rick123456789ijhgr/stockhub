@@ -159,12 +159,24 @@ class FinancialItem(_Model):
 
 
 class Quote(_Model):
-    """Intraday snapshot."""
+    """Intraday snapshot of one security."""
 
     symbol: str
-    price: Decimal
-    volume: int = Field(ge=0, description="cumulative shares today")
+    market: Market
+    trade_date: date
+    """Taipei trading date the snapshot belongs to."""
     at: AwareDatetime
+    """Exchange time of the last update."""
+    price: Decimal | None
+    """Last trade; None when no trade has printed yet (or the feed omits it this tick)."""
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    prev_close: Decimal | None = None
+    """Previous close / reference price the exchange measures today's change against."""
+    volume: int = Field(ge=0, description="cumulative shares today")
+    bid: Decimal | None = None
+    ask: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -254,8 +266,12 @@ class FinancialProvider(Provider):
 
 
 class QuoteProvider(Provider):
+    max_symbols: ClassVar[int] = 50
+    """Largest batch one request may carry; callers split longer lists."""
+
     @abstractmethod
-    def fetch_quotes(self, symbols: Sequence[str]) -> RawResponse: ...
+    def fetch_quotes(self, symbols: Sequence[tuple[str, Market]]) -> RawResponse:
+        """Latest snapshot of each (symbol, market)."""
 
     @abstractmethod
     def parse_quotes(self, raw: RawResponse) -> list[Quote]: ...

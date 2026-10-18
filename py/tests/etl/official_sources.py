@@ -8,6 +8,7 @@ import httpx
 
 from stockhub.common.rawstore import RawStore
 from stockhub.etl.providers.http import make_client
+from stockhub.etl.providers.mis import TwseMisProvider
 from stockhub.etl.providers.registry import ProviderRegistry
 from stockhub.etl.providers.router import ProviderRouter, RateLimiter, RetryPolicy
 from stockhub.etl.providers.tpex import TpexProvider
@@ -60,6 +61,8 @@ def official_handler(request: httpx.Request) -> httpx.Response:
             empty = {"stat": "ok", "tables": [{"fields": FIELDS_TPEX, "data": []}]}
             return httpx.Response(200, json=empty)
         name = "tpex_delisted_2026.json"
+    elif path.endswith("/getStockInfo.jsp"):
+        name = "twse_mis_20261016.json"
     elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
         # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
         year = params["startDate"][:4]
@@ -93,6 +96,7 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "securities": [twse],
             "delistings": [twse, tpex],
             "corporate_actions": [twse, tpex],
+            "quote": [TwseMisProvider(client)],
         }
     )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)

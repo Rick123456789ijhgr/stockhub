@@ -17,6 +17,7 @@ BUILTIN_MODULES = (
     "stockhub.etl.providers.fake",
     "stockhub.etl.providers.twse",
     "stockhub.etl.providers.tpex",
+    "stockhub.etl.providers.mis",
 )
 
 _REGISTRY: dict[str, type[Provider]] = {}

@@ -83,6 +83,9 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
+etl-quotes: ## Poll intraday quotes for watchlist + holdings every 30 s until 13:35 (symbols=2330,0050 adds more)
+	$(ETL) poll_quotes $(if $(symbols),--param symbols=$(symbols)) $(if $(once),--param once=true)
+
 HISTORY_START := 2004-02-11
 
 etl-history: ## Full history: delistings, prices since 2004-02-11, corporate actions (~6 h; resumable)

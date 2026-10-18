@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     providers_price: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_financial: CommaList = Field(default_factory=list)
-    providers_quote: CommaList = Field(default_factory=list)
+    providers_quote: CommaList = Field(default_factory=lambda: ["twse_mis"])
     providers_calendar: CommaList = Field(default_factory=lambda: ["twse"])
     providers_securities: CommaList = Field(default_factory=lambda: ["twse"])
     providers_delistings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])

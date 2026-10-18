@@ -125,7 +125,11 @@ schedule_job() {  # $1=scheduler name  $2=cron  $3=cloud run job
 
 schedule_job stockhub-heartbeat-daily   "0 7 * * *"   stockhub-heartbeat
 schedule_job stockhub-freshness-weekday "30 8 * * 1-5" stockhub-freshness-check
+# 盤中報價：開盤前啟動，任務自己每 30 秒輪詢到 13:35 後結束（Cloud Run Job 需 --task-timeout=5h）
+schedule_job stockhub-quotes-weekday    "55 8 * * 1-5" stockhub-poll-quotes
 ```
+
+`stockhub-poll-quotes` 用 `--args=run,poll_quotes,--trigger,schedule` 建立；休市日任務會自己判斷並記為 skipped。
 
 `freshness_check` 檢查「`prices_daily` 最新日期 ≥ 執行日的上一個交易日」，所以排在平日早上；M1 接上日線擷取後，再依實際入庫時間加一個傍晚的同日檢查（見 `docs/DECISIONS.md`）。
 

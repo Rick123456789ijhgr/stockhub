@@ -308,3 +308,10 @@
 - `py/stockhub/engine/indicators.py` 是基準，`web/src/lib/indicators.ts` 逐式對應；共用測試資料 `testdata/indicators.json` 由 `py/scripts/gen_indicator_fixture.py` 產生，兩邊測試都比對（相對誤差 1e-12）。
 - 定義（台灣看盤軟體常見設定）：SMA 每個視窗直接加總；EMA 以前 n 筆 SMA 起算；MACD(12,26,9)；KD(9) 的 K、D 從 50 起算、`(2×前值 + 新值) / 3`，H9 = L9 時 RSV = 50；RSI(14) 用 Wilder 平滑。
 - 指標依畫面選的價格（還原或原始）計算；只用有成交的日線。
+
+### D-056 盤中報價：直接呼叫證交所 MIS，不加 twstock 依賴
+- twstock 的即時報價就是包裝 `mis.twse.com.tw/stock/api/getStockInfo.jsp`。直接用 httpx 呼叫同一個端點（provider `twse_mis`，`PROVIDERS_QUOTE` 預設），少一個依賴，錯誤分類、限速、RawStore 落地都沿用現有框架。仍然只經由 provider adapter（規則 6）；這是官網頁面用的非正式介面，欄位可能變動，所以有解析測試與 rtcode 檢查。
+- 一次請求最多 50 檔，同一來源至少間隔 5 秒（頁面自己的 userDelay）。`v` 是「張」，換算成股；`z` 為 `-`（這一筆沒有成交）時沿用同日稍早的價格；快照時間用 `d + t`（最後成交時間），`tlong` 是頁面更新時間，不用。
+- 任務 `poll_quotes`：對象 = 自選股 + 持股（淨股數 > 0）+ 參數 `symbols`；一天一次執行，開盤前啟動，每 30 秒輪詢到 13:35（`until`），休市日 skipped；`once=true` 只抓一次。寫入 `quotes_latest`（每檔一列，較舊的快照不覆蓋較新的）。Redis 要到之後真的需要時再加，這張表先頂替。
+- 網頁：個股頁有「加入自選」按鈕（`PUT/DELETE /api/watchlist/[symbol]`，寫入 `audit_log`，重複操作不重複記錄）；有比日線更新的快照時顯示盤中卡片，開盤時間內每 30 秒重新讀取。網頁本身不呼叫外部來源。
+- 盤中累計量是一般交易時段的量，會比收盤後的日線成交量小（日線含盤後定價等）。

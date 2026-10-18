@@ -186,7 +186,8 @@ class ProviderRouter:
             lambda p, raw: p.parse_financials(raw),
         )
 
-    def quotes(self, symbols: Sequence[str]) -> Fetched[Quote]:
+    def quotes(self, symbols: Sequence[tuple[str, Market]]) -> Fetched[Quote]:
+        """One batch (at most QuoteProvider.max_symbols; callers split longer lists)."""
         return self._call(
             "quote",
             QuoteProvider,

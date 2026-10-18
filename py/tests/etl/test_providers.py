@@ -204,8 +204,8 @@ def test_registry_from_names_and_settings(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("PROVIDERS_PRICE", "fake")
     registry = ProviderRegistry.from_settings(load_settings())
     assert [p.name for p in registry.providers_for("price")] == ["fake"]
-    with pytest.raises(ConfigError, match="PROVIDERS_QUOTE"):
-        registry.providers_for("quote")
+    with pytest.raises(ConfigError, match="PROVIDERS_FINANCIAL"):
+        registry.providers_for("financial")
 
 
 def test_registry_rejects_unknown_or_incapable_providers() -> None:

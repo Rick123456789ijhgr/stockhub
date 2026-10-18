@@ -246,6 +246,38 @@ export interface PricesDailyQuarantine {
   trade_date: string;
 }
 
+export interface QuotesLatest {
+  ask: Numeric | null;
+  bid: Numeric | null;
+  fetched_at: Generated<Timestamp>;
+  high: Numeric | null;
+  low: Numeric | null;
+  open: Numeric | null;
+  /**
+   * Reference price the exchange measures the day's change against.
+   */
+  prev_close: Numeric | null;
+  /**
+   * Last trade; kept from the previous poll of the same day when a tick carries none.
+   */
+  price: Numeric | null;
+  /**
+   * Exchange time of the snapshot (UTC).
+   */
+  quote_time: Timestamp;
+  raw_object_id: Int8 | null;
+  source: string;
+  stock_id: Int8;
+  /**
+   * Taipei trading date of the snapshot; older than today means no quote yet today.
+   */
+  trade_date: string;
+  /**
+   * Cumulative regular-session volume in shares.
+   */
+  volume: Generated<Int8>;
+}
+
 export interface RawObjects {
   /**
    * Size of the uncompressed payload in bytes.
@@ -336,6 +368,7 @@ export interface DB {
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
   prices_daily_quarantine: PricesDailyQuarantine;
+  quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
   settings: Settings;
   stocks: Stocks;

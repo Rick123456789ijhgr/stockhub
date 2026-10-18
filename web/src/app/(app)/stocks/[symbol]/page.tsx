@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PriceChange } from "@/components/price-change";
+import { LiveQuote } from "@/components/stock-chart/live-quote";
 import { StockChart } from "@/components/stock-chart/stock-chart";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +66,12 @@ async function StockContent({ params }: { params: PageProps<"/stocks/[symbol]">[
           {stock.delistedDate ? ` · 終止上市（櫃）日 ${stock.delistedDate}` : ""}
         </p>
       </header>
+
+      <LiveQuote
+        symbol={stock.symbol}
+        latestBarDate={latest?.tradeDate ?? null}
+        canWatch={stock.delistedDate === null}
+      />
 
       {latest ? (
         <Card className="mb-4">
