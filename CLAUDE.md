@@ -45,7 +45,8 @@ make db-types                 # 遷移後重新產生 web 的 Kysely 型別（CI
 make py-test                  # 先遷移測試庫，再 ruff + mypy + pytest
 make web-dev                  # Next.js 開發伺服器（web/scripts/next.mjs 會載入根目錄 .env）
 make web-check                # lint + typecheck + test
-make etl-heartbeat            # = cd py && uv run python -m stockhub.etl run heartbeat
+make etl-daily                # 休市表 + 股票主檔 + 當日日線（date=YYYY-MM-DD 可指定）
+make etl-backfill             # 回填日線（start= end=，預設過去一年；可中斷續跑）
 ```
 
 ## 不可違反的規則

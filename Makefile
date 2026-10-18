@@ -68,6 +68,17 @@ etl-list: ## List ETL jobs
 etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 	$(PY) python -m stockhub.etl run heartbeat
 
+# Optional overrides: make etl-daily date=2026-10-16 / make etl-backfill start=2025-10-17 end=2026-10-16
+ETL := $(PY) python -m stockhub.etl run
+
+etl-daily: ## Update calendar, stock master and the day's prices (date=YYYY-MM-DD, default today)
+	$(ETL) sync_calendar
+	$(ETL) sync_stocks
+	$(ETL) daily_prices $(if $(date),--date $(date))
+
+etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
+	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
+
 web-install: ## Install web deps
 	$(WEB) install --frozen-lockfile
 

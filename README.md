@@ -22,7 +22,7 @@ infra/ ETL Dockerfile 與部署說明
 
 網站只做查詢與顯示（部署在 Vercel）；資料擷取由 ETL 容器以 Cloud Run Jobs 執行，Cloud Scheduler 定時觸發。
 
-## 本機快速開始（約 15 分鐘）
+## 本機快速開始（約 15 分鐘，回填另計）
 
 ### 1. 需要的工具
 
@@ -36,8 +36,8 @@ infra/ ETL Dockerfile 與部署說明
 
 ```bash
 cp .env.example .env
-# 至少填入：AUTH_SECRET（openssl rand -base64 33）、ALLOWED_EMAIL（你的 Google 帳號）
-# 要實際登入還需要 AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET（見下方「Google OAuth」）
+# 目前階段先不登入：把 AUTH_DISABLED 改成 true（只在 make web-dev 生效，部署環境一律無效）
+# 之後要啟用登入：AUTH_DISABLED=false，並填 AUTH_SECRET、ALLOWED_EMAIL、AUTH_GOOGLE_ID / SECRET
 ```
 
 ### 3. 啟動資料庫並套用遷移
@@ -57,19 +57,35 @@ make py-install web-install
 make check            # = make py-test（ruff + mypy + pytest）+ make web-check（lint + typecheck + test）
 ```
 
-### 5. 執行一個排程任務
+### 5. 抓資料（證交所、櫃買中心官方資料）
 
 ```bash
-make etl-heartbeat                                   # 寫一筆原始物件並記錄 job_runs
-cd py && uv run python -m stockhub.etl list          # 列出所有任務
-cd py && uv run python -m stockhub.etl run freshness_check --date 2026-10-19
+make etl-daily                        # 休市表 + 股票主檔 + 今天的日線（收盤後約 14:30 才有）
+make etl-daily date=2026-10-16        # 指定某一天
+make etl-backfill                     # 回填過去一年的日線（約 25 分鐘；中斷後重跑會接續）
+make etl-backfill start=2021-01-04    # 更長的歷史（每個交易日 2 個請求，每個來源 3 秒一次）
 ```
+
+其他任務：`make etl-list` 列出全部；`cd py && uv run python -m stockhub.etl run freshness_check` 檢查資料是否落後。
 
 ### 6. 開網站
 
 ```bash
-make web-dev          # http://localhost:3000，登入後到 /status 查看剛才的任務紀錄
+make web-dev          # http://localhost:3000
 ```
+
+- `/stocks`：搜尋股票與 ETF，`/stocks/2330` 看近 120 日日線
+- `/status`：每次任務的紀錄與資料最新日期
+
+### 7. 每天自動更新（選用，Windows 工作排程器）
+
+平日 18:00 更新當天資料（先確保本機資料庫在跑）：
+
+```powershell
+schtasks /create /tn "StockHub daily" /sc weekly /d MON,TUE,WED,THU,FRI /st 18:00 /tr "\"C:\Program Files\Git\bin\bash.exe\" -lc 'cd /d/stockhub-handoff && make db-local-up && make etl-daily >> .local/etl-daily.log 2>&1'"
+```
+
+刪除：`schtasks /delete /tn "StockHub daily"`。非交易日任務會自動略過（`skipped`）。
 
 ## 常用指令
 
@@ -83,6 +99,7 @@ make web-dev          # http://localhost:3000，登入後到 /status 查看剛�
 | `make db-new name=add_foo` | 新增遷移檔 |
 | `make db-types` | 遷移後重新產生 `web/src/lib/db/types.gen.ts` |
 | `make py-test` / `py-fmt` | Python 檢查／自動修正格式 |
+| `make etl-daily` / `etl-backfill` | 每日更新／回填日線 |
 | `make etl-list` / `etl-heartbeat` | ETL CLI |
 | `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
 

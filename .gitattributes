@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.gz binary
+# Recorded exchange responses must stay byte-identical (cp950 HTML).
+py/tests/fixtures/*.html binary

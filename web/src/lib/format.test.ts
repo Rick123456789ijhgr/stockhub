@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, formatInteger, formatTaipeiDateTime, summarizeError } from "./format";
+import {
+  formatDuration,
+  formatHundredMillion,
+  formatInteger,
+  formatLots,
+  formatPrice,
+  formatTaipeiDateTime,
+  summarizeError,
+} from "./format";
 
 describe("formatTaipeiDateTime", () => {
   it("converts UTC to Asia/Taipei for display", () => {
@@ -34,5 +42,14 @@ describe("formatInteger", () => {
     expect(formatInteger(1234567)).toBe("1,234,567");
     expect(formatInteger("42")).toBe("42");
     expect(formatInteger(null)).toBe("—");
+  });
+});
+
+describe("market number formats", () => {
+  it("formats prices, lots and 億", () => {
+    expect(formatPrice("2420.0000")).toBe("2,420.00");
+    expect(formatPrice(null)).toBe("—");
+    expect(formatLots("43046982")).toBe("43,047");
+    expect(formatHundredMillion("104583063462")).toBe("1,045.83");
   });
 });
