@@ -56,3 +56,39 @@ def adj_factor_on(segments: Iterable[FactorSegment], day: date) -> Decimal:
 
 def _round(value: Decimal) -> Decimal:
     return value.quantize(FACTOR_PLACES, rounding=ROUND_HALF_EVEN)
+
+
+# ----------------------------------------------------------------------------- gap guesses
+
+SHARE_MULTIPLES = (2, 4, 5, 10, 20)
+"""Common par-value changes and ETF splits: NT$10 -> 5, 2.5, 2, 1 or 0.5 (and 1 -> n)."""
+DAILY_MOVE_LIMIT = Decimal("0.1")
+"""Largest market move a gap day can add on top of the event (the 10% price limit)."""
+
+
+@dataclass(frozen=True)
+class ShareRatioGuess:
+    ratio: Decimal
+    """Shares after / shares before (4 = 1 -> 4 split; 0.1 = ten shares become one)."""
+    action_type: str
+    """split when the price falls, reverse_split when it rises."""
+    implied_move: Decimal
+    """The day's market move left after removing the event: price ratio * share ratio - 1."""
+
+
+def guess_share_ratio(price_ratio: Decimal) -> ShareRatioGuess | None:
+    """The common share ratio that best explains an adjusted close-to-close price ratio.
+
+    Only a guess for a person to confirm: it is returned when the remaining move fits within
+    one day's price limit, otherwise None (e.g. an uncommon capital reduction ratio).
+    """
+    if price_ratio <= 0:
+        raise ValueError(f"price ratio must be positive, got {price_ratio}")
+    best: ShareRatioGuess | None = None
+    for n in SHARE_MULTIPLES:
+        ratio = Decimal(n) if price_ratio < 1 else ONE / Decimal(n)
+        move = price_ratio * ratio - ONE
+        if abs(move) <= DAILY_MOVE_LIMIT and (best is None or abs(move) < abs(best.implied_move)):
+            action = "split" if price_ratio < 1 else "reverse_split"
+            best = ShareRatioGuess(ratio, action, move.quantize(Decimal("1E-4")))
+    return best

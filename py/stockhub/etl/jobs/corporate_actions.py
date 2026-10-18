@@ -21,7 +21,7 @@ from sqlalchemy import Connection, text
 
 from stockhub.common.db import upsert
 from stockhub.common.timeutil import taipei_today, utcnow
-from stockhub.engine.adjustments import factor_segments
+from stockhub.engine.adjustments import factor_segments, guess_share_ratio
 from stockhub.etl.jobs.base import Job, JobContext, JobOutcome, register_job
 from stockhub.etl.jobs.market_data import MARKETS, stock_ids_on
 from stockhub.etl.providers.base import ActionDataset, CorporateAction
@@ -36,6 +36,9 @@ DATASETS: tuple[ActionDataset, ...] = (
     "etf_split",
 )
 ACTION_COLUMNS = ["cash_dividend", "stock_dividend_ratio", "ratio", "prev_close", "reference_price"]
+MANUAL_SOURCE = "manual"
+"""Events confirmed by hand on /admin (from a price-gap guess); an imported event on the same
+stock and day replaces them."""
 DEFAULT_LOOKBACK = timedelta(days=30)
 
 
@@ -96,7 +99,19 @@ def store_corporate_actions(
         ["stock_id", "ex_date", "action_type"],
         ACTION_COLUMNS,
     )
-    if good:  # an event accepted now supersedes an earlier quarantined version of it
+    if good:
+        keys = json.dumps([{"stock_id": s, "ex_date": d.isoformat()} for s, d, _ in good])
+        # An official event replaces a hand-confirmed guess for the same day, so the day is
+        # not adjusted twice (the guess may carry a different action_type).
+        conn.execute(
+            text(
+                "DELETE FROM corporate_actions m USING jsonb_to_recordset(CAST(:keys AS jsonb)) "
+                "  AS k(stock_id bigint, ex_date date) "
+                "WHERE m.source = :manual AND m.stock_id = k.stock_id AND m.ex_date = k.ex_date"
+            ),
+            {"keys": keys, "manual": MANUAL_SOURCE},
+        )
+        # An event accepted now supersedes an earlier quarantined version of it.
         conn.execute(
             text(
                 "UPDATE corporate_actions_quarantine q SET resolved_at = :now, "
@@ -105,11 +120,7 @@ def store_corporate_actions(
                 "WHERE q.resolved_at IS NULL AND q.source = :source "
                 "AND q.stock_id = k.stock_id AND q.ex_date = k.ex_date"
             ),
-            {
-                "now": utcnow(),
-                "source": source,
-                "keys": json.dumps([{"stock_id": s, "ex_date": d.isoformat()} for s, d, _ in good]),
-            },
+            {"now": utcnow(), "source": source, "keys": keys},
         )
     return stats
 
@@ -250,6 +261,24 @@ def recompute_adj_factors(conn: Connection) -> int:
     return changed + _apply_segments(conn, batch)
 
 
+def gap_payload(prev_day: date, prev_ac: Decimal, ac: Decimal) -> dict[str, Any]:
+    """What /admin shows for a gap, with the share ratio that would explain it (if common)."""
+    payload: dict[str, Any] = {
+        "previous_date": prev_day.isoformat(),
+        "previous_adjusted_close": str(prev_ac),
+        "adjusted_close": str(ac),
+        "ratio": str(round(ac / prev_ac, 4)),
+    }
+    guess = guess_share_ratio(ac / prev_ac)
+    if guess is not None:
+        payload["suggestion"] = {
+            "ratio": str(guess.ratio),
+            "action_type": guess.action_type,
+            "implied_move": str(guess.implied_move),
+        }
+    return payload
+
+
 def flag_price_gaps(conn: Connection) -> tuple[int, int]:
     """Quarantine unexplained adjusted-price gaps; resolve flags that are explained now.
 
@@ -271,28 +300,29 @@ def flag_price_gaps(conn: Connection) -> tuple[int, int]:
     ).all()
     flagged = 0
     for gap in gaps:
-        payload = {
-            "previous_date": gap.prev_day.isoformat(),
-            "previous_adjusted_close": str(gap.prev_ac),
-            "adjusted_close": str(gap.ac),
-            "ratio": str(round(gap.ac / gap.prev_ac, 4)),
-        }
-        flagged += conn.execute(
-            text(
-                "INSERT INTO corporate_actions_quarantine "
-                "(symbol, stock_id, ex_date, action_type, payload, reasons, source) "
-                "VALUES (:symbol, :stock_id, :day, 'unknown', CAST(:payload AS jsonb), "
-                "ARRAY['unexplained_price_gap'], :source) "
-                "ON CONFLICT (symbol, ex_date, action_type, source) DO NOTHING"
-            ),
-            {
-                "symbol": gap.symbol,
-                "stock_id": gap.stock_id,
-                "day": gap.trade_date,
-                "payload": json.dumps(payload),
-                "source": GAP_SOURCE,
-            },
-        ).rowcount
+        flagged += (
+            conn.execute(
+                text(
+                    "INSERT INTO corporate_actions_quarantine AS q "
+                    "(symbol, stock_id, ex_date, action_type, payload, reasons, source) "
+                    "VALUES (:symbol, :stock_id, :day, 'unknown', CAST(:payload AS jsonb), "
+                    "ARRAY['unexplained_price_gap'], :source) "
+                    # Pending flags follow the latest prices and factors; reviewed ones are kept.
+                    "ON CONFLICT (symbol, ex_date, action_type, source) DO UPDATE "
+                    "SET payload = excluded.payload "
+                    "WHERE q.resolved_at IS NULL AND q.payload IS DISTINCT FROM excluded.payload "
+                    "RETURNING (xmax = 0) AS inserted"
+                ),
+                {
+                    "symbol": gap.symbol,
+                    "stock_id": gap.stock_id,
+                    "day": gap.trade_date,
+                    "payload": json.dumps(gap_payload(gap.prev_day, gap.prev_ac, gap.ac)),
+                    "source": GAP_SOURCE,
+                },
+            ).scalar()
+            is True
+        )
     still_open = [{"stock_id": g.stock_id, "day": g.trade_date.isoformat()} for g in gaps]
     conn.execute(
         text(

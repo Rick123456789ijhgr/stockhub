@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history \
+	etl-backfill etl-history etl-adjust etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -78,6 +78,9 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_delistings
 	$(ETL) sync_corporate_actions
 	$(ETL) daily_prices $(if $(date),--date $(date))
+	$(ETL) compute_adj_factors
+
+etl-adjust: ## Recompute adj_factor (e.g. after confirming price gaps on /admin)
 	$(ETL) compute_adj_factors
 
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable

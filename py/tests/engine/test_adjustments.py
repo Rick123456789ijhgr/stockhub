@@ -3,7 +3,12 @@ from decimal import Decimal
 
 import pytest
 
-from stockhub.engine.adjustments import FactorSegment, adj_factor_on, factor_segments
+from stockhub.engine.adjustments import (
+    FactorSegment,
+    adj_factor_on,
+    factor_segments,
+    guess_share_ratio,
+)
 
 D = Decimal
 
@@ -56,3 +61,33 @@ def test_adjusted_series_has_no_jump_on_the_ex_date() -> None:
 def test_rejects_non_positive_factors() -> None:
     with pytest.raises(ValueError, match="positive"):
         factor_segments([(date(2025, 1, 2), D(0))])
+
+
+@pytest.mark.parametrize(
+    ("price_ratio", "ratio", "action_type"),
+    [
+        (D("0.25"), D(4), "split"),  # 1 -> 4 split, flat day
+        (D("0.1080"), D(10), "split"),  # par 10 -> 1 on a +8% day
+        (D("0.2150"), D(5), "split"),  # 0.215 is closer to 1/5 (+7.5%) than 1/4 (-14%)
+        (D("0.47"), D(2), "split"),
+        (D("9.6"), D("0.1"), "reverse_split"),  # ten shares become one, -4% day
+        (D("2.05"), D("0.5"), "reverse_split"),
+    ],
+)
+def test_guess_share_ratio_matches_common_ratios(
+    price_ratio: Decimal, ratio: Decimal, action_type: str
+) -> None:
+    guess = guess_share_ratio(price_ratio)
+    assert guess is not None
+    assert (guess.ratio, guess.action_type) == (ratio, action_type)
+    assert guess.implied_move == (price_ratio * ratio - 1).quantize(D("1E-4"))
+
+
+@pytest.mark.parametrize("price_ratio", [D("0.35"), D("0.58"), D("1.7"), D("3.2")])
+def test_guess_share_ratio_gives_up_on_uncommon_ratios(price_ratio: Decimal) -> None:
+    assert guess_share_ratio(price_ratio) is None
+
+
+def test_guess_share_ratio_rejects_non_positive() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        guess_share_ratio(D(0))

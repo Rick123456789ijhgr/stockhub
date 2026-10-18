@@ -325,3 +325,32 @@ def test_accepted_event_supersedes_its_quarantined_version(
     assert _rows(clean_db, "SELECT resolution FROM corporate_actions_quarantine") == [
         ("superseded",)
     ]
+
+
+def test_gap_flags_carry_a_share_ratio_guess(
+    run: Any, clean_db: Engine, stocks: dict[str, int]
+) -> None:
+    _bars(clean_db, stocks["6762"], {"2025-01-02": "100", "2025-01-03": "25.5"})
+    run("compute_adj_factors")
+    [(payload,)] = _rows(clean_db, "SELECT payload FROM corporate_actions_quarantine")
+    assert payload["ratio"] == "0.2550"
+    assert payload["suggestion"] == {
+        "ratio": "4",
+        "action_type": "split",
+        "implied_move": "0.0200",
+    }
+
+
+def test_imported_event_replaces_a_manual_one(clean_db: Engine, stocks: dict[str, int]) -> None:
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO corporate_actions (stock_id, ex_date, action_type, ratio, source) "
+                "VALUES (:id, '2025-06-12', 'split', 2, 'manual')"
+            ),
+            {"id": stocks["1598"]},
+        )
+        assert store_corporate_actions(conn, [_action(symbol="1598")], "twse", None).written == 1
+    assert _rows(clean_db, "SELECT action_type, source FROM corporate_actions") == [
+        ("cash_dividend", "twse")
+    ]
