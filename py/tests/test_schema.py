@@ -213,3 +213,36 @@ def test_corporate_action_price_factor_is_generated(pg: psycopg.Connection) -> N
     ).fetchone()
     assert quarantine is not None
     assert quarantine[0]
+
+
+def test_prices_daily_coverage_follows_writes(pg: psycopg.Connection) -> None:
+    # The pg fixture runs inside a rolled-back transaction, so start from a known state.
+    pg.execute("DELETE FROM prices_daily")
+    a, b = _insert_stock(pg, "2330"), _insert_stock(pg, "2317")
+
+    def coverage() -> list[tuple[object, ...]]:
+        return pg.execute(
+            "SELECT trade_date::text, market, bars FROM prices_daily_coverage ORDER BY 1, 2"
+        ).fetchall()
+
+    upsert = (
+        "INSERT INTO prices_daily (stock_id, trade_date, close, high, low, open, source) "
+        "SELECT id, d, 10, 10, 10, 10, 'test' FROM unnest(%s::bigint[]) id, "
+        "unnest(%s::date[]) d ON CONFLICT (stock_id, trade_date) DO UPDATE SET close = 11"
+    )
+    pg.execute(upsert, ([a, b], [date(2026, 10, 15), date(2026, 10, 16)]))
+    assert coverage() == [("2026-10-15", "twse", 2), ("2026-10-16", "twse", 2)]
+    pg.execute(upsert, ([a, b], [date(2026, 10, 16)]))  # updates only: counts unchanged
+    assert coverage() == [("2026-10-15", "twse", 2), ("2026-10-16", "twse", 2)]
+
+    pg.execute("UPDATE stocks SET market = 'tpex' WHERE id = %s", (b,))
+    assert coverage() == [
+        ("2026-10-15", "tpex", 1),
+        ("2026-10-15", "twse", 1),
+        ("2026-10-16", "tpex", 1),
+        ("2026-10-16", "twse", 1),
+    ]
+    pg.execute("DELETE FROM prices_daily WHERE stock_id = %s", (b,))
+    assert coverage() == [("2026-10-15", "twse", 1), ("2026-10-16", "twse", 1)]
+    pg.execute("TRUNCATE prices_daily CASCADE")
+    assert coverage() == []

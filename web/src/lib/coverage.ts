@@ -7,9 +7,8 @@ import type { DB } from "@/lib/db";
 import type { DayCoverage } from "./coverage-grid";
 
 /**
- * Per calendar day: trading-day flag and bar counts per market. Aggregates all of
- * prices_daily on every request — fine at ~1M rows; precompute once multi-year history
- * makes /status slow.
+ * Per calendar day: trading-day flag and bar counts per market, from prices_daily_coverage
+ * (kept current by triggers, so this never scans prices_daily).
  */
 export async function getDayCoverage(db: Kysely<DB>, untilYear: number): Promise<DayCoverage[]> {
   const result = await sql<{ date: string; isTradingDay: boolean; twse: number; tpex: number }>`
@@ -17,11 +16,11 @@ export async function getDayCoverage(db: Kysely<DB>, untilYear: number): Promise
            coalesce(t.twse, 0)::int AS twse, coalesce(t.tpex, 0)::int AS tpex
     FROM trading_calendar c
     LEFT JOIN (
-      SELECT p.trade_date,
-             count(*) FILTER (WHERE s.market = 'twse') AS twse,
-             count(*) FILTER (WHERE s.market = 'tpex') AS tpex
-      FROM prices_daily p JOIN stocks s ON s.id = p.stock_id
-      GROUP BY p.trade_date
+      SELECT trade_date,
+             sum(bars) FILTER (WHERE market = 'twse') AS twse,
+             sum(bars) FILTER (WHERE market = 'tpex') AS tpex
+      FROM prices_daily_coverage
+      GROUP BY trade_date
     ) t ON t.trade_date = c.date
     WHERE c.date <= make_date(${untilYear}, 12, 31)
     ORDER BY c.date
@@ -40,7 +39,7 @@ export type DataTotals = {
 export async function getDataTotals(db: Kysely<DB>): Promise<DataTotals> {
   const result = await sql<DataTotals>`
     SELECT
-      (SELECT count(*) FROM prices_daily)::int AS bars,
+      (SELECT coalesce(sum(bars), 0) FROM prices_daily_coverage)::int AS bars,
       (SELECT count(*) FROM stocks WHERE delisted_date IS NULL AND type = 'stock')::int AS stocks,
       (SELECT count(*) FROM stocks WHERE delisted_date IS NULL AND type = 'etf')::int AS etfs,
       (SELECT count(*) FROM prices_daily_quarantine WHERE resolved_at IS NULL)::int

@@ -224,6 +224,18 @@ export interface PricesDaily {
   volume: Generated<Int8>;
 }
 
+export interface PricesDailyCoverage {
+  /**
+   * Rows in prices_daily for the date and market.
+   */
+  bars: number;
+  /**
+   * The stock's current stocks.market (same grouping as the old live query; a transferred stock counts in its new market).
+   */
+  market: string;
+  trade_date: string;
+}
+
 export interface PricesDailyQuarantine {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
@@ -367,6 +379,7 @@ export interface DB {
   monthly_revenue: MonthlyRevenue;
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
+  prices_daily_coverage: PricesDailyCoverage;
   prices_daily_quarantine: PricesDailyQuarantine;
   quotes_latest: QuotesLatest;
   raw_objects: RawObjects;

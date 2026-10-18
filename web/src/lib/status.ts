@@ -51,7 +51,7 @@ export async function getStatusData(db: Kysely<DB>, limit = 50): Promise<StatusD
       .limit(limit)
       .execute(),
     db
-      .selectFrom("prices_daily")
+      .selectFrom("prices_daily_coverage")
       .select((eb) => eb.fn.max("trade_date").as("latest"))
       .executeTakeFirst(),
   ]);
