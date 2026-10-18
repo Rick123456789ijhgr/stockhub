@@ -1,0 +1,164 @@
+# StockHub
+
+個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選與回測。單人使用。
+
+| 文件 | 內容 |
+|---|---|
+| [docs/PLAN.md](docs/PLAN.md) | 規劃摘要與里程碑 |
+| [docs/M0.md](docs/M0.md) | 目前里程碑的任務與驗收 |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 決策紀錄、偏離與待確認事項 |
+| [infra/README.md](infra/README.md) | ETL 映像、Cloud Run Jobs、Cloud Scheduler |
+| [CLAUDE.md](CLAUDE.md) | 不可違反的規則與開發慣例 |
+
+## 架構
+
+```
+web/   Next.js 16（App Router）+ Auth.js + Kysely  ──►  PostgreSQL（Neon / 本機）
+py/    stockhub：common（設定、DB、RawStore、Notifier、交易日曆）
+                 etl（provider adapter、排程任務、CLI）      ──►  RawStore（GCS / 本機）
+db/    migrations/*.sql（dbmate，唯一 schema 來源）
+infra/ ETL Dockerfile 與部署說明
+```
+
+網站只做查詢與顯示（部署在 Vercel）；資料擷取由 ETL 容器以 Cloud Run Jobs 執行，Cloud Scheduler 定時觸發。
+
+## 本機快速開始（約 15 分鐘）
+
+### 1. 需要的工具
+
+- GNU make、git、bash（Windows 用 Git Bash）
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)（會自動安裝 Python 3.12）
+- Node.js ≥ 20.9（建議 22）與 pnpm（`corepack enable`）
+- [dbmate](https://github.com/amacneil/dbmate/releases) v2.36 以上，放進 PATH
+- 資料庫二選一：Docker Desktop，或已安裝的 PostgreSQL 執行檔（16 以上）
+
+### 2. 設定環境變數
+
+```bash
+cp .env.example .env
+# 至少填入：AUTH_SECRET（openssl rand -base64 33）、ALLOWED_EMAIL（你的 Google 帳號）
+# 要實際登入還需要 AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET（見下方「Google OAuth」）
+```
+
+### 3. 啟動資料庫並套用遷移
+
+```bash
+make db-up            # Docker：Postgres 16，localhost:5433
+# 或沒有 Docker：
+make db-local-init    # 第一次：在 .local/pgdata 建立叢集（之後用 make db-local-up 啟動）
+
+make migrate          # 套用 db/migrations 到 DATABASE_URL
+```
+
+### 4. 安裝依賴並跑檢查
+
+```bash
+make py-install web-install
+make check            # = make py-test（ruff + mypy + pytest）+ make web-check（lint + typecheck + test）
+```
+
+### 5. 執行一個排程任務
+
+```bash
+make etl-heartbeat                                   # 寫一筆原始物件並記錄 job_runs
+cd py && uv run python -m stockhub.etl list          # 列出所有任務
+cd py && uv run python -m stockhub.etl run freshness_check --date 2026-10-19
+```
+
+### 6. 開網站
+
+```bash
+make web-dev          # http://localhost:3000，登入後到 /status 查看剛才的任務紀錄
+```
+
+## 常用指令
+
+`make help` 會列出全部指令。
+
+| 指令 | 說明 |
+|---|---|
+| `make db-up` / `db-down` | docker compose 的 Postgres |
+| `make db-local-init` / `db-local-up` / `db-local-down` | 不用 Docker 的本機 Postgres |
+| `make migrate` / `migrate-status` | 套用遷移／查看狀態 |
+| `make db-new name=add_foo` | 新增遷移檔 |
+| `make db-types` | 遷移後重新產生 `web/src/lib/db/types.gen.ts` |
+| `make py-test` / `py-fmt` | Python 檢查／自動修正格式 |
+| `make etl-list` / `etl-heartbeat` | ETL CLI |
+| `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
+
+ETL CLI 的結束碼：0 成功或略過、1 任務失敗、2 用法或設定錯誤、3 同一參數已在執行中。
+
+## 環境變數
+
+完整說明見 [.env.example](.env.example)。`.env` 放在 repo 根目錄，dbmate、Python 與 Next.js 共用；正式環境的值放在 Vercel 與 Secret Manager。
+
+| 變數 | 使用者 | 必要 | 說明 |
+|---|---|---|---|
+| `DATABASE_URL` | web、py、dbmate | ✔ | `postgresql://…`；Neon 需加 `?sslmode=require` |
+| `TEST_DATABASE_URL` | pytest | 測試時 | 測試會清空資料表，絕不可指向正式庫 |
+| `AUTH_SECRET` | web | ✔ | Auth.js 加密金鑰 |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | web | ✔ | Google OAuth client |
+| `ALLOWED_EMAIL` | web | ✔ | 可登入的 email，逗號分隔；空白表示沒人能登入 |
+| `AUTH_TRUST_HOST` | web | 非 Vercel | 自架時設 `true` |
+| `RAWSTORE_BACKEND` | py | | `local`（預設）或 `gcs` |
+| `RAWSTORE_LOCAL_DIR` | py | | 預設 `.local/rawstore` |
+| `RAWSTORE_GCS_BUCKET` | py | gcs 時 | bucket 名稱，用 ADC 驗證 |
+| `NOTIFIER` | py | | `console`（預設）或 `email` |
+| `ALERT_EMAIL_TO`、`SMTP_*` | py | email 時 | 告警收件人與 SMTP 設定 |
+| `PROVIDERS_PRICE` / `_FINANCIAL` / `_QUOTE` | py | | 各資料類型的主來源與備援順序，逗號分隔 |
+| `SERVICE_AUTH_SECRET` | web、FastAPI | M7 | 服務間驗證，預留 |
+| `APP_ENV`、`LOG_LEVEL` | py | | `development` / `production`；log 等級 |
+
+缺少必要設定時，Python 會在啟動時列出所有缺少的變數並結束。
+
+## 部署
+
+### Neon（資料庫）
+
+1. 建立 Neon 專案，區域選離台灣最近的（例如 AWS ap-southeast-1）。
+2. 取得兩種連線字串：**pooled**（主機名稱含 `-pooler`）給 Vercel；**direct** 給遷移與 ETL。
+3. 套用遷移：`DATABASE_URL='<direct>?sslmode=require' make migrate`。
+4. 之後每次有新的遷移檔：先在 Neon 開一個 branch 試跑，確認無誤再套用到主分支。
+
+### Google OAuth
+
+Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID（Web application）：
+
+- Authorized JavaScript origins：`http://localhost:3000`、`https://<你的網域>`
+- Authorized redirect URIs：`http://localhost:3000/api/auth/callback/google`、`https://<你的網域>/api/auth/callback/google`
+- OAuth consent screen 設為 External + Testing，把自己的帳號加進 Test users 就好（單人使用不必送審）。
+
+### Vercel（網站）
+
+1. Vercel → Add New Project → 匯入這個 GitHub repo。
+2. **Root Directory 設為 `web`**；Framework 會自動偵測為 Next.js，install／build 指令用預設值（pnpm、`pnpm build`）。
+3. Environment Variables（Production 與 Preview）：`DATABASE_URL`（Neon pooled）、`AUTH_SECRET`、`AUTH_GOOGLE_ID`、`AUTH_GOOGLE_SECRET`、`ALLOWED_EMAIL`。
+4. 部署後，把正式網域加進 Google OAuth 的 redirect URI。
+5. 之後 push 到 `main` 會自動部署，PR 會產生 Preview。Preview 網址每次不同，Google OAuth 只對已登記的網域有效，所以 Preview 需要登入的功能請在本機測。
+
+### Cloud Run Jobs 與 Cloud Scheduler（ETL）
+
+見 [infra/README.md](infra/README.md)：建立 Artifact Registry 與 bucket、服務帳號、Secret Manager、每個任務一個 Cloud Run Job，再用 Cloud Scheduler 依台北時間觸發。CI 的 `ETL image` workflow 也可以手動推送映像（需要先設定 GCP repository variables）。
+
+## CI
+
+GitHub Actions（`.github/workflows/`）：
+
+- `CI`（每個 PR 與 main）：
+  - **web**：lint、typecheck、test、production build
+  - **py**：ruff、mypy、pytest，用 Postgres 16 service container
+  - **migrations**：在空資料庫套用全部遷移 → 全部回滾 → 重新套用，並檢查 Kysely 型別沒有過期
+- `ETL image`（py 或 infra 有變動時）：建置映像並做冒煙測試（列出任務、確認以非 root 執行）；推送是手動觸發。
+
+## 備份與還原（預定作法，M0 只寫文件）
+
+要保護的是**無法重建**的資料：`portfolio_transactions`、`watchlist`、`settings`、`audit_log`，以及之後的題材、警示規則、策略與回測結果。市場資料可以從 RawStore 或資料源重新抓取。
+
+1. **託管備份**：Neon 內建的時間點還原（保留天數依方案而定）。
+2. **定期匯出**：一個每日執行的 Cloud Run Job 跑 `pg_dump --format=custom`（全庫，或至少上述表）→ 用 `age` 加密 → 上傳到獨立的 GCS bucket（`backups/daily/`、`backups/monthly/`）。用 lifecycle rule 保留每日 30 天、每月一份 12 個月。
+3. **還原測試**：上線前做一次，之後每季一次。從最新的匯出檔還原到新的 Neon branch，再跑 `make migrate-status`，並抽查持股筆數與最新交易；結果寫進 `audit_log`。
+4. 加密金鑰與 bucket 權限要和 ETL 服務帳號分開；還原步驟另外寫成 runbook（M2 持股功能上線前完成）。
+
+## 授權與資料來源
+
+僅供個人研究使用。各資料源的使用條款與額度，在正式串接前（M1 起）逐一確認並記錄在 `docs/DECISIONS.md`；爬取一律限速，優先使用官方 OpenAPI。

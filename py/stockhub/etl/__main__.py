@@ -1,0 +1,98 @@
+"""CLI: python -m stockhub.etl list | run <job> [--date YYYY-MM-DD] [--param k=v ...]
+
+Exit codes: 0 succeeded/skipped, 1 failed, 2 usage/config error, 3 already running.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from collections.abc import Sequence
+from datetime import date
+
+from stockhub.common.db import get_engine
+from stockhub.common.notifier import build_notifier
+from stockhub.common.rawstore import build_rawstore
+from stockhub.common.settings import ConfigError, get_settings
+from stockhub.etl.jobs.base import (
+    JobAlreadyRunningError,
+    UnknownJobError,
+    registered_jobs,
+    run_job,
+)
+
+
+def _param(value: str) -> tuple[str, str]:
+    key, sep, val = value.partition("=")
+    if not sep or not key:
+        raise argparse.ArgumentTypeError(f"expected k=v, got {value!r}")
+    return key, val
+
+
+def _date(value: str) -> str:
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD, got {value!r}") from None
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m stockhub.etl", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list", help="list available jobs")
+    run = sub.add_parser("run", help="run a job and record it in job_runs")
+    run.add_argument("job")
+    run.add_argument("--date", type=_date, help="Taipei trading date (default: today)")
+    run.add_argument("--param", type=_param, action="append", default=[], metavar="K=V")
+    run.add_argument("--trigger", choices=["manual", "schedule"], default="manual")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.command == "list":
+        for name, job in registered_jobs().items():
+            print(f"{name:<20} {job.description}")
+        return 0
+
+    try:
+        settings = get_settings()
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    logging.basicConfig(
+        level=settings.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    params = dict(args.param)
+    if args.date:
+        params["date"] = args.date
+    engine = get_engine()
+    try:
+        result = run_job(
+            args.job,
+            params,
+            args.trigger,
+            engine=engine,
+            rawstore=build_rawstore(engine, settings),
+            notifier=build_notifier(settings),
+        )
+    except UnknownJobError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    except JobAlreadyRunningError as exc:
+        print(exc, file=sys.stderr)
+        return 3
+
+    print(
+        f"{result.job_name} #{result.run_id} {result.status} "
+        f"rows_written={result.rows_written}" + (f"\n{result.error}" if result.error else "")
+    )
+    return 1 if result.status == "failed" else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

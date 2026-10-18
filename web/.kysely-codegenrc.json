@@ -1,0 +1,8 @@
+{
+  "dialect": "postgres",
+  "envFile": "../.env",
+  "dateParser": "string",
+  "numericParser": "string",
+  "excludePattern": "schema_migrations",
+  "outFile": "src/lib/db/types.gen.ts"
+}
