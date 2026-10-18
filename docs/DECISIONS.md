@@ -315,3 +315,56 @@
 - 任務 `poll_quotes`：對象 = 自選股 + 持股（淨股數 > 0）+ 參數 `symbols`；一天一次執行，開盤前啟動，每 30 秒輪詢到 13:35（`until`），休市日 skipped；`once=true` 只抓一次。寫入 `quotes_latest`（每檔一列，較舊的快照不覆蓋較新的）。Redis 要到之後真的需要時再加，這張表先頂替。
 - 網頁：個股頁有「加入自選」按鈕（`PUT/DELETE /api/watchlist/[symbol]`，寫入 `audit_log`，重複操作不重複記錄）；有比日線更新的快照時顯示盤中卡片，開盤時間內每 30 秒重新讀取。網頁本身不呼叫外部來源。
 - 盤中累計量是一般交易時段的量，會比收盤後的日線成交量小（日線含盤後定價等）。
+
+## 2026-10-19 M1 續：跳空確認、配息拆分、下市 ETF、效能、深色模式、排程
+
+使用者列出的五項依序完成。歷史回填（`make etl-history`，backfill #14）仍在進行，所以需要大量請求或依賴完整歷史的步驟，改由一次性排程在回填結束後自動執行（見 D-063）。
+
+### D-057 `/admin` 確認價格跳空（半自動，取代 D-053 留下的待辦）
+- `compute_adj_factors` 標記跳空時，以純函式 `guess_share_ratio`（`engine/adjustments.py`，有單元測試）找出能解釋跳空的常見股數比 2、4、5、10、20（面額 10 元改為 5、2.5、2、1、0.5 元，或反向合併）。判定方式：扣掉事件後，當天剩下的漲跌幅要在 ±10% 以內（漲跌幅限制），取最接近的一個；找不到就不給建議。建議存在隔離紀錄的 `payload.suggestion`。還沒處理的紀錄每次執行都會依最新的價格和因子更新；已處理的不會再動。
+- `/admin` 列出待確認的跳空，有建議的排在前面。每筆可以修改股數比（0.02～50，不能是 1）和類型（分割、合併、減資），然後按「確認事件」或「不是事件」。確認後寫入 `corporate_actions`（`source = 'manual'`，只填 `ratio`，因子 = 1 / ratio），隔離紀錄標為 `accepted`；按「不是事件」則標為 `discarded`，之後不會再被標記。兩種操作都會寫入 `audit_log`。API：`POST /api/admin/price-gaps/[id]`，會檢查 session。
+- 之後若匯入同一檔、同一天的官方事件，就刪除手動紀錄，避免同一天被調整兩次。
+- 取捨：網頁不會直接執行 Python，還原價要等下次 `compute_adj_factors`（每日 18:00 排程，或手動 `make etl-adjust`）才會更新。網頁上有寫明這一點。
+
+### D-058 證交所權息拆分：TWT49UDetail
+- 研究結果：證交所每個事件都有明細頁 `exRight/TWT49UDetail?STK_NO=&T1=`，2009 年起提供每股現金股利、每千股無償配股、現金增資認購率與認購價。2008 年以前的明細頁回「無相關資料」，但那些年份的 TWT49U 本身已分開列權值與息值。公開資訊觀測站 t05st09_2 沒有除權息日，每次只能查一家公司，只適合交叉驗證。FinMind `TaiwanStockDividend` 會漏事件（例如鴻海 2009-06-02）。所以主要來源用證交所，暫時不設備援。
+- 新介面 `DividendDetailProvider`，設定 `PROVIDERS_DIVIDEND_DETAILS=twse`。新任務 `sync_dividend_details`：對 2009 年起的 `權息` 和 `權` 事件逐筆請求明細（一筆一次請求，證交所限速 3 秒），填入 `cash_dividend`、`stock_dividend_ratio`，以及新欄位 `rights_ratio`、`subscription_price`、`detail_raw_object_id`。`detail_raw_object_id` 有值就代表已處理（明細頁沒有資料也會記下），所以重跑不會重抓，中斷後可以續跑。`make etl-daily` 會處理近 30 天的事件，`make etl-dividends start=2009-01-01` 補完整歷史。
+- **`action_type` 保留交易所的標示，不重新分類**：它是 `corporate_actions` 自然鍵的一部分，如果改掉，重新匯入事件表時會多出一筆重複事件，造成同一天被調整兩次（測試抓到了這個問題）。實際內容看拆分後的欄位。例如 1605 華新 2025-06-04 標示為「權息」，實際上是現金股利 0.5 元加上現金增資（每股認購率約 0.079，認購價 20 元），`stock_dividend_ratio = 0`。
+- 重新匯入事件表時，表中沒有的拆分數值（NULL）不會覆蓋之前從明細頁補上的值。
+- 實測：1773 為 (151 − 2.5) ÷ 1.2 = 123.75，6423 為 89.8 ÷ 1.0203 = 88.01，都和交易所參考價一致。之後可以加一項品質檢查：用拆分後的數值推算參考價，與交易所公布的比對。
+
+### D-059 下市 ETF：從自己存下的日線表推算
+- 研究結果：證交所、櫃買都沒有下市 ETF 清單，OpenAPI 的終止上市清單只有公司。FinMind `TaiwanStockDelisting` 雖然有 ETF，但日期有時是最後交易日，有時是終止日，有時根本是錯的（例如 00774C），也漏掉 00793B。
+- 改用官方每日行情表推算：任務 `derive_delisted_etfs` 不連網，掃描 RawStore 裡所有 MI_INDEX 和上櫃日線表（約一萬份，3～5 分鐘），找出不在主檔裡的 ETF 代號。ETF 代號的定義：0050～0099，或 00 開頭的五、六碼代號。0001～0049 是封閉式基金，02 開頭是 ETN，都不算。最後一次出現早於該市場最新一份行情表的，就經由既有的 `apply_delisting` 建檔：`delisted_date` 為最後交易日的下一個交易日，`delisting_reason = 'derived:last-trade'`，上市日用第一筆日線並標為估計值。這些 ETF 的日線也一起寫入，每筆日線記錄自己的來源。
+- 回填進行中時，行情表只到回填目前的日期，仍在交易的 ETF 會被誤判為下市。所以有 `backfill_prices` 在執行時，任務會拒絕寫入，只允許 `dry_run=true` 試算。
+- 試算結果與新聞一致：00883B 終止日 2026-05-07、00794B 2025-08-22，也找到了 FinMind 漏掉的 00793B。
+- 取捨：沒有處理 ETF 代號重複使用（目前沒看到這種情形）。暫停交易後又恢復的 ETF 會被當成同一檔，不會誤判為下市。
+
+### D-060 K 線先載入近 3.5 年
+- `/api/stocks/[symbol]/bars?period=recent` 回傳最新一筆往前 42 個月的日線，並附 `complete` 表示是否還有更早的資料。多出的半年用來暖機均線和指標，讓「3 年」範圍的 MA60、EMA 一開始就有值。
+- 選擇「5 年」或「全部」而且還有更早的資料時，才請求完整歷史，然後取代原本的資料。台積電目前回傳約 20 KB（完整約 75 KB，回填完成後會更大）。
+
+### D-061 `/status` 改讀預先計算的涵蓋表
+- 新表 `prices_daily_coverage`（日期、市場、筆數）由觸發器維護：`prices_daily` 的 INSERT、DELETE 使用 statement-level 觸發器搭配 transition table，每個語句只彙總一次；`INSERT … ON CONFLICT DO UPDATE` 的更新部分不會重複計數；TRUNCATE 會一併清空；`stocks.market` 改變（轉市場）時，該股所有日線改計到新市場。分組方式和原本的即時查詢相同。
+- 遷移時一次填滿。`CREATE TRIGGER` 會擋住其他寫入直到 commit，所以在回填進行中套用也一致（實測加總與 `count(*)` 都是 2,073,498）。總筆數與最新日期也改讀這張表。
+- 取捨：所有寫入日線的語句都多一次彙總，但每次只有數百筆，回填速度不受影響。
+
+### D-062 深色模式與漲跌配色切換
+- 偏好存在 localStorage（`stockhub:theme` 可為 system、light、dark；`stockhub:price-colors` 可為 tw、intl）。每台裝置各自設定，不存進資料庫，因為是顯示偏好，而且不需要登入就能在第一次繪製前套用。
+- `<head>` 的內嵌腳本在第一次繪製前設定 `.dark` class、`color-scheme` 與 `data-price-colors`，避免畫面閃爍；設為 system 時跟著系統即時切換。`<html>` 加上 `suppressHydrationWarning`。
+- 側欄與手機頂列有一鍵切換（系統、淺色、深色輪流）；`/admin` 有完整設定（主題、紅漲綠跌或綠漲紅跌）。K 線圖原本就會監聽 class 與 `data-price-colors` 的變化重新上色，已確認深色版本正確。
+
+### D-063 Windows 工作排程
+- `scripts/scheduled.sh <target>`：設定 PATH，必要時啟動本機 Postgres，記錄寫到 `.local/logs/<target>-YYYYMMDD.log`（保留 30 天）。`scripts/register-tasks.ps1` 註冊到工作排程器的 `\StockHub\`：
+  - 平日 08:55 執行 `make etl-quotes`，休市日任務會自己略過；
+  - 平日 18:00 執行 `make etl-daily`；
+  - 錯過的執行時間會在電腦下次可用時補跑。
+  - 只在使用者登入時執行，所以不需要儲存密碼；用 `conhost --headless` 執行，不會跳出視窗。
+  - 加上 `-Remove` 參數可以移除。
+- 一次性任務「StockHub after-history (one-off)」：執行中的 `make etl-history` 用的是舊版 Makefile，所以由 `scripts/after-history.sh 14` 等它結束（每 5 分鐘檢查一次，最多 24 小時）。之後依序執行：
+  1. `derive_delisted_etfs`
+  2. `sync_corporate_actions`（2004 年起；先建好 ETF 主檔，才能接上它們的配息與分割）
+  3. `sync_dividend_details`（2009 年起，約 3,000 次請求，2～3 小時）
+  4. `compute_adj_factors`
+- 新版 `make etl-history` 已經包含這些步驟，順序也相同。
+- 新增 make 目標：`etl-adjust`、`etl-corporate-actions`、`etl-dividends`、`etl-etf-delistings`。

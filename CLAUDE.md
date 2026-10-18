@@ -49,6 +49,10 @@ make etl-daily                # 休市表 + 股票主檔 + 當日日線（date=Y
 make etl-backfill             # 回填日線（start= end=，預設過去一年；可中斷續跑）
 make etl-history              # 完整歷史（下市、2004 起日線、除權息、還原因子；約 7～8 小時）
 make etl-quotes               # 盤中報價輪詢（自選 + 持股，每 30 秒）
+make etl-adjust               # 重算還原因子（在 /admin 確認跳空後）
+make etl-dividends            # 證交所權息拆分（start= end=，預設近 30 天）
+make etl-etf-delistings       # 從已存的日線表推算下市 ETF（不連網，回填完成後才跑）
+scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -79,4 +83,7 @@ make etl-quotes               # 盤中報價輪詢（自選 + 持股，每 30 �
 - 指標公式：`py/stockhub/engine/indicators.py` 與 `web/src/lib/indicators.ts` 逐式對應；改任一邊都要同步另一邊，並用 `py/scripts/gen_indicator_fixture.py` 重產 `testdata/indicators.json`。
 - 還原價 = 原始價 × `adj_factor`；漲跌一律用還原後的前收（`rebasedPrevClose`），不要直接拿原始前收算。
 - 圖表顏色只用 token：漲跌 `--price-up/down`，線 `--series-1..3`（已用 dataviz 驗證，最多三條會交錯的線）；Tailwind v4 會刪掉沒被 utility 用到的變數，新 token 要有對應的 `bg-*` 等用法。
+- 手動確認的事件 `corporate_actions.source = 'manual'`；匯入同一天的官方事件時會刪掉它。`action_type` 保留交易所的標示（它是自然鍵的一部分），事件實際內容看 `cash_dividend`、`stock_dividend_ratio`、`rights_ratio`。
+- `/status` 這類彙總要讀 `prices_daily_coverage`（由觸發器維護），不要直接掃 `prices_daily`。
+- 顯示偏好（主題、漲跌配色）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。
 - Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。

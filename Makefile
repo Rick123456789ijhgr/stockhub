@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-dividends etl-etf-delistings etl-quotes \
+	etl-backfill etl-history etl-adjust etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -80,6 +80,9 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_dividend_details
 	$(ETL) daily_prices $(if $(date),--date $(date))
 	$(ETL) compute_adj_factors
+
+etl-corporate-actions: ## Ex-rights/dividends, reductions, splits for [start, end] (default past 30 days)
+	$(ETL) sync_corporate_actions $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
 etl-dividends: ## Cash/stock parts of TWSE 權息 events (start= end=; default past 30 days; ~5 s per event)
 	$(ETL) sync_dividend_details $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
