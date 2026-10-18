@@ -60,11 +60,15 @@ make check            # = make py-test（ruff + mypy + pytest）+ make web-check
 ### 5. 抓資料（證交所、櫃買中心官方資料）
 
 ```bash
-make etl-daily                        # 休市表 + 股票主檔 + 今天的日線（收盤後約 14:30 才有）
+make etl-daily                        # 休市表、主檔、下市、除權息、今天的日線、還原因子（收盤後約 14:30 才有日線）
 make etl-daily date=2026-10-16        # 指定某一天
 make etl-backfill                     # 回填過去一年的日線（約 25 分鐘；中斷後重跑會接續）
-make etl-backfill start=2021-01-04    # 更長的歷史（每個交易日 2 個請求，每個來源 3 秒一次）
+make etl-history                      # 完整歷史：下市清單 + 2004-02-11 起的日線 + 除權息 + 還原因子（約 7～8 小時，可續跑）
+make etl-quotes                       # 盤中：自選股與持股每 30 秒更新到 13:35（symbols=2330,0050 可另外指定）
+make etl-quotes symbols=2330 once=1   # 只抓一次
 ```
+
+上櫃日線官方資料從 2007-07-02 起才有；還原價無法解釋的跳空（例如櫃買的面額變更）會列在 `corporate_actions_quarantine`，見 `docs/DECISIONS.md` D-053。
 
 其他任務：`make etl-list` 列出全部；`cd py && uv run python -m stockhub.etl run freshness_check` 檢查資料是否落後。
 
@@ -74,7 +78,8 @@ make etl-backfill start=2021-01-04    # 更長的歷史（每個交易日 2 個�
 make web-dev          # http://localhost:3000
 ```
 
-- `/stocks`：搜尋股票與 ETF，`/stocks/2330` 看近 120 日日線
+- `/stocks`：搜尋股票與 ETF（搜尋時也會列出已下市公司）
+- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價、近 120 日表格
 - `/status`：每次任務的紀錄與資料最新日期
 
 ### 7. 每天自動更新（選用，Windows 工作排程器）
@@ -99,7 +104,8 @@ schtasks /create /tn "StockHub daily" /sc weekly /d MON,TUE,WED,THU,FRI /st 18:0
 | `make db-new name=add_foo` | 新增遷移檔 |
 | `make db-types` | 遷移後重新產生 `web/src/lib/db/types.gen.ts` |
 | `make py-test` / `py-fmt` | Python 檢查／自動修正格式 |
-| `make etl-daily` / `etl-backfill` | 每日更新／回填日線 |
+| `make etl-daily` / `etl-backfill` / `etl-history` | 每日更新／回填日線／完整歷史 |
+| `make etl-quotes` | 盤中報價輪詢 |
 | `make etl-list` / `etl-heartbeat` | ETL CLI |
 | `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
 

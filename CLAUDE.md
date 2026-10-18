@@ -47,6 +47,8 @@ make web-dev                  # Next.js 開發伺服器（web/scripts/next.mjs �
 make web-check                # lint + typecheck + test
 make etl-daily                # 休市表 + 股票主檔 + 當日日線（date=YYYY-MM-DD 可指定）
 make etl-backfill             # 回填日線（start= end=，預設過去一年；可中斷續跑）
+make etl-history              # 完整歷史（下市、2004 起日線、除權息、還原因子；約 7～8 小時）
+make etl-quotes               # 盤中報價輪詢（自選 + 持股，每 30 秒）
 ```
 
 ## 不可違反的規則
@@ -74,4 +76,7 @@ make etl-backfill             # 回填日線（start= end=，預設過去一年�
 - 新資料源：在 `stockhub/etl/providers/` 實作介面的 `fetch_*`（只做 I/O）與 `parse_*`（純函式），用 `@register_provider` 註冊；擷取一律透過 `ProviderRouter`，由它把原始回應存進 RawStore，任務不要自己呼叫 provider 的 `fetch_*`。
 - 新排程任務：繼承 `Job`、用 `@register_job` 註冊，並在 `stockhub/etl/jobs/__init__.py` 匯入；寫入一律用 `upsert()`，長任務用 `ctx.save_checkpoint()`。
 - 新 schema：只加遷移檔（`make db-new`），必附 `COMMENT ON`、`down` 段與 pytest schema 測試，再跑 `make db-types`。
+- 指標公式：`py/stockhub/engine/indicators.py` 與 `web/src/lib/indicators.ts` 逐式對應；改任一邊都要同步另一邊，並用 `py/scripts/gen_indicator_fixture.py` 重產 `testdata/indicators.json`。
+- 還原價 = 原始價 × `adj_factor`；漲跌一律用還原後的前收（`rebasedPrevClose`），不要直接拿原始前收算。
+- 圖表顏色只用 token：漲跌 `--price-up/down`，線 `--series-1..3`（已用 dataviz 驗證，最多三條會交錯的線）；Tailwind v4 會刪掉沒被 utility 用到的變數，新 token 要有對應的 `bg-*` 等用法。
 - Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
