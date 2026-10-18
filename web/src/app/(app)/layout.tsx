@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { BottomNav, SidebarNav } from "@/components/nav/nav-links";
+import {
+  BottomNav,
+  BottomNavList,
+  SidebarNav,
+  SidebarNavList,
+} from "@/components/nav/nav-links";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
@@ -16,7 +21,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
     <div className="min-h-dvh md:grid md:grid-cols-[13rem_1fr]">
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r bg-sidebar px-3 py-5 md:flex">
         <Brand />
-        <SidebarNav />
+        <Suspense fallback={<SidebarNavList pathname="" />}>
+          <SidebarNav />
+        </Suspense>
         <div className="mt-auto px-1">
           <Suspense fallback={<Skeleton className="h-8 w-full" />}>
             <UserMenu />
@@ -36,7 +43,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        <BottomNav />
+        <Suspense fallback={<BottomNavList pathname="" />}>
+          <BottomNav />
+        </Suspense>
       </div>
     </div>
   );
