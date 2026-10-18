@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-quotes \
+	etl-backfill etl-history etl-adjust etl-dividends etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -77,8 +77,12 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_stocks
 	$(ETL) sync_delistings
 	$(ETL) sync_corporate_actions
+	$(ETL) sync_dividend_details
 	$(ETL) daily_prices $(if $(date),--date $(date))
 	$(ETL) compute_adj_factors
+
+etl-dividends: ## Cash/stock parts of TWSE 權息 events (start= end=; default past 30 days; ~5 s per event)
+	$(ETL) sync_dividend_details $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
 etl-adjust: ## Recompute adj_factor (e.g. after confirming price gaps on /admin)
 	$(ETL) compute_adj_factors
@@ -97,6 +101,7 @@ etl-history: ## Full history: delistings, prices since 2004-02-11, corporate act
 	$(ETL) sync_delistings
 	$(ETL) sync_corporate_actions --param start=2004-01-01 $(if $(end),--param end=$(end))
 	$(ETL) compute_adj_factors
+	$(ETL) sync_dividend_details --param start=2009-01-01 $(if $(end),--param end=$(end))
 
 web-install: ## Install web deps
 	$(WEB) install --frozen-lockfile

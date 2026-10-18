@@ -63,6 +63,10 @@ def official_handler(request: httpx.Request) -> httpx.Response:
         name = "tpex_delisted_2026.json"
     elif path.endswith("/getStockInfo.jsp"):
         name = "twse_mis_20261016.json"
+    elif path.endswith("/TWT49UDetail"):
+        name = f"twse_twt49u_detail_{params['STK_NO']}_{params['T1']}.json"
+        if not (FIXTURES / name).exists():
+            return httpx.Response(200, json={"stat": "無相關資料"})
     elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
         # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
         year = params["startDate"][:4]
@@ -96,6 +100,7 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "securities": [twse],
             "delistings": [twse, tpex],
             "corporate_actions": [twse, tpex],
+            "dividend_details": [twse],
             "quote": [TwseMisProvider(client)],
         }
     )

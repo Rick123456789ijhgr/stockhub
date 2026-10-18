@@ -29,6 +29,8 @@ from stockhub.etl.providers.base import (
     DataKind,
     Delisting,
     DelistingProvider,
+    DividendDetail,
+    DividendDetailProvider,
     FinancialItem,
     FinancialProvider,
     Market,
@@ -176,6 +178,30 @@ class ProviderRouter:
             ),
             lambda p, raw: p.parse_corporate_actions(raw),
             accepts=accepts,
+        )
+
+    def dividend_detail_since(self, market: Market) -> date | None:
+        """Earliest ex-date any configured detail source covers; None if none does."""
+        try:
+            providers = self.registry.providers_for("dividend_details")
+        except ConfigError:
+            return None
+        dates = [
+            p.detail_since
+            for p in providers
+            if isinstance(p, DividendDetailProvider) and market in p.detail_markets
+        ]
+        return min(dates, default=None)
+
+    def dividend_detail(
+        self, market: Market, symbol: str, ex_date: date
+    ) -> Fetched[DividendDetail]:
+        return self._call(
+            "dividend_details",
+            DividendDetailProvider,
+            lambda p: p.fetch_dividend_detail(market, symbol, ex_date),
+            lambda p, raw: p.parse_dividend_detail(raw),
+            accepts=lambda p: market in p.detail_markets and ex_date >= p.detail_since,
         )
 
     def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:

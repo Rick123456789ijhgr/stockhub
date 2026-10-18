@@ -1,6 +1,8 @@
 """Corporate actions (除權息、減資、面額變更、ETF 分割) and the adj_factor they produce.
 
 sync_corporate_actions  imports the exchanges' event tables (with reference prices);
+sync_dividend_details   fills the cash / stock / rights parts of TWSE 權息 events, which the
+                        event table publishes only as a total since 2009;
 compute_adj_factors     rewrites prices_daily.adj_factor from them and flags price gaps that
                         no recorded event explains (e.g. TPEx par-value changes, reductions
                         before 2011/2013), so they get reviewed instead of silently
@@ -17,14 +19,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, ClassVar
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, bindparam, text
 
 from stockhub.common.db import upsert
 from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.engine.adjustments import factor_segments, guess_share_ratio
 from stockhub.etl.jobs.base import Job, JobContext, JobOutcome, register_job
 from stockhub.etl.jobs.market_data import MARKETS, stock_ids_on
-from stockhub.etl.providers.base import ActionDataset, CorporateAction
+from stockhub.etl.providers.base import ActionDataset, CorporateAction, DividendDetail
 from stockhub.etl.quality import check_corporate_action
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,8 @@ DATASETS: tuple[ActionDataset, ...] = (
     "etf_split",
 )
 ACTION_COLUMNS = ["cash_dividend", "stock_dividend_ratio", "ratio", "prev_close", "reference_price"]
+PART_COLUMNS = frozenset({"cash_dividend", "stock_dividend_ratio"})
+"""Event parts some tables leave out (TWSE 權息 since 2009); sync_dividend_details fills them."""
 MANUAL_SOURCE = "manual"
 """Events confirmed by hand on /admin (from a price-gap guess); an imported event on the same
 stock and day replaces them."""
@@ -91,13 +95,15 @@ def store_corporate_actions(
             "raw_object_id": raw_object_id,
         }
     # source/raw_object_id keep the first sighting, so re-fetching a (grown) table that
-    # repeats an unchanged event writes nothing.
-    stats.written = upsert(
-        conn,
-        "corporate_actions",
-        list(good.values()),
-        ["stock_id", "ex_date", "action_type"],
-        ACTION_COLUMNS,
+    # repeats an unchanged event writes nothing. A part the table leaves out (NULL) never
+    # overwrites one filled in later from the event's detail page.
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in good.values():
+        columns = tuple(c for c in ACTION_COLUMNS if c not in PART_COLUMNS or row[c] is not None)
+        groups[columns].append(row)
+    stats.written = sum(
+        upsert(conn, "corporate_actions", rows, ["stock_id", "ex_date", "action_type"], columns)
+        for columns, rows in groups.items()
     )
     if good:
         keys = json.dumps([{"stock_id": s, "ex_date": d.isoformat()} for s, d, _ in good])
@@ -204,6 +210,88 @@ class SyncCorporateActionsJob(Job):
         uncovered = {f"{m}:{d}" for m in MARKETS for d in DATASETS} - covered
         if uncovered:
             message += f"；沒有官方來源：{'、'.join(sorted(uncovered))}"
+        return JobOutcome(message=message)
+
+
+# ----------------------------------------------------------------------------- details
+
+DETAIL_TYPES = ("cash_and_stock_dividend", "stock_dividend")
+"""TWSE event types whose parts the event table leaves out (pure 息 rows carry the cash)."""
+
+
+def apply_dividend_detail(
+    conn: Connection, action_id: int, detail: DividendDetail | None, raw_object_id: int
+) -> None:
+    """Store the parts, or just the attempt when the page had none (so it is not refetched).
+
+    action_type keeps the exchange's 權/息 label (it is part of the natural key the event
+    table is re-imported on); what the event consisted of is in the part columns, e.g. a
+    權息 that was cash plus a subscription has stock_dividend_ratio 0 and rights_ratio > 0.
+    """
+    if detail is None:
+        conn.execute(
+            text("UPDATE corporate_actions SET detail_raw_object_id = :raw WHERE id = :id"),
+            {"raw": raw_object_id, "id": action_id},
+        )
+        return
+    conn.execute(
+        text(
+            "UPDATE corporate_actions SET detail_raw_object_id = :raw, cash_dividend = :cash, "
+            "stock_dividend_ratio = :stock, rights_ratio = :rights, "
+            "subscription_price = :price WHERE id = :id"
+        ),
+        {
+            "raw": raw_object_id,
+            "id": action_id,
+            "cash": detail.cash_dividend,
+            "stock": detail.stock_dividend_ratio,
+            "rights": detail.rights_ratio,
+            "price": detail.subscription_price,
+        },
+    )
+
+
+@register_job
+class SyncDividendDetailsJob(Job):
+    name: ClassVar[str] = "sync_dividend_details"
+    description: ClassVar[str] = (
+        "Fill cash / stock / rights parts of TWSE 權息 and 權 events from their detail pages "
+        "(params: start, end; default the past 30 days; one request per event)"
+    )
+    uses_date: ClassVar[bool] = False
+    timeout: ClassVar[timedelta] = timedelta(hours=6)
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        router = ctx.require_router()
+        end = date.fromisoformat(ctx.params.get("end") or taipei_today().isoformat())
+        start = date.fromisoformat(ctx.params.get("start") or (end - DEFAULT_LOOKBACK).isoformat())
+        since = router.dividend_detail_since("twse")
+        if since is None:
+            return JobOutcome(message="沒有設定權息明細來源（PROVIDERS_DIVIDEND_DETAILS）")
+        with ctx.engine.connect() as conn:
+            # Rows without detail_raw_object_id are the work left, so a rerun resumes.
+            pending = conn.execute(
+                text(
+                    "SELECT c.id, s.symbol, c.ex_date FROM corporate_actions c "
+                    "JOIN stocks s ON s.id = c.stock_id "
+                    "WHERE c.source = 'twse' AND c.action_type IN :types "
+                    "AND c.detail_raw_object_id IS NULL "
+                    "AND c.ex_date BETWEEN :start AND :end ORDER BY c.ex_date, s.symbol"
+                ).bindparams(bindparam("types", expanding=True)),
+                {"types": list(DETAIL_TYPES), "start": max(start, since), "end": end},
+            ).all()
+        filled = missing = 0
+        for row in pending:
+            fetched = router.dividend_detail("twse", row.symbol, row.ex_date)
+            detail = fetched.items[0] if fetched.items else None
+            with ctx.engine.begin() as conn:
+                apply_dividend_detail(conn, row.id, detail, fetched.raw.id)
+            if detail is None:
+                missing += 1
+            else:
+                filled += 1
+                ctx.add_rows(1)
+        message = f"{start}～{end}：待補 {len(pending)}、補上 {filled}、來源無資料 {missing}"
         return JobOutcome(message=message)
 
 

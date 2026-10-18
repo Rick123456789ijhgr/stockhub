@@ -30,6 +30,8 @@ from stockhub.etl.providers.base import (
     DailyBar,
     Delisting,
     DelistingProvider,
+    DividendDetail,
+    DividendDetailProvider,
     Market,
     PermanentProviderError,
     PriceProvider,
@@ -78,12 +80,16 @@ class TwseProvider(
     SecurityListProvider,
     DelistingProvider,
     CorporateActionProvider,
+    DividendDetailProvider,
 ):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0
     markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     security_markets: ClassVar[frozenset[Market]] = frozenset({"twse", "tpex"})
     delisting_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    detail_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    detail_since: ClassVar[date] = date(2009, 1, 1)
+    """TWT49UDetail answers 無相關資料 for earlier events; their TWT49U rows split 權值/息值."""
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()
@@ -248,6 +254,32 @@ class TwseProvider(
             },
         )
 
+    # ------------------------------------------------------------------ dividend details
+
+    def fetch_dividend_detail(self, market: Market, symbol: str, ex_date: date) -> RawResponse:
+        if market != "twse":
+            raise PermanentProviderError(f"twse has no dividend details for {market}")
+        params = {"STK_NO": symbol, "T1": f"{ex_date:%Y%m%d}", "response": "json"}
+        body = get_json_bytes(self.client, DETAIL_URL, params)
+        return RawResponse(
+            "dividend_detail",
+            body,
+            {"market": market, "symbol": symbol, "ex_date": ex_date.isoformat()},
+        )
+
+    def parse_dividend_detail(self, raw: RawResponse) -> list[DividendDetail]:
+        data = _loads(raw.payload)
+        stat = str(data.get("stat", ""))
+        if NO_DATA in stat or "無相關資料" in stat:
+            return []
+        if stat.upper() != "OK":
+            raise ValueError(f"unexpected stat {stat!r}")
+        symbol, ex_date = raw.params["symbol"], date.fromisoformat(raw.params["ex_date"])
+        fields = [_text(f) for f in data["fields"]]
+        rows = [dict(zip(fields, map(_text, row), strict=True)) for row in data.get("data", [])]
+        rows = [r for r in rows if r.get("股票代號") == symbol]
+        return [parse_detail_row(symbol, ex_date, rows[0])] if rows else []
+
     def parse_corporate_actions(self, raw: RawResponse) -> list[CorporateAction]:
         data = _loads(raw.payload)
         stat = str(data.get("stat", ""))
@@ -306,6 +338,38 @@ def _isin_rows(html: str) -> list[tuple[str, list[str]]]:
         elif len(cells) == 7 and section:
             out.append((section, cells))
     return out
+
+
+DETAIL_URL = "https://www.twse.com.tw/rwd/zh/exRight/TWT49UDetail"
+DETAIL_FIELDS = {
+    "cash": "(每股配發現金股利)除息",
+    "free_shares": "A. 按普通股股東持股比例每千股無償配股",
+    "rights": "按股東持股比例每千股認購",
+    "price": "每股認購金額",
+}
+
+
+def _unit_number(value: object) -> Decimal | None:
+    """'0.4 元／股', '140 股', '60,000,000 股', '' -> Decimal or None."""
+    text = _text(value).replace("元／股", "").replace("元/股", "").replace("股", "")
+    return _decimal(text)
+
+
+def parse_detail_row(symbol: str, ex_date: date, cells: dict[str, str]) -> DividendDetail:
+    """One TWT49UDetail row; share counts there are per 1000 existing shares."""
+    per_mille = Decimal(1000)
+    cash = _unit_number(cells[DETAIL_FIELDS["cash"]]) or Decimal(0)
+    free = _unit_number(cells[DETAIL_FIELDS["free_shares"]]) or Decimal(0)
+    rights = _unit_number(cells.get(DETAIL_FIELDS["rights"], "")) or Decimal(0)
+    price = _unit_number(cells.get(DETAIL_FIELDS["price"], ""))
+    return DividendDetail(
+        symbol=symbol,
+        ex_date=ex_date,
+        cash_dividend=cash,
+        stock_dividend_ratio=free / per_mille,
+        rights_ratio=rights / per_mille,
+        subscription_price=price if rights > 0 and price else None,
+    )
 
 
 ACTION_URLS: dict[str, str] = {

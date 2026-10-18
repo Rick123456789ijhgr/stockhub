@@ -41,13 +41,17 @@ export interface AuditLog {
 
 export interface CorporateActions {
   /**
-   * cash_and_stock_dividend = 權息 on one day (TWSE no longer publishes the split between the two).
+   * The exchange's label: cash_and_stock_dividend = 權息 on one day. What a TWSE 權息 consisted of is in cash_dividend / stock_dividend_ratio / rights_ratio once its detail page is fetched (a 權息 can be cash plus a subscription).
    */
   action_type: string;
   /**
    * Cash per share in TWD: the dividend, or the refund of a capital reduction; NULL when the source does not separate it.
    */
   cash_dividend: Numeric | null;
+  /**
+   * Raw per-event detail page the cash / stock / rights parts came from (TWSE TWT49UDetail since 2009); set even when the page had no data, so it is not fetched again.
+   */
+  detail_raw_object_id: Int8 | null;
   /**
    * First trading day at the new basis: the ex-date, or the day trading resumes after a reduction/split.
    */
@@ -72,12 +76,20 @@ export interface CorporateActions {
    * Exchange-published reference price on ex_date (除權息參考價 / 恢復買賣參考價).
    */
   reference_price: Numeric | null;
+  /**
+   * New shares existing holders may subscribe per share (現金增資認購率); NULL when the source does not say.
+   */
+  rights_ratio: Numeric | null;
   source: string;
   /**
    * New shares received per existing share (0.05 = 50 shares per 1000).
    */
   stock_dividend_ratio: Numeric | null;
   stock_id: Int8;
+  /**
+   * Subscription price per new share (現金增資認購價) for rights_ratio.
+   */
+  subscription_price: Numeric | null;
 }
 
 export interface CorporateActionsQuarantine {

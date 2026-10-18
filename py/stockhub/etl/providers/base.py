@@ -17,7 +17,14 @@ from typing import Any, ClassVar, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 DataKind = Literal[
-    "price", "financial", "quote", "calendar", "securities", "delistings", "corporate_actions"
+    "price",
+    "financial",
+    "quote",
+    "calendar",
+    "securities",
+    "delistings",
+    "corporate_actions",
+    "dividend_details",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -146,6 +153,22 @@ class CorporateAction(_Model):
     """Shares after / shares before (reductions, splits)."""
 
 
+class DividendDetail(_Model):
+    """What one 除權息 event consisted of, per existing share (TWSE publishes only the total
+    in its event table since 2009; the per-event detail page has the parts)."""
+
+    symbol: str
+    ex_date: date
+    cash_dividend: Decimal = Field(ge=0)
+    """Cash per share in TWD."""
+    stock_dividend_ratio: Decimal = Field(ge=0)
+    """Free new shares per existing share (無償配股; 0.05 = 50 per 1000)."""
+    rights_ratio: Decimal = Field(ge=0)
+    """New shares existing holders may subscribe per share (現金增資認購; 0 when none)."""
+    subscription_price: Decimal | None = Field(default=None, gt=0)
+    """Price per subscribed share (每股認購金額); None without a subscription."""
+
+
 class FinancialItem(_Model):
     """One reported line item, as published (usually year-to-date)."""
 
@@ -257,6 +280,19 @@ class CorporateActionProvider(Provider):
     def parse_corporate_actions(self, raw: RawResponse) -> list[CorporateAction]: ...
 
 
+class DividendDetailProvider(Provider):
+    detail_markets: ClassVar[frozenset[Market]]
+    detail_since: ClassVar[date]
+    """First ex-date with a detail page (earlier event tables carry the parts themselves)."""
+
+    @abstractmethod
+    def fetch_dividend_detail(self, market: Market, symbol: str, ex_date: date) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_dividend_detail(self, raw: RawResponse) -> list[DividendDetail]:
+        """The event's parts, or an empty list when the source has no detail for it."""
+
+
 class FinancialProvider(Provider):
     @abstractmethod
     def fetch_financials(self, symbol: str, period_end: date) -> RawResponse: ...
@@ -285,4 +321,5 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "securities": SecurityListProvider,
     "delistings": DelistingProvider,
     "corporate_actions": CorporateActionProvider,
+    "dividend_details": DividendDetailProvider,
 }

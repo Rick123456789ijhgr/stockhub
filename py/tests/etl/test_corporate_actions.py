@@ -14,8 +14,11 @@ from sqlalchemy import Engine, text
 from stockhub.common.notifier import ConsoleNotifier
 from stockhub.common.rawstore import LocalRawStore
 from stockhub.etl.jobs.base import JobRunResult, run_job
-from stockhub.etl.jobs.corporate_actions import store_corporate_actions, year_chunks
-from stockhub.etl.providers.base import CorporateAction
+from stockhub.etl.jobs.corporate_actions import (
+    store_corporate_actions,
+    year_chunks,
+)
+from stockhub.etl.providers.base import CorporateAction, DividendDetail
 from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.tpex import TpexProvider
 from stockhub.etl.providers.tpex import _dividend_row as tpex_dividend_row
@@ -354,3 +357,89 @@ def test_imported_event_replaces_a_manual_one(clean_db: Engine, stocks: dict[str
     assert _rows(clean_db, "SELECT action_type, source FROM corporate_actions") == [
         ("cash_dividend", "twse")
     ]
+
+
+# ----------------------------------------------------------------------------- details
+
+
+def _detail(**overrides: Any) -> DividendDetail:
+    values: dict[str, Any] = {
+        "symbol": "1605",
+        "ex_date": date(2025, 6, 4),
+        "cash_dividend": D(0),
+        "stock_dividend_ratio": D(0),
+        "rights_ratio": D(0),
+    }
+    return DividendDetail(**(values | overrides))
+
+
+def test_twse_dividend_detail_parser() -> None:
+    twse, _ = _providers()
+    # 1605 華新 權息 2025-06-04: cash 0.5 plus a cash capital increase at 20 (79.378 per 1000).
+    raw = twse.fetch_dividend_detail("twse", "1605", date(2025, 6, 4))
+    assert twse.parse_dividend_detail(raw) == [
+        _detail(
+            cash_dividend=D("0.5"),
+            rights_ratio=D("0.07937821165"),
+            subscription_price=D(20),
+        )
+    ]
+    # 6423 權 2025-06-12: 20.3 free shares per 1000, no cash.
+    raw = twse.fetch_dividend_detail("twse", "6423", date(2025, 6, 12))
+    [detail] = twse.parse_dividend_detail(raw)
+    assert (detail.cash_dividend, detail.stock_dividend_ratio, detail.subscription_price) == (
+        D(0),
+        D("0.0203"),
+        None,
+    )
+    # Before 2009 the page has nothing.
+    raw = twse.fetch_dividend_detail("twse", "2330", date(2008, 7, 16))
+    assert twse.parse_dividend_detail(raw) == []
+
+
+def test_sync_dividend_details_fills_parts_once(
+    run: Any, clean_db: Engine, stocks: dict[str, int]
+) -> None:
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO stocks (symbol, market, type, name, listed_date) VALUES "
+                "('1605', 'twse', 'stock', '華新', '1962-02-09'), "
+                "('6423', 'twse', 'stock', '億而得-創', '2020-01-01')"
+            )
+        )
+    run("sync_corporate_actions", start="2025-01-01", end="2025-12-31")
+    result = run("sync_dividend_details", start="2025-01-01", end="2025-12-31")
+    assert result.status == "succeeded"
+    assert result.rows_written == 2
+    rows = {
+        r.symbol: r
+        for r in _rows(
+            clean_db,
+            "SELECT s.symbol, c.action_type, c.cash_dividend, c.stock_dividend_ratio, "
+            "c.rights_ratio, c.subscription_price, c.detail_raw_object_id FROM corporate_actions c "
+            "JOIN stocks s ON s.id = c.stock_id WHERE s.symbol IN ('1605', '6423')",
+        )
+    }
+    # 權息 that was cash plus a subscription: the label stays, the parts tell.
+    華新 = rows["1605"]
+    assert (華新.action_type, 華新.cash_dividend, 華新.stock_dividend_ratio) == (
+        "cash_and_stock_dividend",
+        D("0.5"),
+        D(0),
+    )
+    assert (華新.rights_ratio, 華新.subscription_price) == (D("0.07937821"), D(20))
+    assert (rows["6423"].action_type, rows["6423"].stock_dividend_ratio) == (
+        "stock_dividend",
+        D("0.0203"),
+    )
+    assert all(r.detail_raw_object_id is not None for r in rows.values())
+    # Done rows are not fetched again (rule 4); re-importing the table (which has no
+    # parts) neither duplicates the event nor erases them.
+    assert run("sync_dividend_details", start="2025-01-01", end="2025-12-31").rows_written == 0
+    run("sync_corporate_actions", start="2025-01-01", end="2025-12-31")
+    assert _rows(
+        clean_db,
+        "SELECT cash_dividend FROM corporate_actions WHERE stock_id = "
+        "(SELECT id FROM stocks WHERE symbol = '1605')",
+    ) == [(D("0.5"),)]
