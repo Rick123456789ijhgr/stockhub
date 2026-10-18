@@ -150,11 +150,14 @@ class TwseProvider(
         if data.get("stat") != "ok":
             raise ValueError(f"unexpected stat {data.get('stat')!r}")
         entries = []
-        for day_text, name, *_ in data.get("data", []):
+        for day_text, name, *rest in data.get("data", []):
             label = name.strip()
+            description = str(rest[0]) if rest else ""
             # "...開始交易日" / "...最後交易日" are announced trading days; everything else
-            # (holidays, "市場無交易，僅辦理結算交割作業") means the market is closed.
-            trading = "開始交易" in label or "最後交易" in label
+            # (holidays, "市場無交易，僅辦理結算交割作業") means the market is closed. The
+            # description wins: 2021 listed 02-08 and 02-09 under "農曆春節前最後交易日"
+            # while describing them as "市場無交易，僅辦理結算交割作業".
+            trading = ("開始交易" in label or "最後交易" in label) and "無交易" not in description
             entries.append(
                 CalendarEntry(day=date.fromisoformat(day_text), name=label, is_trading_day=trading)
             )

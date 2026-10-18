@@ -88,6 +88,24 @@ def test_twse_holiday_schedule() -> None:
     assert twse.parse_calendar(twse.fetch_calendar(2010)) == []
 
 
+def test_twse_holiday_description_overrides_a_trading_day_name() -> None:
+    # The 2021 schedule as published: three dates under one name, two of them closed.
+    raw = RawResponse(
+        "holiday_schedule",
+        {
+            "stat": "ok",
+            "data": [
+                ["2021-02-05", "農曆春節前最後交易日", "農曆春節前最後交易。"],
+                ["2021-02-08", "農曆春節前最後交易日", "2月8日市場無交易，僅辦理結算交割作業。"],
+            ],
+        },
+        {"year": 2021},
+    )
+    twse, _ = _providers()
+    entries = {e.day: e.is_trading_day for e in twse.parse_calendar(raw)}
+    assert entries == {date(2021, 2, 5): True, date(2021, 2, 8): False}
+
+
 def test_isin_master_lists() -> None:
     twse, _ = _providers()
     listed = {s.symbol: s for s in twse.parse_securities(twse.fetch_securities("twse"))}
