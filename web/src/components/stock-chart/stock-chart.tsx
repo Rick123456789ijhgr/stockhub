@@ -24,6 +24,7 @@ import {
   type PriceMode,
   RANGES,
   type RangeKey,
+  needsFullHistory,
   rangeStartIndex,
   toOhlc,
 } from "@/lib/chart-data";
@@ -120,23 +121,40 @@ function toLine(times: string[], values: Series) {
   return values.flatMap((value, i) => (value === null ? [] : [{ time: times[i], value }]));
 }
 
+type BarsResponse = { bars: ChartBar[]; complete: boolean };
+
+async function fetchBars(symbol: string, recent: boolean): Promise<BarsResponse> {
+  const query = recent ? "?period=recent" : "";
+  const response = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/bars${query}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.json()) as BarsResponse;
+}
+
 export function StockChart({ symbol }: { symbol: string }) {
-  const { data, isPending, isError } = useQuery({
-    queryKey: ["bars", symbol],
-    queryFn: async (): Promise<ChartBar[]> => {
-      const response = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/bars`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return ((await response.json()) as { bars: ChartBar[] }).bars;
-    },
-    staleTime: 60_000,
-  });
   const [mode, setMode] = useState<PriceMode>("adjusted");
   const [range, setRange] = useState<RangeKey>("1Y");
   const [indicator, setIndicator] = useState<IndicatorKey>("KD");
   const [hovered, setHovered] = useState<number | null>(null);
   const theme = useThemeVersion();
 
-  const bars = useMemo(() => data ?? [], [data]);
+  // The recent years first (small and fast on phones); the whole history only once a
+  // longer range is chosen, then it replaces the recent bars.
+  const recent = useQuery({
+    queryKey: ["bars", symbol, "recent"],
+    queryFn: () => fetchBars(symbol, true),
+    staleTime: 60_000,
+  });
+  const full = useQuery({
+    queryKey: ["bars", symbol, "all"],
+    queryFn: () => fetchBars(symbol, false),
+    staleTime: 60_000,
+    enabled: needsFullHistory(range) && recent.data?.complete === false,
+  });
+  const data = full.data ?? recent.data;
+  const { isPending, isError } = recent;
+  const loadingMore = full.isFetching && !full.data;
+
+  const bars = useMemo(() => data?.bars ?? [], [data]);
   const computed = useMemo(() => compute(bars, mode, indicator), [bars, mode, indicator]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -320,6 +338,15 @@ export function StockChart({ symbol }: { symbol: string }) {
           value={indicator}
           onChange={setIndicator}
         />
+        {loadingMore ? (
+          <span className="text-xs text-muted-foreground" role="status">
+            載入完整歷史…
+          </span>
+        ) : full.isError ? (
+          <span className="text-xs text-muted-foreground" role="status">
+            完整歷史載入失敗，目前顯示近 3 年。
+          </span>
+        ) : null}
       </div>
 
       <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs tabular-nums">

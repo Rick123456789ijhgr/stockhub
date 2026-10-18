@@ -25,6 +25,15 @@ export const RANGES = [
 
 export type RangeKey = (typeof RANGES)[number]["key"];
 
+/** Months the first chart request covers ("recent"): 3 years plus a half-year warm-up. */
+export const RECENT_RANGE_MONTHS = 36;
+
+/** Whether `range` shows more than the recent load, so the full history must be fetched. */
+export function needsFullHistory(range: RangeKey): boolean {
+  const months = RANGES.find((r) => r.key === range)?.months ?? null;
+  return months === null || months > RECENT_RANGE_MONTHS;
+}
+
 /** Index of the first bar inside `range`, counted back from the latest bar. */
 export function rangeStartIndex(bars: readonly ChartBar[], range: RangeKey): number {
   const months = RANGES.find((r) => r.key === range)?.months ?? null;

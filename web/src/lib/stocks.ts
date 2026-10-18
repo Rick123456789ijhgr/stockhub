@@ -158,15 +158,35 @@ export async function getRecentBars(
   });
 }
 
-/** Every traded bar of a stock, oldest first, as compact numbers for the chart. */
-export async function getChartBars(db: Kysely<DB>, stockId: number): Promise<ChartBar[]> {
-  const result = await sql<{ t: string; o: string; h: string; l: string; c: string; v: string; f: string }>`
-    SELECT trade_date AS t, open AS o, high AS h, low AS l, close AS c, volume AS v, adj_factor AS f
+/**
+ * Traded bars of a stock, oldest first, as compact numbers for the chart. With
+ * `recentMonths`, only bars within that many months of the latest one; `complete` tells
+ * whether older bars exist that were left out.
+ */
+export async function getChartBars(
+  db: Kysely<DB>,
+  stockId: number,
+  recentMonths?: number,
+): Promise<{ bars: ChartBar[]; complete: boolean }> {
+  const since =
+    recentMonths === undefined
+      ? sql`NULL::date`
+      : sql`(SELECT max(trade_date) FROM prices_daily WHERE stock_id = ${stockId})
+            - make_interval(months => ${recentMonths})`;
+  const result = await sql<{ t: string; o: string; h: string; l: string; c: string; v: string; f: string; older: boolean }>`
+    WITH cutoff AS (SELECT ${since} AS since)
+    SELECT trade_date AS t, open AS o, high AS h, low AS l, close AS c, volume AS v, adj_factor AS f,
+           EXISTS (
+             SELECT 1 FROM prices_daily o
+             WHERE o.stock_id = ${stockId} AND o.close IS NOT NULL
+               AND o.trade_date < (SELECT since FROM cutoff)
+           ) AS older
     FROM prices_daily
     WHERE stock_id = ${stockId} AND close IS NOT NULL
+      AND trade_date >= coalesce((SELECT since FROM cutoff), '-infinity'::date)
     ORDER BY trade_date
   `.execute(db);
-  return result.rows.map((r) => [
+  const bars: ChartBar[] = result.rows.map((r) => [
     r.t,
     Number(r.o),
     Number(r.h),
@@ -175,4 +195,5 @@ export async function getChartBars(db: Kysely<DB>, stockId: number): Promise<Cha
     Number(r.v),
     Number(r.f),
   ]);
+  return { bars, complete: !(result.rows[0]?.older ?? false) };
 }

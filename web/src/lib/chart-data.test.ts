@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { adjustedChangePercent, type ChartBar, rangeStartIndex, toOhlc } from "./chart-data";
+import {
+  adjustedChangePercent,
+  type ChartBar,
+  needsFullHistory,
+  type RangeKey,
+  rangeStartIndex,
+  toOhlc,
+} from "./chart-data";
 
 // 0050 around its 1 -> 4 split on 2025-06-18 (factor = 47.16 / 188.65 before it).
 const SPLIT = 47.16 / 188.65;
@@ -38,5 +45,17 @@ describe("rangeStartIndex", () => {
     expect(rangeStartIndex(bars, "1Y")).toBe(1);
     expect(rangeStartIndex(bars, "ALL")).toBe(0);
     expect(rangeStartIndex([], "1Y")).toBe(0);
+  });
+});
+
+describe("needsFullHistory", () => {
+  it("is only needed beyond the recent three years", () => {
+    expect(["6M", "1Y", "3Y"].map((r) => needsFullHistory(r as RangeKey))).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(needsFullHistory("5Y")).toBe(true);
+    expect(needsFullHistory("ALL")).toBe(true);
   });
 });
