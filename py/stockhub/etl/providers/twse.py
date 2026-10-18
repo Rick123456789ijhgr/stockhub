@@ -133,6 +133,7 @@ class TwseProvider(
                     close=_decimal(row[col["收盤價"]]),
                     volume=int(volume or 0),
                     turnover=Decimal(turnover or 0),
+                    name=row[col["證券名稱"]].strip() or None,
                 )
             )
         return bars

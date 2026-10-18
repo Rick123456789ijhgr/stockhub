@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-dividends etl-quotes \
+	etl-backfill etl-history etl-adjust etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -84,6 +84,9 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 etl-dividends: ## Cash/stock parts of TWSE 權息 events (start= end=; default past 30 days; ~5 s per event)
 	$(ETL) sync_dividend_details $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
+etl-etf-delistings: ## Delisted ETFs + their bars from stored daily tables (no network; after backfills)
+	$(ETL) derive_delisted_etfs $(if $(dry_run),--param dry_run=true)
+
 etl-adjust: ## Recompute adj_factor (e.g. after confirming price gaps on /admin)
 	$(ETL) compute_adj_factors
 
@@ -98,6 +101,7 @@ HISTORY_START := 2004-02-11
 etl-history: ## Full history: delistings, prices since 2004-02-11, corporate actions (~6 h; resumable)
 	$(ETL) sync_delistings --param start_year=2001
 	$(ETL) backfill_prices --param start=$(HISTORY_START) $(if $(end),--param end=$(end))
+	$(ETL) derive_delisted_etfs
 	$(ETL) sync_delistings
 	$(ETL) sync_corporate_actions --param start=2004-01-01 $(if $(end),--param end=$(end))
 	$(ETL) compute_adj_factors

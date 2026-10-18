@@ -99,6 +99,7 @@ class TpexProvider(PriceProvider, DelistingProvider, CorporateActionProvider):
                     close=_decimal(row[col["收盤"]]),
                     volume=int(volume or 0),
                     turnover=Decimal(turnover or 0),
+                    name=row[col["名稱"]].strip() or None,
                 )
             )
         return bars

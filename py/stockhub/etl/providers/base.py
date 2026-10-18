@@ -95,6 +95,8 @@ class DailyBar(_Model):
     close: Decimal | None
     volume: int = Field(ge=0, description="shares")
     turnover: Decimal = Field(ge=0, description="TWD")
+    name: str | None = None
+    """Security name as printed in the day's table (finds securities missing from the master)."""
 
 
 class CalendarEntry(_Model):
