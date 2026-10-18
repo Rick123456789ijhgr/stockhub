@@ -1,6 +1,6 @@
 """Scheduled jobs. Importing this package registers every built-in job."""
 
-from stockhub.etl.jobs import freshness_check, heartbeat, market_data
+from stockhub.etl.jobs import corporate_actions, freshness_check, heartbeat, market_data
 from stockhub.etl.jobs.base import (
     Job,
     JobContext,
@@ -18,6 +18,7 @@ __all__ = [
     "JobError",
     "JobOutcome",
     "JobRunResult",
+    "corporate_actions",
     "freshness_check",
     "heartbeat",
     "market_data",

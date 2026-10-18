@@ -60,9 +60,27 @@ def official_handler(request: httpx.Request) -> httpx.Response:
             empty = {"stat": "ok", "tables": [{"fields": FIELDS_TPEX, "data": []}]}
             return httpx.Response(200, json=empty)
         name = "tpex_delisted_2026.json"
+    elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
+        # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
+        year = params["startDate"][:4]
+        name = ACTION_FIXTURES[path.rsplit("/", 1)[-1]].get(year, "")
+        if not name:
+            if "tpex" in request.url.host:
+                return httpx.Response(200, json={"stat": "ok", "tables": [{"fields": []}]})
+            return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!"})
     else:
         return httpx.Response(404)
     return httpx.Response(200, content=fixture(name))
+
+
+ACTION_FIXTURES = {
+    "TWT49U": {"2025": "twse_twt49u_2025.json", "2004": "twse_twt49u_2004.json"},
+    "TWTAUU": {"2025": "twse_twtauu_2025.json"},
+    "TWTB8U": {"2025": "twse_twtb8u_2025.json"},
+    "TWTCAU": {"2025": "twse_twtcau_2025.json"},
+    "exDailyQ": {"2025": "tpex_exdailyq_2025.json"},
+    "revivt": {"2025": "tpex_revivt_2025.json"},
+}
 
 
 def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRouter:  # type: ignore[no-untyped-def]
@@ -74,6 +92,7 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "calendar": [twse],
             "securities": [twse],
             "delistings": [twse, tpex],
+            "corporate_actions": [twse, tpex],
         }
     )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)

@@ -18,10 +18,13 @@ from datetime import date
 from stockhub.common.rawstore import RawObject, RawStore
 from stockhub.common.settings import ConfigError
 from stockhub.etl.providers.base import (
+    ActionDataset,
     AllProvidersFailedError,
     Attempt,
     CalendarEntry,
     CalendarProvider,
+    CorporateAction,
+    CorporateActionProvider,
     DailyBar,
     DataKind,
     Delisting,
@@ -143,6 +146,36 @@ class ProviderRouter:
             lambda p: p.fetch_delistings(market, year),
             lambda p, raw: p.parse_delistings(raw),
             accepts=lambda p: market in p.delisting_markets,
+        )
+
+    def corporate_action_since(self, market: Market, dataset: ActionDataset) -> date | None:
+        """Earliest date any configured source covers for this table; None if none does."""
+        try:
+            providers = self.registry.providers_for("corporate_actions")
+        except ConfigError:
+            return None
+        dates = [
+            p.action_sources[(market, dataset)]
+            for p in providers
+            if isinstance(p, CorporateActionProvider) and (market, dataset) in p.action_sources
+        ]
+        return min(dates, default=None)
+
+    def corporate_actions(
+        self, market: Market, dataset: ActionDataset, start: date, end: date
+    ) -> Fetched[CorporateAction]:
+        def accepts(p: CorporateActionProvider) -> bool:
+            since = p.action_sources.get((market, dataset))
+            return since is not None and end >= since
+
+        return self._call(
+            "corporate_actions",
+            CorporateActionProvider,
+            lambda p: p.fetch_corporate_actions(
+                market, dataset, max(start, p.action_sources[(market, dataset)]), end
+            ),
+            lambda p, raw: p.parse_corporate_actions(raw),
+            accepts=accepts,
         )
 
     def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:

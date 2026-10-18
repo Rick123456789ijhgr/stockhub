@@ -190,3 +190,26 @@ def test_calendar_seed_covers_2004_and_delisting_columns_default(pg: psycopg.Con
         "RETURNING listed_date_estimated, delisting_reason"
     ).fetchone()
     assert row == (False, None)
+
+
+def test_corporate_action_price_factor_is_generated(pg: psycopg.Connection) -> None:
+    stock = pg.execute(
+        "INSERT INTO stocks (symbol, market, type, name, listed_date) "
+        "VALUES ('T002', 'twse', 'etf', 'x', '2003-06-30') RETURNING id"
+    ).fetchone()
+    assert stock is not None
+    factors = pg.execute(
+        "INSERT INTO corporate_actions "
+        "(stock_id, ex_date, action_type, prev_close, reference_price, ratio, source) VALUES "
+        "(%(id)s, '2025-06-18', 'split', 188.65, 47.16, NULL, 't'), "
+        "(%(id)s, '2025-07-01', 'split', NULL, NULL, 4, 't'), "
+        "(%(id)s, '2025-08-01', 'cash_and_stock_dividend', NULL, NULL, NULL, 't') "
+        "RETURNING price_factor",
+        {"id": stock[0]},
+    ).fetchall()
+    assert factors == [(Decimal("0.2499867479"),), (Decimal("0.2500000000"),), (None,)]
+    quarantine = pg.execute(
+        "SELECT obj_description('corporate_actions_quarantine'::regclass, 'pg_class')"
+    ).fetchone()
+    assert quarantine is not None
+    assert quarantine[0]

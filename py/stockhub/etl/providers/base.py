@@ -16,9 +16,22 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-DataKind = Literal["price", "financial", "quote", "calendar", "securities", "delistings"]
+DataKind = Literal[
+    "price", "financial", "quote", "calendar", "securities", "delistings", "corporate_actions"
+]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
+ActionDataset = Literal["dividend", "capital_reduction", "par_value_change", "etf_split"]
+"""Exchange tables of price-adjusting events: 除權息, 減資, 變更面額, ETF 分割."""
+ActionType = Literal[
+    "cash_dividend",
+    "stock_dividend",
+    "cash_and_stock_dividend",
+    "rights_issue",
+    "capital_reduction",
+    "split",
+    "reverse_split",
+]
 
 
 # ----------------------------------------------------------------------------- errors
@@ -108,6 +121,31 @@ class Delisting(_Model):
     reason: str | None = None
 
 
+class CorporateAction(_Model):
+    """A price-adjusting event as published with its exchange reference price.
+
+    The exchange's reference price already accounts for everything that changed per-share
+    value (cash, stock dividends, rights, refunds, ratio changes), so
+    reference_price / prev_close is the backward adjustment for that day. ETF splits on
+    TPEx carry only a ratio, which then stands in for the prices.
+    """
+
+    symbol: str
+    market: Market
+    ex_date: date
+    """First trading day at the new basis (ex-date, or the day trading resumes)."""
+    action_type: ActionType
+    # Not constrained here: sources publish the odd junk row (0.00 / negative prices), which
+    # the quality check quarantines instead of failing the whole table.
+    prev_close: Decimal | None = None
+    reference_price: Decimal | None = None
+    cash_dividend: Decimal | None = Field(default=None, ge=0)
+    """Cash per share (dividend, or capital refund for reductions); None when not published."""
+    stock_dividend_ratio: Decimal | None = Field(default=None, ge=0)
+    ratio: Decimal | None = Field(default=None, gt=0)
+    """Shares after / shares before (reductions, splits)."""
+
+
 class FinancialItem(_Model):
     """One reported line item, as published (usually year-to-date)."""
 
@@ -193,6 +231,20 @@ class DelistingProvider(Provider):
         """Securities delisted during the requested year (may include market transfers)."""
 
 
+class CorporateActionProvider(Provider):
+    action_sources: ClassVar[dict[tuple[Market, ActionDataset], date]]
+    """(market, dataset) pairs this source publishes, each with its first available date."""
+
+    @abstractmethod
+    def fetch_corporate_actions(
+        self, market: Market, dataset: ActionDataset, start: date, end: date
+    ) -> RawResponse:
+        """Events dated in [start, end]; start is never before the dataset's first date."""
+
+    @abstractmethod
+    def parse_corporate_actions(self, raw: RawResponse) -> list[CorporateAction]: ...
+
+
 class FinancialProvider(Provider):
     @abstractmethod
     def fetch_financials(self, symbol: str, period_end: date) -> RawResponse: ...
@@ -216,4 +268,5 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "calendar": CalendarProvider,
     "securities": SecurityListProvider,
     "delistings": DelistingProvider,
+    "corporate_actions": CorporateActionProvider,
 }

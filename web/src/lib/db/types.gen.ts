@@ -40,26 +40,68 @@ export interface AuditLog {
 }
 
 export interface CorporateActions {
+  /**
+   * cash_and_stock_dividend = 權息 on one day (TWSE no longer publishes the split between the two).
+   */
   action_type: string;
   /**
-   * Cash dividend per share in TWD.
+   * Cash per share in TWD: the dividend, or the refund of a capital reduction; NULL when the source does not separate it.
    */
   cash_dividend: Numeric | null;
+  /**
+   * First trading day at the new basis: the ex-date, or the day trading resumes after a reduction/split.
+   */
   ex_date: string;
   fetched_at: Generated<Timestamp>;
   id: Generated<Int8>;
   pay_date: string | null;
   /**
+   * Exchange-published close before the event (除權息前收盤價 / 停止買賣前收盤價).
+   */
+  prev_close: Numeric | null;
+  /**
+   * Backward adjustment for bars before ex_date: reference_price / prev_close (else 1 / ratio). prices_daily.adj_factor is the product over later events.
+   */
+  price_factor: Generated<Numeric | null>;
+  /**
    * Shares after / shares before, for capital reductions and splits.
    */
   ratio: Numeric | null;
   raw_object_id: Int8 | null;
+  /**
+   * Exchange-published reference price on ex_date (除權息參考價 / 恢復買賣參考價).
+   */
+  reference_price: Numeric | null;
   source: string;
   /**
    * New shares received per existing share (0.05 = 50 shares per 1000).
    */
   stock_dividend_ratio: Numeric | null;
   stock_id: Int8;
+}
+
+export interface CorporateActionsQuarantine {
+  /**
+   * As parsed; unknown for derived price gaps.
+   */
+  action_type: string;
+  created_at: Generated<Timestamp>;
+  ex_date: string;
+  id: Generated<Int8>;
+  /**
+   * The parsed action (or, for gaps, the two adjusted closes) as received.
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  reasons: string[];
+  /**
+   * accepted, discarded, explained (a later import explains the gap) or NULL while pending.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  stock_id: Int8 | null;
+  symbol: string;
 }
 
 export interface FinancialItemMap {
@@ -286,6 +328,7 @@ export interface Watchlist {
 export interface DB {
   audit_log: AuditLog;
   corporate_actions: CorporateActions;
+  corporate_actions_quarantine: CorporateActionsQuarantine;
   financial_item_map: FinancialItemMap;
   financials: Financials;
   job_runs: JobRuns;

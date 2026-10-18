@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from stockhub.etl.providers.base import DailyBar
+from decimal import Decimal
+
+from stockhub.etl.providers.base import CorporateAction, DailyBar
+
+FACTOR_RANGE = (Decimal("0.02"), Decimal(50))
+"""Per-event price factors outside this range are almost certainly parsing or source errors
+(the largest real ones are 1:10 par-value changes and deep loss-offsetting reductions)."""
 
 
 def check_daily_bar(bar: DailyBar) -> list[str]:
@@ -27,4 +33,26 @@ def check_daily_bar(bar: DailyBar) -> list[str]:
                     reasons.append(f"{label}_outside_range")
     if bar.volume == 0 and len(present) == len(prices):
         reasons.append("prices_without_volume")
+    return reasons
+
+
+def check_corporate_action(action: CorporateAction) -> list[str]:
+    """Names of failed checks; empty means the event may adjust prices."""
+    prices = [p for p in (action.prev_close, action.reference_price) if p is not None]
+    if any(p <= 0 for p in prices):
+        return ["non_positive_price"]
+    if action.prev_close is None or action.reference_price is None:
+        if action.ratio is None:
+            return ["no_reference_price"]
+        factor = 1 / action.ratio
+    else:
+        factor = action.reference_price / action.prev_close
+    reasons: list[str] = []
+    low, high = FACTOR_RANGE
+    if not low <= factor <= high:
+        reasons.append("factor_out_of_range")
+    if action.action_type == "cash_dividend" and factor > 1:
+        # Paying cash never raises the reference price. 除權 can: it may include a cash
+        # capital increase subscribed above the market price.
+        reasons.append("dividend_raises_price")
     return reasons

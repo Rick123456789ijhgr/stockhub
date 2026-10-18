@@ -90,5 +90,6 @@ class ProviderRegistry:
                 "calendar": settings.providers_calendar,
                 "securities": settings.providers_securities,
                 "delistings": settings.providers_delistings,
+                "corporate_actions": settings.providers_corporate_actions,
             }
         )

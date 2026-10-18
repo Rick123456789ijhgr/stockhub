@@ -76,17 +76,21 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
 	$(ETL) sync_delistings
+	$(ETL) sync_corporate_actions
 	$(ETL) daily_prices $(if $(date),--date $(date))
+	$(ETL) compute_adj_factors
 
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
 HISTORY_START := 2004-02-11
 
-etl-history: ## Full history: delistings since 2001, then daily prices since 2004-02-11 (~6 h; resumable)
+etl-history: ## Full history: delistings, prices since 2004-02-11, corporate actions (~6 h; resumable)
 	$(ETL) sync_delistings --param start_year=2001
 	$(ETL) backfill_prices --param start=$(HISTORY_START) $(if $(end),--param end=$(end))
 	$(ETL) sync_delistings
+	$(ETL) sync_corporate_actions --param start=2004-01-01 $(if $(end),--param end=$(end))
+	$(ETL) compute_adj_factors
 
 web-install: ## Install web deps
 	$(WEB) install --frozen-lockfile

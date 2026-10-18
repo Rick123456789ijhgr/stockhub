@@ -5,11 +5,14 @@ Endpoints (robots.txt allows them; we stay at one request per 3 s):
 - holidaySchedule           announced holidays of a year (published from 2021)
 - isin.twse.com.tw          master list with listing dates, for TWSE (strMode=2) and TPEx (4)
 - company/suspendListing    companies delisted in a year (終止上市公司, from 2001)
+- TWT49U / TWTAUU / TWTB8U / TWTCAU  ex-rights/dividend results, capital reductions (from
+  2011), par-value changes and ETF splits, each with the exchange's reference price
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from html.parser import HTMLParser
@@ -18,8 +21,12 @@ from typing import Any, ClassVar
 import httpx
 
 from stockhub.etl.providers.base import (
+    ActionDataset,
+    ActionType,
     CalendarEntry,
     CalendarProvider,
+    CorporateAction,
+    CorporateActionProvider,
     DailyBar,
     Delisting,
     DelistingProvider,
@@ -65,7 +72,13 @@ def is_common_symbol(symbol: str) -> bool:
 
 
 @register_provider
-class TwseProvider(PriceProvider, CalendarProvider, SecurityListProvider, DelistingProvider):
+class TwseProvider(
+    PriceProvider,
+    CalendarProvider,
+    SecurityListProvider,
+    DelistingProvider,
+    CorporateActionProvider,
+):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0
     markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
@@ -208,6 +221,50 @@ class TwseProvider(PriceProvider, CalendarProvider, SecurityListProvider, Delist
                 )
         return out
 
+    # ------------------------------------------------------------------ corporate actions
+
+    action_sources: ClassVar[dict[tuple[Market, ActionDataset], date]] = {
+        ("twse", "dividend"): date(2004, 1, 1),
+        ("twse", "capital_reduction"): date(2011, 1, 1),  # TWTAUU refuses earlier dates
+        ("twse", "par_value_change"): date(2004, 1, 1),
+        ("twse", "etf_split"): date(2004, 1, 1),
+    }
+
+    def fetch_corporate_actions(
+        self, market: Market, dataset: ActionDataset, start: date, end: date
+    ) -> RawResponse:
+        if (market, dataset) not in self.action_sources:
+            raise PermanentProviderError(f"twse does not publish {market} {dataset}")
+        params = {"startDate": f"{start:%Y%m%d}", "endDate": f"{end:%Y%m%d}", "response": "json"}
+        body = get_json_bytes(self.client, ACTION_URLS[dataset], params)
+        return RawResponse(
+            f"actions_{dataset}",
+            body,
+            {
+                "market": market,
+                "dataset": dataset,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+            },
+        )
+
+    def parse_corporate_actions(self, raw: RawResponse) -> list[CorporateAction]:
+        data = _loads(raw.payload)
+        stat = str(data.get("stat", ""))
+        if NO_DATA in stat:
+            return []
+        if stat.upper() != "OK":
+            raise ValueError(f"unexpected stat {stat!r}")
+        col = {name: i for i, name in enumerate(data["fields"])}
+        parse_row = _ACTION_ROW_PARSERS[raw.params["dataset"]]
+        out = []
+        for row in data.get("data") or []:
+            cells = {name: _text(row[i]) for name, i in col.items()}
+            action = parse_row(cells)
+            if action is not None:
+                out.append(action)
+        return out
+
 
 class _IsinTableParser(HTMLParser):
     """Collects table rows as lists of cell texts."""
@@ -249,3 +306,76 @@ def _isin_rows(html: str) -> list[tuple[str, list[str]]]:
         elif len(cells) == 7 and section:
             out.append((section, cells))
     return out
+
+
+ACTION_URLS: dict[str, str] = {
+    "dividend": "https://www.twse.com.tw/rwd/zh/exRight/TWT49U",
+    "capital_reduction": "https://www.twse.com.tw/rwd/zh/reducation/TWTAUU",
+    "par_value_change": "https://www.twse.com.tw/rwd/zh/change/TWTB8U",
+    "etf_split": "https://www.twse.com.tw/rwd/zh/split/TWTCAU",
+}
+DIVIDEND_TYPES: dict[str, ActionType] = {
+    "息": "cash_dividend",
+    "權": "stock_dividend",
+    "權息": "cash_and_stock_dividend",
+}
+
+
+def _text(value: object) -> str:
+    """Cells are strings, but older years serve some numbers as JSON floats."""
+    return value.strip() if isinstance(value, str) else str(value)
+
+
+def _dividend_row(cells: dict[str, str]) -> CorporateAction | None:
+    symbol = cells["股票代號"]
+    kind = DIVIDEND_TYPES.get(cells["權/息"])
+    if kind is None or not _in_scope(symbol):
+        return None
+    if "息值" in cells:  # before ~2010 the table split 權值 and 息值
+        cash = _decimal(cells["息值"])
+    else:  # only the total is published; it is pure cash for 息
+        cash = _decimal(cells["權值+息值"]) if kind == "cash_dividend" else None
+    return CorporateAction(
+        symbol=symbol,
+        market="twse",
+        ex_date=roc_date(cells["資料日期"]),
+        action_type=kind,
+        prev_close=_decimal(cells["除權息前收盤價"]),
+        reference_price=_decimal(cells["除權息參考價"]),
+        cash_dividend=cash if kind != "stock_dividend" else None,
+    )
+
+
+def _resumption_row(
+    cells: dict[str, str], symbol_col: str, kind: ActionType | None
+) -> CorporateAction | None:
+    symbol = cells[symbol_col]
+    if not _in_scope(symbol):
+        return None
+    prev = _decimal(cells["停止買賣前收盤價格"])
+    ref = _decimal(cells["恢復買賣參考價"])
+    if kind is None:  # par-value change: direction follows the price
+        kind = "split" if prev is not None and ref is not None and ref < prev else "reverse_split"
+    return CorporateAction(
+        symbol=symbol,
+        market="twse",
+        ex_date=roc_date(cells["恢復買賣日期"]),
+        action_type=kind,
+        prev_close=prev,
+        reference_price=ref,
+    )
+
+
+def _in_scope(symbol: str) -> bool:
+    """Common stocks and ETFs (00xx…); warrants, TDRs and preferred shares are not stored."""
+    return is_common_symbol(symbol) or symbol.startswith("00")
+
+
+_ACTION_ROW_PARSERS: dict[str, Callable[[dict[str, str]], CorporateAction | None]] = {
+    "dividend": _dividend_row,
+    "capital_reduction": lambda c: _resumption_row(c, "股票代號", "capital_reduction"),
+    "par_value_change": lambda c: _resumption_row(c, "股票代號", None),
+    "etf_split": lambda c: _resumption_row(
+        c, "ETF代號", "reverse_split" if c["分割(反分割)"] == "反分割" else "split"
+    ),
+}
