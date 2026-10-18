@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-DataKind = Literal["price", "financial", "quote", "calendar", "securities"]
+DataKind = Literal["price", "financial", "quote", "calendar", "securities", "delistings"]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
 
@@ -97,6 +97,17 @@ class Security(_Model):
     isin: str | None = None
 
 
+class Delisting(_Model):
+    """A security the exchange stopped listing (終止上市／終止上櫃)."""
+
+    symbol: str
+    name: str
+    market: Market
+    delisted_date: date
+    """First day it no longer traded; the last trading day is the trading day before."""
+    reason: str | None = None
+
+
 class FinancialItem(_Model):
     """One reported line item, as published (usually year-to-date)."""
 
@@ -170,6 +181,18 @@ class SecurityListProvider(Provider):
     def parse_securities(self, raw: RawResponse) -> list[Security]: ...
 
 
+class DelistingProvider(Provider):
+    delisting_markets: ClassVar[frozenset[Market]]
+    """Markets whose delisting list this source publishes."""
+
+    @abstractmethod
+    def fetch_delistings(self, market: Market, year: int) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_delistings(self, raw: RawResponse) -> list[Delisting]:
+        """Securities delisted during the requested year (may include market transfers)."""
+
+
 class FinancialProvider(Provider):
     @abstractmethod
     def fetch_financials(self, symbol: str, period_end: date) -> RawResponse: ...
@@ -192,4 +215,5 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "quote": QuoteProvider,
     "calendar": CalendarProvider,
     "securities": SecurityListProvider,
+    "delistings": DelistingProvider,
 }

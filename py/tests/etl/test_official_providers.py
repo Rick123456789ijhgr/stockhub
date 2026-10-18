@@ -11,9 +11,9 @@ from stockhub.etl.providers.base import (
     RawResponse,
     TransientProviderError,
 )
-from stockhub.etl.providers.http import clean_number, make_client
+from stockhub.etl.providers.http import clean_number, make_client, roc_date
 from stockhub.etl.providers.tpex import TpexProvider
-from stockhub.etl.providers.twse import TwseProvider
+from stockhub.etl.providers.twse import TwseProvider, is_common_symbol
 
 from .official_sources import fixture, official_handler
 
@@ -142,3 +142,50 @@ def test_network_errors_are_transient() -> None:
 )
 def test_clean_number(raw: str | None, expected: str | None) -> None:
     assert clean_number(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("115/09/01", date(2026, 9, 1)),
+        ("090/01/20", date(2001, 1, 20)),
+        ("115-10-16", date(2026, 10, 16)),
+        ("114年06月02日", date(2025, 6, 2)),
+        ("93年01月13日", date(2004, 1, 13)),
+        ("1140113", date(2025, 1, 13)),
+        ("2026/10/16", date(2026, 10, 16)),
+        ("20261016", date(2026, 10, 16)),
+    ],
+)
+def test_roc_date(raw: str, expected: date) -> None:
+    assert roc_date(raw) == expected
+
+
+def test_roc_date_rejects_garbage() -> None:
+    with pytest.raises(ValueError, match="unrecognized"):
+        roc_date("soon")
+
+
+def test_twse_delistings() -> None:
+    twse, _ = _providers()
+    raw = twse.fetch_delistings("twse", 2026)
+    items = {d.symbol: d for d in twse.parse_delistings(raw)}
+    assert set(items) == {"2867", "6806", "3454", "6423"}
+    assert items["2867"].name == "三商壽"
+    assert items["2867"].delisted_date == date(2026, 9, 1)
+    assert items["2867"].market == "twse"
+
+
+def test_tpex_delistings_include_transfers_and_reasons() -> None:
+    _, tpex = _providers()
+    items = {d.symbol: d for d in tpex.parse_delistings(tpex.fetch_delistings("tpex", 2026))}
+    assert items["8908"].name == "欣雄天然氣"
+    assert items["8908"].delisted_date == date(2026, 10, 16)
+    assert "第12條之2" in (items["8908"].reason or "")
+    assert all(d.market == "tpex" for d in items.values())
+
+
+def test_delisting_lists_skip_preferred_shares_and_tdrs() -> None:
+    assert is_common_symbol("2330")
+    assert not is_common_symbol("2881A")
+    assert not is_common_symbol("9103")

@@ -89,5 +89,6 @@ class ProviderRegistry:
                 "quote": settings.providers_quote,
                 "calendar": settings.providers_calendar,
                 "securities": settings.providers_securities,
+                "delistings": settings.providers_delistings,
             }
         )

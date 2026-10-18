@@ -235,7 +235,14 @@ export interface Settings {
 
 export interface Stocks {
   created_at: Generated<Timestamp>;
+  /**
+   * First day no longer listed (終止上市／上櫃日); the last trading day is the trading day before. NULL = active.
+   */
   delisted_date: string | null;
+  /**
+   * Reason published with the delisting (TPEx only; TWSE publishes none).
+   */
+  delisting_reason: string | null;
   id: Generated<Int8>;
   /**
    * Industry name as listed on the exchange ISIN page (e.g. 半導體業); industry_code is filled once an official code mapping is imported.
@@ -246,6 +253,10 @@ export interface Stocks {
    * Listing date; with symbol forms the natural key because symbols can be reused after delisting.
    */
   listed_date: string;
+  /**
+   * True when listed_date is a lower bound, not the official date: delisting lists carry no listing date, so it is the first stored trading day (or the previous same-symbol delisting / 1962-02-09 before any price is stored).
+   */
+  listed_date_estimated: Generated<boolean>;
   /**
    * twse = listed (上市), tpex = OTC (上櫃).
    */

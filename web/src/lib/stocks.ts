@@ -14,6 +14,7 @@ export type StockListItem = {
   market: Market;
   type: "stock" | "etf";
   industry: string | null;
+  delistedDate: string | null;
   tradeDate: string | null;
   close: string | null;
   prevClose: string | null;
@@ -21,9 +22,10 @@ export type StockListItem = {
 };
 
 /**
- * Active stocks matching `query` (symbol prefix or name substring), each with its latest
+ * Stocks matching `query` (symbol prefix or name substring), each with its latest
  * bar and the previous close. Change is raw close-to-close: not yet adjusted for
- * dividends (adj_factor arrives with corporate actions).
+ * dividends (adj_factor arrives with corporate actions). Delisted stocks only appear when
+ * searched for, after the active ones.
  */
 export async function searchStocks(
   db: Kysely<DB>,
@@ -35,7 +37,7 @@ export async function searchStocks(
     ? sql`AND (s.symbol ILIKE ${`${q}%`} OR s.name ILIKE ${`%${q}%`})`
     : sql``;
   const result = await sql<StockListItem>`
-    SELECT s.symbol, s.name, s.market, s.type, s.industry,
+    SELECT s.symbol, s.name, s.market, s.type, s.industry, s.delisted_date AS "delistedDate",
            l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume
     FROM stocks s
     LEFT JOIN LATERAL (
@@ -48,8 +50,9 @@ export async function searchStocks(
       ORDER BY p.trade_date DESC
       LIMIT 1
     ) l ON true
-    WHERE s.delisted_date IS NULL ${filter}
-    ORDER BY (s.symbol = ${q}) DESC, s.type DESC, s.symbol
+    WHERE (s.delisted_date IS NULL OR ${q} <> '') ${filter}
+    ORDER BY (s.symbol = ${q}) DESC, (s.delisted_date IS NULL) DESC, s.type DESC, s.symbol,
+             s.delisted_date DESC
     LIMIT ${limit}
   `.execute(db);
   return result.rows;
@@ -62,6 +65,8 @@ export type StockDetail = {
   type: "stock" | "etf";
   industry: string | null;
   listedDate: string;
+  listedDateEstimated: boolean;
+  delistedDate: string | null;
 };
 
 export type DailyBarRow = {
@@ -75,7 +80,10 @@ export type DailyBarRow = {
   turnover: string;
 };
 
-/** The active listing for `symbol` and its latest `days` bars, newest first. */
+/**
+ * The listing for `symbol` (the active one, else the most recently delisted) and its
+ * latest `days` bars, newest first.
+ */
 export async function getStockWithBars(
   db: Kysely<DB>,
   symbol: string,
@@ -91,9 +99,12 @@ export async function getStockWithBars(
       "type",
       "industry",
       "listed_date as listedDate",
+      "listed_date_estimated as listedDateEstimated",
+      "delisted_date as delistedDate",
     ])
     .where("symbol", "=", symbol)
-    .where("delisted_date", "is", null)
+    .orderBy(sql`delisted_date IS NULL`, "desc")
+    .orderBy("delisted_date", "desc")
     .executeTakeFirst();
   if (!stock) return null;
 
@@ -125,6 +136,8 @@ export async function getStockWithBars(
     type: stock.type as StockDetail["type"],
     industry: stock.industry,
     listedDate: stock.listedDate,
+    listedDateEstimated: stock.listedDateEstimated,
+    delistedDate: stock.delistedDate,
   };
   return { stock: detail, bars };
 }

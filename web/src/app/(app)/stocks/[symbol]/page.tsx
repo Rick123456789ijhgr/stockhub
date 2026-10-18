@@ -55,9 +55,12 @@ async function StockContent({ params }: { params: PageProps<"/stocks/[symbol]">[
           <span className="font-mono text-muted-foreground">{stock.symbol}</span>
           <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
           {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
+          {stock.delistedDate ? <Badge variant="outline" className="text-muted-foreground">已下市</Badge> : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {stock.industry ? `${stock.industry} · ` : ""}上市（櫃）日 {stock.listedDate}
+          {stock.industry ? `${stock.industry} · ` : ""}
+          {stock.listedDateEstimated ? `最早資料 ${stock.listedDate}` : `上市（櫃）日 ${stock.listedDate}`}
+          {stock.delistedDate ? ` · 終止上市（櫃）日 ${stock.delistedDate}` : ""}
         </p>
       </header>
 

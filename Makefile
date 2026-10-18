@@ -6,7 +6,8 @@ PY  := cd py && uv run
 WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
-	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat \
+	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
+	etl-backfill etl-history \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -71,13 +72,21 @@ etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 # Optional overrides: make etl-daily date=2026-10-16 / make etl-backfill start=2025-10-17 end=2026-10-16
 ETL := $(PY) python -m stockhub.etl run
 
-etl-daily: ## Update calendar, stock master and the day's prices (date=YYYY-MM-DD, default today)
+etl-daily: ## Update calendar, stock master, delistings and the day's prices (date=YYYY-MM-DD)
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
+	$(ETL) sync_delistings
 	$(ETL) daily_prices $(if $(date),--date $(date))
 
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
+
+HISTORY_START := 2004-02-11
+
+etl-history: ## Full history: delistings since 2001, then daily prices since 2004-02-11 (~6 h; resumable)
+	$(ETL) sync_delistings --param start_year=2001
+	$(ETL) backfill_prices --param start=$(HISTORY_START) $(if $(end),--param end=$(end))
+	$(ETL) sync_delistings
 
 web-install: ## Install web deps
 	$(WEB) install --frozen-lockfile

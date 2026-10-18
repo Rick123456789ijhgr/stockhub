@@ -4,6 +4,7 @@ Endpoints (robots.txt allows them; we stay at one request per 3 s):
 - MI_INDEX?type=ALLBUT0999  every listed security's daily quote for one date (since 2004)
 - holidaySchedule           announced holidays of a year (published from 2021)
 - isin.twse.com.tw          master list with listing dates, for TWSE (strMode=2) and TPEx (4)
+- company/suspendListing    companies delisted in a year (終止上市公司, from 2001)
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from stockhub.etl.providers.base import (
     CalendarEntry,
     CalendarProvider,
     DailyBar,
+    Delisting,
+    DelistingProvider,
     Market,
     PermanentProviderError,
     PriceProvider,
@@ -27,13 +30,20 @@ from stockhub.etl.providers.base import (
     Security,
     SecurityListProvider,
 )
-from stockhub.etl.providers.http import clean_number, get_bytes, get_json_bytes, make_client
+from stockhub.etl.providers.http import (
+    clean_number,
+    get_bytes,
+    get_json_bytes,
+    make_client,
+    roc_date,
+)
 from stockhub.etl.providers.registry import register_provider
 
 MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 HOLIDAY_URL = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
 ISIN_URL = "https://isin.twse.com.tw/isin/C_public.jsp"
 ISIN_MODES: dict[Market, int] = {"twse": 2, "tpex": 4}
+DELISTED_URL = "https://www.twse.com.tw/rwd/zh/company/suspendListing"
 
 NO_DATA = "沒有符合條件的資料"
 # ISIN sections we keep; warrants, ETNs, TDRs, preferred shares and REITs are out of scope.
@@ -49,12 +59,18 @@ def _decimal(value: str | None) -> Decimal | None:
     return Decimal(text) if text is not None else None
 
 
+def is_common_symbol(symbol: str) -> bool:
+    """Four-digit codes are common stocks; letters mark preferred shares and 91xx are TDRs."""
+    return len(symbol) == 4 and symbol.isdigit() and not symbol.startswith("91")
+
+
 @register_provider
-class TwseProvider(PriceProvider, CalendarProvider, SecurityListProvider):
+class TwseProvider(PriceProvider, CalendarProvider, SecurityListProvider, DelistingProvider):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0
     markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     security_markets: ClassVar[frozenset[Market]] = frozenset({"twse", "tpex"})
+    delisting_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()
@@ -161,6 +177,36 @@ class TwseProvider(PriceProvider, CalendarProvider, SecurityListProvider):
         if not securities:
             raise ValueError("no securities parsed from ISIN page")
         return securities
+
+    # ------------------------------------------------------------------ delistings
+
+    def fetch_delistings(self, market: Market, year: int) -> RawResponse:
+        if market != "twse":
+            raise PermanentProviderError(f"twse does not publish {market} delistings")
+        params = {"date": f"{year}0101", "response": "json"}
+        body = get_json_bytes(self.client, DELISTED_URL, params)
+        return RawResponse("suspend_listing", body, {"year": year, "market": market})
+
+    def parse_delistings(self, raw: RawResponse) -> list[Delisting]:
+        data = _loads(raw.payload)
+        if str(data.get("status", "")).lower() != "ok":
+            raise ValueError(f"unexpected status {data.get('status')!r}")
+        col = {name: i for i, name in enumerate(data["fields"])}
+        year = int(raw.params["year"])
+        out = []
+        for row in data.get("data") or []:
+            symbol = row[col["上市編號"]].strip()
+            day = roc_date(row[col["終止上市日期"]])
+            if day.year == year and is_common_symbol(symbol):
+                out.append(
+                    Delisting(
+                        symbol=symbol,
+                        name=row[col["公司名稱"]].strip(),
+                        market="twse",
+                        delisted_date=day,
+                    )
+                )
+        return out
 
 
 class _IsinTableParser(HTMLParser):

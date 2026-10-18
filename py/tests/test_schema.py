@@ -179,3 +179,14 @@ def test_trading_calendar_weekday_seed(pg: psycopg.Connection) -> None:
         ).fetchall()
     )
     assert rows == {date(2026, 10, 16): True, date(2026, 10, 17): False, date(2026, 10, 18): False}
+
+
+def test_calendar_seed_covers_2004_and_delisting_columns_default(pg: psycopg.Connection) -> None:
+    first = pg.execute("SELECT min(date) FROM trading_calendar").fetchone()
+    assert first == (date(2004, 1, 1),)
+    row = pg.execute(
+        "INSERT INTO stocks (symbol, market, type, name, listed_date) "
+        "VALUES ('T001', 'twse', 'stock', 'x', '2020-01-01') "
+        "RETURNING listed_date_estimated, delisting_reason"
+    ).fetchone()
+    assert row == (False, None)

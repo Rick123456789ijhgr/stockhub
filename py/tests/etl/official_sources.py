@@ -16,6 +16,10 @@ from stockhub.etl.providers.twse import TwseProvider
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
+FIELDS_TWSE = ["終止上市日期", "公司名稱", "上市編號"]
+FIELDS_TPEX = ["股票代號", "公司名稱", "終止上櫃日期", "終止上櫃原因", "公司資料網址"]
+
+
 def fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
@@ -47,6 +51,15 @@ def official_handler(request: httpx.Request) -> httpx.Response:
         )
     elif path.endswith("/C_public.jsp"):
         name = "isin_twse.html" if params["strMode"] == "2" else "isin_tpex.html"
+    elif path.endswith("/suspendListing"):
+        if params["date"] != "20260101":
+            return httpx.Response(200, json={"status": "ok", "fields": FIELDS_TWSE, "data": []})
+        name = "twse_delisted_2026.json"
+    elif path.endswith("/deListed"):
+        if params["date"] != "2026":
+            empty = {"stat": "ok", "tables": [{"fields": FIELDS_TPEX, "data": []}]}
+            return httpx.Response(200, json=empty)
+        name = "tpex_delisted_2026.json"
     else:
         return httpx.Response(404)
     return httpx.Response(200, content=fixture(name))
@@ -55,7 +68,14 @@ def official_handler(request: httpx.Request) -> httpx.Response:
 def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRouter:  # type: ignore[no-untyped-def]
     client = make_client(httpx.MockTransport(handler))
     twse, tpex = TwseProvider(client), TpexProvider(client)
-    registry = ProviderRegistry({"price": [twse, tpex], "calendar": [twse], "securities": [twse]})
+    registry = ProviderRegistry(
+        {
+            "price": [twse, tpex],
+            "calendar": [twse],
+            "securities": [twse],
+            "delistings": [twse, tpex],
+        }
+    )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)
     return ProviderRouter(
         registry,

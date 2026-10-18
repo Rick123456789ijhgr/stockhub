@@ -27,7 +27,7 @@ export const metadata: Metadata = { title: "個股" };
 export default function StocksPage({ searchParams }: PageProps<"/stocks">) {
   return (
     <>
-      <PageHeader title="個股" description="輸入代號或名稱搜尋上市、上櫃股票與 ETF。" />
+      <PageHeader title="個股" description="輸入代號或名稱搜尋上市、上櫃股票與 ETF（搜尋時也會列出已下市的公司）。" />
       <Suspense fallback={<Skeleton className="h-96 w-full" />}>
         <StockSearch searchParams={searchParams} />
       </Suspense>
@@ -97,6 +97,7 @@ function Labels({ stock }: { stock: StockListItem }) {
     <span className="flex items-center gap-1">
       <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
       {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
+      {stock.delistedDate ? <Badge variant="outline" className="text-muted-foreground">已下市</Badge> : null}
     </span>
   );
 }
@@ -106,7 +107,7 @@ function StockCards({ stocks }: { stocks: StockListItem[] }) {
   return (
     <ul className="space-y-2 md:hidden">
       {stocks.map((s) => (
-        <li key={s.symbol}>
+        <li key={`${s.symbol}-${s.delistedDate ?? ""}`}>
           <Link href={`/stocks/${s.symbol}`}>
             <Card size="sm">
               <CardContent className="flex items-center justify-between gap-3">
@@ -153,7 +154,7 @@ function StockTable({ stocks }: { stocks: StockListItem[] }) {
         </TableHeader>
         <TableBody>
           {stocks.map((s) => (
-            <TableRow key={s.symbol}>
+            <TableRow key={`${s.symbol}-${s.delistedDate ?? ""}`}>
               <TableCell className="font-mono">
                 <Link href={`/stocks/${s.symbol}`} className="underline-offset-4 hover:underline">
                   {s.symbol}

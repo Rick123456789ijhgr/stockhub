@@ -14,8 +14,14 @@ from sqlalchemy import Engine, text
 from stockhub.common.notifier import ConsoleNotifier
 from stockhub.common.rawstore import LocalRawStore
 from stockhub.etl.jobs.base import JobRunResult, run_job
-from stockhub.etl.jobs.market_data import calendar_rows, store_daily_bars
-from stockhub.etl.providers.base import CalendarEntry, DailyBar
+from stockhub.etl.jobs.market_data import (
+    DelistingStats,
+    apply_delisting,
+    calendar_rows,
+    stock_ids_on,
+    store_daily_bars,
+)
+from stockhub.etl.providers.base import CalendarEntry, DailyBar, Delisting
 
 from .official_sources import official_router
 
@@ -181,7 +187,7 @@ def test_bad_bars_go_to_quarantine(run: Any, clean_db: Engine) -> None:
         turnover=Decimal(1000),
     )
     with clean_db.begin() as conn:
-        stats = store_daily_bars(conn, "twse", [broken], "twse", None)
+        stats = store_daily_bars(conn, [broken], "twse", None)
     assert (stats.written, stats.quarantined) == (0, 1)
     assert _rows(clean_db, "SELECT count(*) FROM prices_daily") == [(0,)]
     assert _rows(clean_db, "SELECT reasons FROM prices_daily_quarantine") == [(["high_below_low"],)]
@@ -215,3 +221,125 @@ def test_unpublished_future_day_is_an_error_not_a_holiday(run: Any, clean_db: En
     assert _rows(
         clean_db, "SELECT is_trading_day FROM trading_calendar WHERE date = '2027-01-05'"
     ) == [(True,)]
+
+
+# ----------------------------------------------------------------------------- delistings
+
+
+def _add_stock(engine: Engine, symbol: str, market: str, listed: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO stocks (symbol, market, type, name, listed_date) "
+                "VALUES (:s, :m, 'stock', :s, :d)"
+            ),
+            {"s": symbol, "m": market, "d": listed},
+        )
+
+
+def test_sync_delistings_inserts_closes_and_skips_transfers(run: Any, clean_db: Engine) -> None:
+    _add_stock(clean_db, "3454", "twse", "2005-03-01")  # still active here: gets closed
+    _add_stock(clean_db, "8908", "twse", "2026-10-16")  # moved TPEx -> TWSE that day
+    result = run("sync_delistings", start_year=2026)
+    assert result.status == "succeeded"
+    assert result.message == (
+        "2026～2026：新增下市 9、現役改標下市 1、轉市場略過 1、已存在 0；以首筆日線修正上市日 0"
+    )
+    rows = {
+        r.symbol: r
+        for r in _rows(
+            clean_db,
+            "SELECT symbol, market, listed_date, listed_date_estimated, delisted_date, "
+            "delisting_reason FROM stocks",
+        )
+    }
+    assert rows["3454"].delisted_date == date(2026, 3, 27)
+    assert rows["3454"].listed_date_estimated is False
+    assert rows["8908"].delisted_date is None
+    assert (rows["2867"].market, rows["2867"].listed_date, rows["2867"].listed_date_estimated) == (
+        "twse",
+        date(1962, 2, 9),
+        True,
+    )
+    assert rows["5371"].delisting_reason is not None
+    assert run("sync_delistings", start_year=2026).rows_written == 0  # idempotent
+
+
+def test_reused_symbol_maps_bars_to_the_listing_alive_that_day(sa_conn: Any) -> None:
+    sa_conn.execute(
+        text(
+            "INSERT INTO stocks (symbol, market, type, name, listed_date, delisted_date) VALUES "
+            "('1234', 'twse', 'stock', 'old', '2001-01-01', '2010-06-01'), "
+            "('1234', 'tpex', 'stock', 'new', '2015-01-05', NULL), "
+            "('5678', 'tpex', 'stock', 'moved', '2026-10-16', NULL)"
+        )
+    )
+    old, new, moved = (
+        sa_conn.execute(text("SELECT id FROM stocks WHERE name = :n"), {"n": n}).scalar_one()
+        for n in ("old", "new", "moved")
+    )
+    before = stock_ids_on(sa_conn, date(2010, 5, 31))
+    assert (before["1234"], before["5678"]) == (old, moved)
+    assert stock_ids_on(sa_conn, date(2010, 6, 1))["1234"] == new
+    assert stock_ids_on(sa_conn, date(2020, 1, 2))["1234"] == new
+
+
+def test_estimated_listing_date_becomes_first_trading_day(run: Any, clean_db: Engine) -> None:
+    run("sync_stocks")
+    run("sync_delistings", start_year=2026)
+    bar = DailyBar(
+        symbol="2867",
+        trade_date=date(2025, 3, 3),
+        open=Decimal(10),
+        high=Decimal(11),
+        low=Decimal(9),
+        close=Decimal(10),
+        volume=1000,
+        turnover=Decimal(10000),
+    )
+    with clean_db.begin() as conn:
+        assert store_daily_bars(conn, [bar], "twse", None).written == 1
+        # After its delisting date the symbol is unknown again.
+        late = bar.model_copy(update={"trade_date": date(2026, 9, 1)})
+        assert store_daily_bars(conn, [late], "twse", None).unknown == 1
+    assert run("sync_delistings", start_year=2026).rows_written == 1
+    assert _rows(
+        clean_db, "SELECT listed_date, listed_date_estimated FROM stocks WHERE symbol = '2867'"
+    ) == [(date(2025, 3, 3), True)]
+
+
+@pytest.mark.parametrize("order", ["chronological", "reversed"])
+def test_cross_market_delistings_merge_into_one_listing(sa_conn: Any, order: str) -> None:
+    # 9999 traded on TPEx until 2011-07-22, then on TWSE until 2026-03-27 (like 3454 晶睿).
+    items = [
+        Delisting(symbol="9999", name="甲", market="tpex", delisted_date=date(2011, 7, 22)),
+        Delisting(symbol="9999", name="甲", market="twse", delisted_date=date(2026, 3, 27)),
+    ]
+    stats = DelistingStats()
+    for item in items if order == "chronological" else items[::-1]:
+        apply_delisting(sa_conn, item, stats)
+    for item in items:  # rerun is a no-op
+        apply_delisting(sa_conn, item, stats)
+    rows = sa_conn.execute(
+        text("SELECT market, listed_date, delisted_date FROM stocks WHERE symbol = '9999'")
+    ).all()
+    assert rows == [("twse", date(1962, 2, 9), date(2026, 3, 27))]
+    assert (stats.inserted, stats.closed) == (1, 0)
+
+
+def test_same_market_symbol_reuse_keeps_two_listings(sa_conn: Any) -> None:
+    stats = DelistingStats()
+    for day in (date(2008, 9, 1), date(2020, 5, 4)):
+        apply_delisting(
+            sa_conn, Delisting(symbol="9998", name="乙", market="twse", delisted_date=day), stats
+        )
+    rows = sa_conn.execute(
+        text(
+            "SELECT listed_date, delisted_date FROM stocks WHERE symbol = '9998' "
+            "ORDER BY listed_date"
+        )
+    ).all()
+    assert rows == [
+        (date(1962, 2, 9), date(2008, 9, 1)),
+        (date(2008, 9, 1), date(2020, 5, 4)),
+    ]

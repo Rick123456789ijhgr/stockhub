@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     providers_quote: CommaList = Field(default_factory=list)
     providers_calendar: CommaList = Field(default_factory=lambda: ["twse"])
     providers_securities: CommaList = Field(default_factory=lambda: ["twse"])
+    providers_delistings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
 
     @field_validator(
         "alert_email_to",
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
         "providers_quote",
         "providers_calendar",
         "providers_securities",
+        "providers_delistings",
         mode="before",
     )
     @classmethod

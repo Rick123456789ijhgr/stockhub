@@ -24,6 +24,8 @@ from stockhub.etl.providers.base import (
     CalendarProvider,
     DailyBar,
     DataKind,
+    Delisting,
+    DelistingProvider,
     FinancialItem,
     FinancialProvider,
     Market,
@@ -132,6 +134,15 @@ class ProviderRouter:
             lambda p: p.fetch_securities(market),
             lambda p, raw: p.parse_securities(raw),
             accepts=lambda p: market in p.security_markets,
+        )
+
+    def delistings(self, market: Market, year: int) -> Fetched[Delisting]:
+        return self._call(
+            "delistings",
+            DelistingProvider,
+            lambda p: p.fetch_delistings(market, year),
+            lambda p, raw: p.parse_delistings(raw),
+            accepts=lambda p: market in p.delisting_markets,
         )
 
     def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:

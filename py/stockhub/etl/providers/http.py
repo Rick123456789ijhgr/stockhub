@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import httpx
@@ -52,3 +53,19 @@ def clean_number(value: str | None) -> str | None:
     if not text or set(text) <= {"-", "+", " "} or text in {"X", "除權", "除息"}:
         return None
     return text
+
+
+def roc_date(value: str) -> date:
+    """Parse the exchanges' Minguo dates: '115/09/01', '115-10-16', '114年06月02日', '1140113'.
+
+    Gregorian dates ('2026/10/16', '20261016') pass through, so callers need not care which
+    calendar an endpoint uses.
+    """
+    text = value.strip().replace("年", "/").replace("月", "/").replace("日", "").replace("-", "/")
+    if "/" in text:
+        year, month, day = (int(part) for part in text.split("/"))
+    elif text.isdigit() and len(text) in (7, 8):
+        year, month, day = int(text[:-4]), int(text[-4:-2]), int(text[-2:])
+    else:
+        raise ValueError(f"unrecognized date {value!r}")
+    return date(year + 1911 if year < 1000 else year, month, day)

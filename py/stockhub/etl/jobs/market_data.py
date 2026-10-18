@@ -18,7 +18,7 @@ from stockhub.common.db import upsert
 from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.common.trading_calendar import is_trading_day, trading_days_between
 from stockhub.etl.jobs.base import Job, JobContext, JobError, JobOutcome, register_job
-from stockhub.etl.providers.base import CalendarEntry, DailyBar, Market, Security
+from stockhub.etl.providers.base import CalendarEntry, DailyBar, Delisting, Market, Security
 from stockhub.etl.quality import check_daily_bar
 
 log = logging.getLogger(__name__)
@@ -140,8 +140,171 @@ class SyncStocksJob(Job):
             with ctx.engine.begin() as conn:
                 ctx.add_rows(_sync_market_securities(conn, market, securities))
             counts.append(f"{market} {len(securities)} 檔")
-        # TODO: mark stocks missing from the lists as delisted once a delisting source exists.
+        # Stocks that left the lists are closed by sync_delistings (official delisting dates).
         return JobOutcome(message="主檔：" + "、".join(counts))
+
+
+# ----------------------------------------------------------------------------- delistings
+
+TWSE_OPENING = date(1962, 2, 9)
+"""Earliest possible listing date; placeholder until the first stored price refines it."""
+TRANSFER_WINDOW = (timedelta(days=-7), timedelta(days=30))
+"""A same-symbol listing on the other market this close to a delisting is a market transfer."""
+
+
+@dataclass
+class DelistingStats:
+    inserted: int = 0
+    closed: int = 0
+    transfers: int = 0
+    unchanged: int = 0
+
+    def __str__(self) -> str:
+        return (
+            f"新增下市 {self.inserted}、現役改標下市 {self.closed}、"
+            f"轉市場略過 {self.transfers}、已存在 {self.unchanged}"
+        )
+
+
+def apply_delisting(conn: Connection, item: Delisting, stats: DelistingStats) -> None:
+    """Record one delisting idempotently, keeping one row per listing incarnation.
+
+    - same symbol already delisted on that date: nothing to do;
+    - the symbol is active on the other market and was listed around that date: it moved
+      market (e.g. 上櫃轉上市), the stock lives on;
+    - active on the same market and listed before that date: close that row;
+    - a delisted row on the other market already spans that date (its estimated listing
+      starts earlier): the company moved market before that delisting, nothing to add;
+    - the latest earlier incarnation was delisted from the other market: the company moved
+      market (both directions happen, e.g. 上櫃轉上市 or 下市改列上櫃) and traded there until
+      this date, so that row is extended instead of starting a second id;
+    - otherwise it is an earlier incarnation we never stored: insert it with an estimated
+      listing date (the delisting lists carry none).
+    """
+    rows = conn.execute(
+        text(
+            "SELECT id, market, listed_date, listed_date_estimated, delisted_date FROM stocks "
+            "WHERE symbol = :s ORDER BY listed_date"
+        ),
+        {"s": item.symbol},
+    ).all()
+    if any(r.delisted_date == item.delisted_date for r in rows):
+        stats.unchanged += 1
+        return
+    if any(
+        r.market != item.market
+        and r.listed_date_estimated
+        and r.listed_date < item.delisted_date < r.delisted_date
+        for r in rows
+        if r.delisted_date is not None
+    ):
+        stats.transfers += 1
+        return
+    lo, hi = TRANSFER_WINDOW
+    for r in rows:
+        if r.delisted_date is not None:
+            continue
+        if r.market != item.market and item.delisted_date + lo <= r.listed_date <= (
+            item.delisted_date + hi
+        ):
+            stats.transfers += 1
+            return
+        if r.market == item.market and r.listed_date < item.delisted_date:
+            conn.execute(
+                text(
+                    "UPDATE stocks SET delisted_date = :d, delisting_reason = :reason "
+                    "WHERE id = :id"
+                ),
+                {"d": item.delisted_date, "reason": item.reason, "id": r.id},
+            )
+            stats.closed += 1
+            return
+    earlier = [
+        r for r in rows if r.delisted_date is not None and r.delisted_date < item.delisted_date
+    ]
+    latest = max(earlier, key=lambda r: r.delisted_date, default=None)
+    if latest is not None and latest.market != item.market and latest.listed_date_estimated:
+        conn.execute(
+            text(
+                "UPDATE stocks SET market = :market, name = :name, delisted_date = :d, "
+                "delisting_reason = :reason WHERE id = :id"
+            ),
+            {
+                "market": item.market,
+                "name": item.name,
+                "d": item.delisted_date,
+                "reason": item.reason,
+                "id": latest.id,
+            },
+        )
+        stats.transfers += 1
+        return
+    result = conn.execute(
+        text(
+            "INSERT INTO stocks (symbol, market, type, name, listed_date, delisted_date, "
+            "listed_date_estimated, delisting_reason) "
+            "VALUES (:symbol, :market, :type, :name, :listed, :delisted, true, :reason) "
+            "ON CONFLICT (symbol, listed_date) DO NOTHING"
+        ),
+        {
+            "symbol": item.symbol,
+            "market": item.market,
+            "type": "etf" if item.symbol.startswith("00") else "stock",
+            "name": item.name,
+            "listed": latest.delisted_date if latest is not None else TWSE_OPENING,
+            "delisted": item.delisted_date,
+            "reason": item.reason,
+        },
+    )
+    if result.rowcount:
+        stats.inserted += 1
+    else:
+        log.warning("could not insert delisting %s (listing date collision)", item)
+
+
+def refine_estimated_listed_dates(conn: Connection) -> int:
+    """Estimated listing dates become the first stored trading day once prices exist."""
+    result = conn.execute(
+        text(
+            "UPDATE stocks s SET listed_date = f.first_day "
+            "FROM (SELECT p.stock_id, min(p.trade_date) AS first_day FROM prices_daily p "
+            "      WHERE p.stock_id IN (SELECT id FROM stocks WHERE listed_date_estimated) "
+            "      GROUP BY p.stock_id) f "
+            "WHERE s.id = f.stock_id AND s.listed_date_estimated "
+            "AND s.listed_date IS DISTINCT FROM f.first_day"
+        )
+    )
+    return result.rowcount
+
+
+@register_job
+class SyncDelistingsJob(Job):
+    name: ClassVar[str] = "sync_delistings"
+    description: ClassVar[str] = (
+        "Import TWSE/TPEx delisted companies (params: start_year, end_year; default this year)"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        router = ctx.require_router()
+        this_year = taipei_today().year
+        start = int(ctx.params.get("start_year", this_year))
+        end = int(ctx.params.get("end_year", this_year))
+        first = int((ctx.checkpoint or {}).get("next_year", start))
+        stats = DelistingStats()
+        for year in range(first, end + 1):
+            for market in MARKETS:
+                items = router.delistings(market, year).items
+                with ctx.engine.begin() as conn:
+                    before = stats.inserted + stats.closed
+                    for item in items:
+                        apply_delisting(conn, item, stats)
+                    ctx.add_rows(stats.inserted + stats.closed - before)
+            ctx.save_checkpoint({"next_year": year + 1})
+        with ctx.engine.begin() as conn:
+            refined = refine_estimated_listed_dates(conn)
+        ctx.add_rows(refined)
+        return JobOutcome(message=f"{start}～{end}：{stats}；以首筆日線修正上市日 {refined}")
 
 
 # ----------------------------------------------------------------------------- daily prices
@@ -161,26 +324,38 @@ class IngestStats:
         )
 
 
+def stock_ids_on(conn: Connection, day: date) -> dict[str, int]:
+    """symbol -> stock id of the listing alive on `day`.
+
+    A reused symbol maps to the incarnation that ends first (the old one before its
+    delisting, the new one after). The market is deliberately ignored: a stock that moved
+    from TPEx to TWSE keeps one id, so its OTC history stays attached to it.
+    """
+    rows = conn.execute(
+        text(
+            "SELECT DISTINCT ON (symbol) symbol, id FROM stocks "
+            "WHERE delisted_date IS NULL OR delisted_date > :d "
+            "ORDER BY symbol, delisted_date NULLS LAST"
+        ),
+        {"d": day},
+    ).all()
+    return {r.symbol: r.id for r in rows}
+
+
 def store_daily_bars(
     conn: Connection,
-    market: Market,
     bars: list[DailyBar],
     source: str,
     raw_object_id: int | None,
 ) -> IngestStats:
     """Write clean bars to prices_daily and failing ones to the quarantine table."""
     stats = IngestStats(received=len(bars))
-    ids: dict[str, int] = dict(
-        conn.execute(
-            text("SELECT symbol, id FROM stocks WHERE market = :m AND delisted_date IS NULL"),
-            {"m": market},
-        ).all()
-    )
+    ids = {day: stock_ids_on(conn, day) for day in {bar.trade_date for bar in bars}}
     good: list[dict[str, Any]] = []
     bad: list[dict[str, Any]] = []
     now = utcnow()
     for bar in bars:
-        stock_id = ids.get(bar.symbol)
+        stock_id = ids[bar.trade_date].get(bar.symbol)
         if stock_id is None:
             stats.unknown += 1
             continue
@@ -246,7 +421,7 @@ def ingest_day(ctx: JobContext, day: date) -> tuple[DayResult, str]:
         if not fetched.items and market == "twse":
             return "closed", _handle_missing_day(ctx, day)
         with ctx.engine.begin() as conn:
-            stats = store_daily_bars(conn, market, fetched.items, fetched.provider, fetched.raw.id)
+            stats = store_daily_bars(conn, fetched.items, fetched.provider, fetched.raw.id)
         ctx.add_rows(stats.written)
         parts.append(f"{market}：{stats}")
     return "ingested", "；".join(parts)
