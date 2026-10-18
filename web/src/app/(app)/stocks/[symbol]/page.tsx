@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PriceChange } from "@/components/price-change";
+import { StockChart } from "@/components/stock-chart/stock-chart";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +20,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatHundredMillion, formatLots, formatPrice } from "@/lib/format";
 import { priceChange } from "@/lib/price";
-import { type DailyBarRow, getStockWithBars, MARKET_LABEL } from "@/lib/stocks";
+import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
 
 export default function StockPage({ params }: PageProps<"/stocks/[symbol]">) {
   return (
@@ -41,9 +42,10 @@ export default function StockPage({ params }: PageProps<"/stocks/[symbol]">) {
 async function StockContent({ params }: { params: PageProps<"/stocks/[symbol]">["params"] }) {
   await requireUser();
   const { symbol } = await params;
-  const data = await getStockWithBars(getDb(), decodeURIComponent(symbol));
-  if (!data) notFound();
-  const { stock, bars } = data;
+  const db = getDb();
+  const stock = await findStock(db, decodeURIComponent(symbol));
+  if (!stock) notFound();
+  const bars = await getRecentBars(db, stock.id);
   const latest = bars[0];
   const change = latest ? priceChange(latest.close, latest.prevClose) : null;
 
@@ -93,9 +95,10 @@ async function StockContent({ params }: { params: PageProps<"/stocks/[symbol]">[
         </Card>
       )}
 
+      {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
       {bars.length > 0 ? <BarsTable bars={bars} /> : null}
       <p className="mt-3 text-xs text-muted-foreground">
-        價格為未還原價，漲跌以前一交易日收盤計算；除權息日的漲跌會偏大，還原價將在下一階段加入。
+        表格為交易所公布的原始價；漲跌以前一交易日收盤計算，除權息日改以參考價（前收乘上還原因子）為基準，與交易所的漲跌一致。
       </p>
     </>
   );

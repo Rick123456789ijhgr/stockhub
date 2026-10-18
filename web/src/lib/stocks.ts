@@ -2,6 +2,7 @@ import "server-only";
 
 import { type Kysely, sql } from "kysely";
 
+import type { ChartBar } from "@/lib/chart-data";
 import type { DB } from "@/lib/db";
 
 export type Market = "twse" | "tpex";
@@ -17,15 +18,16 @@ export type StockListItem = {
   delistedDate: string | null;
   tradeDate: string | null;
   close: string | null;
+  /** Previous close on the latest bar's share basis (see `rebasedPrevClose`). */
   prevClose: string | null;
   volume: string | null;
 };
 
 /**
- * Stocks matching `query` (symbol prefix or name substring), each with its latest
- * bar and the previous close. Change is raw close-to-close: not yet adjusted for
- * dividends (adj_factor arrives with corporate actions). Delisted stocks only appear when
- * searched for, after the active ones.
+ * Stocks matching `query` (symbol prefix or name substring), each with its latest bar and
+ * the previous close rebased with adj_factor, so the change on an ex-date is measured
+ * against the reference price instead of the pre-dividend close. Delisted stocks only
+ * appear when searched for, after the active ones.
  */
 export async function searchStocks(
   db: Kysely<DB>,
@@ -42,7 +44,7 @@ export async function searchStocks(
     FROM stocks s
     LEFT JOIN LATERAL (
       SELECT p.trade_date, p.close, p.volume::text AS volume,
-             (SELECT p2.close FROM prices_daily p2
+             (SELECT round(p2.close * p2.adj_factor / p.adj_factor, 4) FROM prices_daily p2
                WHERE p2.stock_id = s.id AND p2.trade_date < p.trade_date AND p2.close IS NOT NULL
                ORDER BY p2.trade_date DESC LIMIT 1) AS prev_close
       FROM prices_daily p
@@ -59,6 +61,7 @@ export async function searchStocks(
 }
 
 export type StockDetail = {
+  id: number;
   symbol: string;
   name: string;
   market: Market;
@@ -69,26 +72,8 @@ export type StockDetail = {
   delistedDate: string | null;
 };
 
-export type DailyBarRow = {
-  tradeDate: string;
-  open: string | null;
-  high: string | null;
-  low: string | null;
-  close: string | null;
-  prevClose: string | null;
-  volume: string;
-  turnover: string;
-};
-
-/**
- * The listing for `symbol` (the active one, else the most recently delisted) and its
- * latest `days` bars, newest first.
- */
-export async function getStockWithBars(
-  db: Kysely<DB>,
-  symbol: string,
-  days = 120,
-): Promise<{ stock: StockDetail; bars: DailyBarRow[] } | null> {
+/** The listing for `symbol`: the active one, else the most recently delisted. */
+export async function findStock(db: Kysely<DB>, symbol: string): Promise<StockDetail | null> {
   const stock = await db
     .selectFrom("stocks")
     .select([
@@ -107,7 +92,45 @@ export async function getStockWithBars(
     .orderBy("delisted_date", "desc")
     .executeTakeFirst();
   if (!stock) return null;
+  return {
+    ...stock,
+    id: Number(stock.id),
+    market: stock.market as Market,
+    type: stock.type as StockDetail["type"],
+  };
+}
 
+export type DailyBarRow = {
+  tradeDate: string;
+  open: string | null;
+  high: string | null;
+  low: string | null;
+  close: string | null;
+  /** Previous close on this bar's share basis (see `rebasedPrevClose`). */
+  prevClose: string | null;
+  volume: string;
+  turnover: string;
+  adjFactor: string;
+};
+
+/**
+ * `prevClose` restated on the basis of a bar with `adjFactor`: on an ex-dividend day this
+ * is the reference price, so the change shows the real move (exchange convention).
+ */
+export function rebasedPrevClose(
+  prevClose: string,
+  prevFactor: string,
+  adjFactor: string,
+): string {
+  return ((Number(prevClose) * Number(prevFactor)) / Number(adjFactor)).toFixed(4);
+}
+
+/** The latest `days` bars of a stock, newest first. */
+export async function getRecentBars(
+  db: Kysely<DB>,
+  stockId: number,
+  days = 120,
+): Promise<DailyBarRow[]> {
   // One extra row so the oldest shown bar still has a previous close.
   const rows = await db
     .selectFrom("prices_daily")
@@ -119,25 +142,37 @@ export async function getStockWithBars(
       "close",
       sql<string>`volume::text`.as("volume"),
       "turnover",
+      "adj_factor as adjFactor",
     ])
-    .where("stock_id", "=", stock.id)
+    .where("stock_id", "=", String(stockId))
     .orderBy("trade_date", "desc")
     .limit(days + 1)
     .execute();
 
-  const bars = rows.slice(0, days).map((row, i) => ({
-    ...row,
-    prevClose: rows.slice(i + 1).find((r) => r.close !== null)?.close ?? null,
-  }));
-  const detail: StockDetail = {
-    symbol: stock.symbol,
-    name: stock.name,
-    market: stock.market as Market,
-    type: stock.type as StockDetail["type"],
-    industry: stock.industry,
-    listedDate: stock.listedDate,
-    listedDateEstimated: stock.listedDateEstimated,
-    delistedDate: stock.delistedDate,
-  };
-  return { stock: detail, bars };
+  return rows.slice(0, days).map((row, i) => {
+    const prev = rows.slice(i + 1).find((r) => r.close !== null);
+    return {
+      ...row,
+      prevClose: prev?.close ? rebasedPrevClose(prev.close, prev.adjFactor, row.adjFactor) : null,
+    };
+  });
+}
+
+/** Every traded bar of a stock, oldest first, as compact numbers for the chart. */
+export async function getChartBars(db: Kysely<DB>, stockId: number): Promise<ChartBar[]> {
+  const result = await sql<{ t: string; o: string; h: string; l: string; c: string; v: string; f: string }>`
+    SELECT trade_date AS t, open AS o, high AS h, low AS l, close AS c, volume AS v, adj_factor AS f
+    FROM prices_daily
+    WHERE stock_id = ${stockId} AND close IS NOT NULL
+    ORDER BY trade_date
+  `.execute(db);
+  return result.rows.map((r) => [
+    r.t,
+    Number(r.o),
+    Number(r.h),
+    Number(r.l),
+    Number(r.c),
+    Number(r.v),
+    Number(r.f),
+  ]);
 }
