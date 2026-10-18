@@ -1,6 +1,7 @@
 import "server-only";
 
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
 import { auth } from "@/auth";
 import { allowlistFromEnv, isAllowedEmail } from "@/lib/auth/allowlist";
@@ -13,7 +14,11 @@ export type CurrentUser = { email: string; name: string | null };
  * from ALLOWED_EMAIL revokes existing sessions). Null when not signed in or not allowed.
  */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (isAuthDisabled()) return { ...LOCAL_USER };
+  if (isAuthDisabled()) {
+    // Like a real session read, the bypass must make the render request-time.
+    await connection();
+    return { ...LOCAL_USER };
+  }
   const session = await auth();
   const email = session?.user?.email;
   if (!email || !isAllowedEmail(email, allowlistFromEnv())) return null;
