@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { ThemeToggle } from "@/components/appearance-controls";
 import {
   BottomNav,
   BottomNavList,
@@ -24,7 +25,8 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
         <Suspense fallback={<SidebarNavList pathname="" />}>
           <SidebarNav />
         </Suspense>
-        <div className="mt-auto px-1">
+        <div className="mt-auto space-y-2 px-1">
+          <ThemeToggle />
           <Suspense fallback={<Skeleton className="h-8 w-full" />}>
             <UserMenu />
           </Suspense>
@@ -32,8 +34,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-10 flex h-12 items-center border-b bg-background/95 px-4 backdrop-blur md:hidden">
+        <header className="sticky top-0 z-10 flex h-12 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <Brand />
+          <ThemeToggle />
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-24 md:px-8 md:py-8">
           <Suspense fallback={<PageSkeleton />}>
