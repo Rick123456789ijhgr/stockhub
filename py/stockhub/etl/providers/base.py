@@ -16,7 +16,9 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-DataKind = Literal["price", "financial", "quote"]
+DataKind = Literal["price", "financial", "quote", "calendar", "securities"]
+Market = Literal["twse", "tpex"]
+"""twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
 
 
 # ----------------------------------------------------------------------------- errors
@@ -75,6 +77,26 @@ class DailyBar(_Model):
     turnover: Decimal = Field(ge=0, description="TWD")
 
 
+class CalendarEntry(_Model):
+    """A date the exchange announced as special: a holiday, or an explicit trading day."""
+
+    day: date
+    name: str
+    is_trading_day: bool
+
+
+class Security(_Model):
+    """One listed security from an exchange's master list."""
+
+    symbol: str
+    name: str
+    market: Market
+    type: Literal["stock", "etf"]
+    listed_date: date
+    industry: str | None = None
+    isin: str | None = None
+
+
 class FinancialItem(_Model):
     """One reported line item, as published (usually year-to-date)."""
 
@@ -116,14 +138,36 @@ class Provider(ABC):
 
 
 class PriceProvider(Provider):
-    @abstractmethod
-    def fetch_daily_prices(
-        self, start: date, end: date, symbols: Sequence[str] | None = None
-    ) -> RawResponse:
-        """Daily bars for [start, end]; symbols=None means the whole market."""
+    markets: ClassVar[frozenset[Market]]
+    """Markets this source can serve; the router skips it for others."""
 
     @abstractmethod
-    def parse_daily_prices(self, raw: RawResponse) -> list[DailyBar]: ...
+    def fetch_daily_prices(self, trade_date: date, market: Market) -> RawResponse:
+        """All bars of one market on one date (official sources publish whole-market days)."""
+
+    @abstractmethod
+    def parse_daily_prices(self, raw: RawResponse) -> list[DailyBar]:
+        """Empty list = the market did not trade that day."""
+
+
+class CalendarProvider(Provider):
+    @abstractmethod
+    def fetch_calendar(self, year: int) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_calendar(self, raw: RawResponse) -> list[CalendarEntry]:
+        """Announced special dates of the year; an empty list means not published."""
+
+
+class SecurityListProvider(Provider):
+    security_markets: ClassVar[frozenset[Market]]
+    """Markets whose master list this source publishes (separate from price markets)."""
+
+    @abstractmethod
+    def fetch_securities(self, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_securities(self, raw: RawResponse) -> list[Security]: ...
 
 
 class FinancialProvider(Provider):
@@ -146,4 +190,6 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "price": PriceProvider,
     "financial": FinancialProvider,
     "quote": QuoteProvider,
+    "calendar": CalendarProvider,
+    "securities": SecurityListProvider,
 }

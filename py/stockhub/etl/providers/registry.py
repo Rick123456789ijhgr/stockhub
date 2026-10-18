@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     from stockhub.common.settings import Settings
 
 # Modules whose import registers built-in adapters.
-BUILTIN_MODULES = ("stockhub.etl.providers.fake",)
+BUILTIN_MODULES = (
+    "stockhub.etl.providers.fake",
+    "stockhub.etl.providers.twse",
+    "stockhub.etl.providers.tpex",
+)
 
 _REGISTRY: dict[str, type[Provider]] = {}
 
@@ -83,5 +87,7 @@ class ProviderRegistry:
                 "price": settings.providers_price,
                 "financial": settings.providers_financial,
                 "quote": settings.providers_quote,
+                "calendar": settings.providers_calendar,
+                "securities": settings.providers_securities,
             }
         )

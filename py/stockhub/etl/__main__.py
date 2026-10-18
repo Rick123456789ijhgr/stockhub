@@ -21,6 +21,8 @@ from stockhub.etl.jobs.base import (
     registered_jobs,
     run_job,
 )
+from stockhub.etl.providers.registry import ProviderRegistry
+from stockhub.etl.providers.router import ProviderRouter
 
 
 def _param(value: str) -> tuple[str, str]:
@@ -71,14 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.date:
         params["date"] = args.date
     engine = get_engine()
+    rawstore = build_rawstore(engine, settings)
     try:
         result = run_job(
             args.job,
             params,
             args.trigger,
             engine=engine,
-            rawstore=build_rawstore(engine, settings),
+            rawstore=rawstore,
             notifier=build_notifier(settings),
+            router=ProviderRouter(ProviderRegistry.from_settings(settings), rawstore),
         )
     except UnknownJobError as exc:
         print(exc, file=sys.stderr)
@@ -89,7 +93,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         f"{result.job_name} #{result.run_id} {result.status} "
-        f"rows_written={result.rows_written}" + (f"\n{result.error}" if result.error else "")
+        f"rows_written={result.rows_written}"
+        + (f"\n{result.message}" if result.message and result.status != "skipped" else "")
+        + (f"\n{result.error}" if result.error else "")
     )
     return 1 if result.status == "failed" else 0
 

@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,9 @@ from sqlalchemy.exc import IntegrityError
 from stockhub.common.notifier import Notifier
 from stockhub.common.rawstore import RawStore
 from stockhub.common.timeutil import taipei_today, utcnow
+
+if TYPE_CHECKING:
+    from stockhub.etl.providers.router import ProviderRouter
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +60,13 @@ class JobContext:
     checkpoint: dict[str, Any] | None
     """Checkpoint to resume from (None on a fresh run)."""
     rows_written: int = 0
+    router: ProviderRouter | None = None
+    """Provider access for jobs that fetch data (built by the CLI, injected in tests)."""
+
+    def require_router(self) -> ProviderRouter:
+        if self.router is None:
+            raise JobError(f"job {self.job_name} needs a provider router")
+        return self.router
 
     @property
     def run_date(self) -> date:
@@ -95,6 +105,8 @@ class JobRunResult:
     rows_written: int
     error: str | None = None
     resumed_from: dict[str, Any] | None = field(default=None)
+    message: str | None = None
+    """Summary from the job (e.g. rows per market), also logged."""
 
 
 class Job(ABC):
@@ -147,6 +159,7 @@ def run_job(
     rawstore: RawStore,
     notifier: Notifier,
     job_factory: Callable[[type[Job]], Job] | None = None,
+    router: ProviderRouter | None = None,
 ) -> JobRunResult:
     jobs = registered_jobs()
     if name not in jobs:
@@ -158,14 +171,16 @@ def run_job(
 
     resume = _resume_checkpoint(engine, name, params_json)
     run_id = _start_run(engine, job_cls, params_json, trigger, resume)
-    ctx = JobContext(run_id, name, clean, engine, rawstore, notifier, resume)
+    ctx = JobContext(run_id, name, clean, engine, rawstore, notifier, resume, router=router)
     log.info("job %s #%d started params=%s resume=%s", name, run_id, params_json, bool(resume))
 
     status: FinalStatus
     error: str | None = None
+    message: str | None = None
     try:
         outcome = job.run(ctx)
         status = outcome.status
+        message = outcome.message
         error = outcome.message if outcome.status == "skipped" else None
     except Exception as exc:
         status = "failed"
@@ -177,9 +192,9 @@ def run_job(
 
     previous = _previous_status(engine, name, run_id)
     _finish_run(engine, ctx, status, error)
-    log.info("job %s #%d %s rows=%d", name, run_id, status, ctx.rows_written)
+    log.info("job %s #%d %s rows=%d %s", name, run_id, status, ctx.rows_written, message or "")
     _notify_transition(notifier, name, run_id, clean, status, error, previous)
-    return JobRunResult(run_id, name, clean, status, ctx.rows_written, error, resume)
+    return JobRunResult(run_id, name, clean, status, ctx.rows_written, error, resume, message)
 
 
 # ----------------------------------------------------------------------------- job_runs I/O

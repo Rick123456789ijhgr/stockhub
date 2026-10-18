@@ -16,13 +16,17 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from stockhub.common.rawstore import RawObject, RawStore
+from stockhub.common.settings import ConfigError
 from stockhub.etl.providers.base import (
     AllProvidersFailedError,
     Attempt,
+    CalendarEntry,
+    CalendarProvider,
     DailyBar,
     DataKind,
     FinancialItem,
     FinancialProvider,
+    Market,
     PermanentProviderError,
     PriceProvider,
     Provider,
@@ -30,6 +34,8 @@ from stockhub.etl.providers.base import (
     Quote,
     QuoteProvider,
     RawResponse,
+    Security,
+    SecurityListProvider,
 )
 from stockhub.etl.providers.registry import ProviderRegistry
 
@@ -102,14 +108,30 @@ class ProviderRouter:
 
     # ------------------------------------------------------------------ public API
 
-    def daily_prices(
-        self, start: date, end: date, symbols: Sequence[str] | None = None
-    ) -> Fetched[DailyBar]:
+    def daily_prices(self, trade_date: date, market: Market) -> Fetched[DailyBar]:
         return self._call(
             "price",
             PriceProvider,
-            lambda p: p.fetch_daily_prices(start, end, symbols),
+            lambda p: p.fetch_daily_prices(trade_date, market),
             lambda p, raw: p.parse_daily_prices(raw),
+            accepts=lambda p: market in p.markets,
+        )
+
+    def calendar(self, year: int) -> Fetched[CalendarEntry]:
+        return self._call(
+            "calendar",
+            CalendarProvider,
+            lambda p: p.fetch_calendar(year),
+            lambda p, raw: p.parse_calendar(raw),
+        )
+
+    def securities(self, market: Market) -> Fetched[Security]:
+        return self._call(
+            "securities",
+            SecurityListProvider,
+            lambda p: p.fetch_securities(market),
+            lambda p, raw: p.parse_securities(raw),
+            accepts=lambda p: market in p.security_markets,
         )
 
     def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:
@@ -136,11 +158,18 @@ class ProviderRouter:
         interface: type[P],
         fetch: Callable[[P], RawResponse],
         parse: Callable[[P, RawResponse], list[T]],
+        accepts: Callable[[P], bool] | None = None,
     ) -> Fetched[T]:
         failures: list[Attempt] = []
-        for index, provider in enumerate(self.registry.providers_for(kind)):
+        candidates: list[P] = []
+        for provider in self.registry.providers_for(kind):
             if not isinstance(provider, interface):  # guaranteed by the registry
                 raise TypeError(f"{provider.name} is not a {interface.__name__}")
+            if accepts is None or accepts(provider):
+                candidates.append(provider)
+        if not candidates:
+            raise ConfigError(f"no configured {kind} provider supports this request")
+        for index, provider in enumerate(candidates):
             if index > 0:
                 log.warning(
                     "%s provider %s failed; falling back to %s",

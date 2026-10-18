@@ -182,6 +182,28 @@ export interface PricesDaily {
   volume: Generated<Int8>;
 }
 
+export interface PricesDailyQuarantine {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  /**
+   * The parsed bar as received (prices as strings).
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  /**
+   * Failed checks, e.g. high_below_low, partial_ohlc.
+   */
+  reasons: string[];
+  /**
+   * How it was resolved (accepted, discarded, refetched); NULL while pending.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  stock_id: Int8;
+  trade_date: string;
+}
+
 export interface RawObjects {
   /**
    * Size of the uncompressed payload in bytes.
@@ -215,6 +237,10 @@ export interface Stocks {
   created_at: Generated<Timestamp>;
   delisted_date: string | null;
   id: Generated<Int8>;
+  /**
+   * Industry name as listed on the exchange ISIN page (e.g. 半導體業); industry_code is filled once an official code mapping is imported.
+   */
+  industry: string | null;
   industry_code: string | null;
   /**
    * Listing date; with symbol forms the natural key because symbols can be reused after delisting.
@@ -255,6 +281,7 @@ export interface DB {
   monthly_revenue: MonthlyRevenue;
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
+  prices_daily_quarantine: PricesDailyQuarantine;
   raw_objects: RawObjects;
   settings: Settings;
   stocks: Stocks;

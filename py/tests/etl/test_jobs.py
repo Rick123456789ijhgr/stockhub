@@ -81,7 +81,10 @@ def test_date_defaults_to_taipei_today(run: Any) -> None:
 
 
 def test_unknown_job(run: Any) -> None:
-    with pytest.raises(UnknownJobError, match="available: freshness_check, heartbeat"):
+    with pytest.raises(
+        UnknownJobError,
+        match="available: backfill_prices, daily_prices, freshness_check, heartbeat",
+    ):
         run("nope")
 
 
