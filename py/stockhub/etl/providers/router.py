@@ -31,6 +31,8 @@ from stockhub.etl.providers.base import (
     DelistingProvider,
     DividendDetail,
     DividendDetailProvider,
+    ExRightsPreview,
+    ExRightsPreviewProvider,
     FinancialItem,
     FinancialProvider,
     Market,
@@ -202,6 +204,15 @@ class ProviderRouter:
             lambda p: p.fetch_dividend_detail(market, symbol, ex_date),
             lambda p, raw: p.parse_dividend_detail(raw),
             accepts=lambda p: market in p.detail_markets and ex_date >= p.detail_since,
+        )
+
+    def ex_rights_previews(self, market: Market) -> Fetched[ExRightsPreview]:
+        return self._call(
+            "ex_rights_previews",
+            ExRightsPreviewProvider,
+            lambda p: p.fetch_ex_rights_previews(market),
+            lambda p, raw: p.parse_ex_rights_previews(raw),
+            accepts=lambda p: market in p.preview_markets,
         )
 
     def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:

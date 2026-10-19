@@ -266,3 +266,18 @@ def test_m2_portfolio_columns_and_watchlist_position(pg: psycopg.Connection) -> 
     pg.execute("INSERT INTO watchlist (stock_id) VALUES (%s)", (stock_id,))
     position = pg.execute("SELECT position FROM watchlist WHERE stock_id = %s", (stock_id,))
     assert position.fetchone() == (0,)
+
+
+def test_corporate_action_previews_key_and_checks(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO corporate_action_previews (stock_id, ex_date, source, label, action_type, "
+        "cash_dividend) VALUES (%s, '2026-10-22', 'twse', %s, 'cash_dividend', NULL)"
+    )
+    pg.execute(sql, (stock_id, "息"))
+    row = pg.execute(
+        "SELECT stock_dividend_ratio, rights_ratio FROM corporate_action_previews"
+    ).fetchone()
+    assert row == (Decimal(0), Decimal(0))
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, "息"))
+    _expect(pg, errors.CheckViolation, sql.replace("'twse'", "'tpex'"), (stock_id, "除息"))

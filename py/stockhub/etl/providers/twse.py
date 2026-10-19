@@ -32,6 +32,8 @@ from stockhub.etl.providers.base import (
     DelistingProvider,
     DividendDetail,
     DividendDetailProvider,
+    ExRightsPreview,
+    ExRightsPreviewProvider,
     Market,
     PermanentProviderError,
     PriceProvider,
@@ -44,6 +46,7 @@ from stockhub.etl.providers.http import (
     get_bytes,
     get_json_bytes,
     make_client,
+    preview_fields,
     roc_date,
 )
 from stockhub.etl.providers.registry import register_provider
@@ -53,6 +56,7 @@ HOLIDAY_URL = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
 ISIN_URL = "https://isin.twse.com.tw/isin/C_public.jsp"
 ISIN_MODES: dict[Market, int] = {"twse": 2, "tpex": 4}
 DELISTED_URL = "https://www.twse.com.tw/rwd/zh/company/suspendListing"
+PREVIEW_URL = "https://openapi.twse.com.tw/v1/exchangeReport/TWT48U_ALL"
 
 NO_DATA = "沒有符合條件的資料"
 # ISIN sections we keep; warrants, ETNs, TDRs, preferred shares and REITs are out of scope.
@@ -81,6 +85,7 @@ class TwseProvider(
     DelistingProvider,
     CorporateActionProvider,
     DividendDetailProvider,
+    ExRightsPreviewProvider,
 ):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0
@@ -88,11 +93,40 @@ class TwseProvider(
     security_markets: ClassVar[frozenset[Market]] = frozenset({"twse", "tpex"})
     delisting_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     detail_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    preview_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     detail_since: ClassVar[date] = date(2009, 1, 1)
     """TWT49UDetail answers 無相關資料 for earlier events; their TWT49U rows split 權值/息值."""
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()
+
+    # ------------------------------------------------------------------ ex-rights previews
+
+    def fetch_ex_rights_previews(self, market: Market) -> RawResponse:
+        if market != "twse":
+            raise PermanentProviderError(f"twse does not publish {market} previews")
+        body = get_json_bytes(self.client, PREVIEW_URL)
+        return RawResponse("twt48u_all", body, {"market": market})
+
+    def parse_ex_rights_previews(self, raw: RawResponse) -> list[ExRightsPreview]:
+        rows = _loads(raw.payload)
+        if not isinstance(rows, list):
+            raise ValueError("TWT48U_ALL: expected a JSON array")
+        return [
+            ExRightsPreview(
+                symbol=r["Code"].strip(),
+                market="twse",
+                ex_date=roc_date(r["Date"]),
+                **preview_fields(
+                    r["Exdividend"],
+                    r["CashDividend"],
+                    r["StockDividendRatio"],
+                    r["SubscriptionRatio"],
+                    r["SubscriptionPricePerShare"],
+                ),
+            )
+            for r in rows
+        ]
 
     # ------------------------------------------------------------------ daily quotes
 

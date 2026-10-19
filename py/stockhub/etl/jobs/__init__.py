@@ -6,6 +6,7 @@ from stockhub.etl.jobs import (
     freshness_check,
     heartbeat,
     market_data,
+    previews,
     quotes,
 )
 from stockhub.etl.jobs.base import (
@@ -30,6 +31,7 @@ __all__ = [
     "freshness_check",
     "heartbeat",
     "market_data",
+    "previews",
     "quotes",
     "register_job",
     "registered_jobs",

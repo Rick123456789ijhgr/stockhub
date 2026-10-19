@@ -1,0 +1,44 @@
+[
+{
+"ExRrightsExDividendDate": "1151012",
+"SecuritiesCompanyCode": "1565",
+"CompanyName": "精華",
+"ExRrightsExDividend": "除息",
+"StockDividendRatio": "0.00000000",
+"SubscriptionRatioToNewSharesIssued": "0.00000000",
+"SubscriptionPricePerShare": "0.00",
+"CashDividend": "5.80000000",
+"AllocatedForPublicUnderwriting": "0",
+"SubscribedByEmployees": "0",
+"SubscribedByExistingShareholders": "0",
+"SubscribedProRataInThousandShares": "0.00000000"
+},
+{
+"ExRrightsExDividendDate": "1151027",
+"SecuritiesCompanyCode": "3691",
+"CompanyName": "碩禾",
+"ExRrightsExDividend": "除權",
+"StockDividendRatio": "0.00000000",
+"SubscriptionRatioToNewSharesIssued": "0.10883356",
+"SubscriptionPricePerShare": "註4",
+"CashDividend": "0.00000000",
+"AllocatedForPublicUnderwriting": "1000000",
+"SubscribedByEmployees": "1500000",
+"SubscribedByExistingShareholders": "7500000",
+"SubscribedProRataInThousandShares": "81.62517242"
+},
+{
+"ExRrightsExDividendDate": "1151028",
+"SecuritiesCompanyCode": "2063",
+"CompanyName": "世鎧",
+"ExRrightsExDividend": "除權息",
+"StockDividendRatio": "0.09999999",
+"SubscriptionRatioToNewSharesIssued": "0.00000000",
+"SubscriptionPricePerShare": "0.00",
+"CashDividend": "0.50002080",
+"AllocatedForPublicUnderwriting": "0",
+"SubscribedByEmployees": "0",
+"SubscribedByExistingShareholders": "0",
+"SubscribedProRataInThousandShares": "0.00000000"
+}
+]

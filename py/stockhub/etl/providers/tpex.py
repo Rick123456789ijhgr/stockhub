@@ -25,16 +25,25 @@ from stockhub.etl.providers.base import (
     DailyBar,
     Delisting,
     DelistingProvider,
+    ExRightsPreview,
+    ExRightsPreviewProvider,
     Market,
     PermanentProviderError,
     PriceProvider,
     RawResponse,
 )
-from stockhub.etl.providers.http import clean_number, get_json_bytes, make_client, roc_date
+from stockhub.etl.providers.http import (
+    clean_number,
+    get_json_bytes,
+    make_client,
+    preview_fields,
+    roc_date,
+)
 from stockhub.etl.providers.registry import register_provider
 
 OTC_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc"
 DELISTED_URL = "https://www.tpex.org.tw/www/zh-tw/company/deListed"
+PREVIEW_URL = "https://www.tpex.org.tw/openapi/v1/tpex_exright_prepost"
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -62,14 +71,43 @@ def _columns(table: dict[str, Any]) -> dict[str, int]:
 
 
 @register_provider
-class TpexProvider(PriceProvider, DelistingProvider, CorporateActionProvider):
+class TpexProvider(
+    PriceProvider, DelistingProvider, CorporateActionProvider, ExRightsPreviewProvider
+):
     name: ClassVar[str] = "tpex"
     min_interval: ClassVar[float] = 3.0
     markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
     delisting_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
+    preview_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()
+
+    def fetch_ex_rights_previews(self, market: Market) -> RawResponse:
+        if market != "tpex":
+            raise PermanentProviderError(f"tpex does not publish {market} previews")
+        body = get_json_bytes(self.client, PREVIEW_URL)
+        return RawResponse("exright_prepost", body, {"market": market})
+
+    def parse_ex_rights_previews(self, raw: RawResponse) -> list[ExRightsPreview]:
+        rows = _loads(raw.payload)
+        if not isinstance(rows, list):
+            raise ValueError("tpex_exright_prepost: expected a JSON array")
+        return [
+            ExRightsPreview(
+                symbol=r["SecuritiesCompanyCode"].strip(),
+                market="tpex",
+                ex_date=roc_date(r["ExRrightsExDividendDate"]),
+                **preview_fields(
+                    r["ExRrightsExDividend"],
+                    r["CashDividend"],
+                    r["StockDividendRatio"],
+                    r["SubscriptionRatioToNewSharesIssued"],
+                    r["SubscriptionPricePerShare"],
+                ),
+            )
+            for r in rows
+        ]
 
     def fetch_daily_prices(self, trade_date: date, market: Market) -> RawResponse:
         if market != "tpex":

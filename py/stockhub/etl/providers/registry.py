@@ -93,5 +93,6 @@ class ProviderRegistry:
                 "delistings": settings.providers_delistings,
                 "corporate_actions": settings.providers_corporate_actions,
                 "dividend_details": settings.providers_dividend_details,
+                "ex_rights_previews": settings.providers_ex_rights_previews,
             }
         )

@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
+	etl-backfill etl-history etl-adjust etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -78,6 +78,7 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_delistings
 	$(ETL) sync_corporate_actions
 	$(ETL) sync_dividend_details
+	$(ETL) sync_ex_rights_previews
 	$(ETL) daily_prices $(if $(date),--date $(date))
 	$(ETL) compute_adj_factors
 
@@ -96,8 +97,12 @@ etl-adjust: ## Recompute adj_factor (e.g. after confirming price gaps on /admin)
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
-etl-quotes: ## Poll intraday quotes for watchlist + holdings every 30 s until 13:35 (symbols=2330,0050 adds more)
+etl-quotes: ## Refresh ex-rights previews, then poll quotes for watchlist + holdings every 30 s until 13:35 (symbols=2330,0050 adds more)
+	-$(ETL) sync_ex_rights_previews
 	$(ETL) poll_quotes $(if $(symbols),--param symbols=$(symbols)) $(if $(once),--param once=true)
+
+etl-previews: ## Upcoming ex-rights/dividend announcements (除權除息預告表) of both exchanges
+	$(ETL) sync_ex_rights_previews
 
 HISTORY_START := 2004-02-11
 

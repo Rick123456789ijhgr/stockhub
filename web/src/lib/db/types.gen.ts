@@ -39,6 +39,38 @@ export interface AuditLog {
   target: string | null;
 }
 
+export interface CorporateActionPreviews {
+  /**
+   * Classified from the parts, same vocabulary as corporate_actions.
+   */
+  action_type: string;
+  /**
+   * Cash per share in TWD; NULL while not announced (ETFs often publish late).
+   */
+  cash_dividend: Numeric | null;
+  ex_date: string;
+  /**
+   * First snapshot that listed the event (raw_object_id too); later snapshots only update the parts.
+   */
+  fetched_at: Generated<Timestamp>;
+  /**
+   * The exchange's label without the 除 prefix.
+   */
+  label: string;
+  raw_object_id: Int8 | null;
+  /**
+   * All new shares of the cash offering per existing share (as corporate_actions.rights_ratio).
+   */
+  rights_ratio: Generated<Numeric>;
+  source: string;
+  /**
+   * Free new shares per existing share.
+   */
+  stock_dividend_ratio: Generated<Numeric>;
+  stock_id: Int8;
+  subscription_price: Numeric | null;
+}
+
 export interface CorporateActions {
   /**
    * The exchange's label: cash_and_stock_dividend = 權息 on one day. What a TWSE 權息 consisted of is in cash_dividend / stock_dividend_ratio / rights_ratio once its detail page is fetched (a 權息 can be cash plus a subscription).
@@ -412,6 +444,7 @@ export interface Watchlist {
 
 export interface DB {
   audit_log: AuditLog;
+  corporate_action_previews: CorporateActionPreviews;
   corporate_actions: CorporateActions;
   corporate_actions_quarantine: CorporateActionsQuarantine;
   financial_item_map: FinancialItemMap;
