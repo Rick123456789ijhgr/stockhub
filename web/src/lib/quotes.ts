@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 
 import type { DB } from "@/lib/db";
 import type { LiveQuote } from "@/lib/market-hours";
@@ -47,7 +47,10 @@ export async function setWatched(
     const changed = watched
       ? await trx
           .insertInto("watchlist")
-          .values({ stock_id: String(stock.id) })
+          .values({
+            stock_id: String(stock.id),
+            position: sql<number>`(SELECT coalesce(max(position), 0) + 1 FROM watchlist)`,
+          })
           .onConflict((oc) => oc.column("stock_id").doNothing())
           .executeTakeFirst()
       : await trx
