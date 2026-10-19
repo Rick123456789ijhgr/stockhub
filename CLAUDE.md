@@ -52,6 +52,7 @@ make etl-quotes               # 盤中報價輪詢（自選 + 持股，每 30 �
 make etl-adjust               # 重算還原因子（在 /admin 確認跳空後）
 make etl-dividends            # 證交所權息拆分（start= end=，預設近 30 天）
 make etl-etf-delistings       # 從已存的日線表推算下市 ETF（不連網，回填完成後才跑）
+make etl-previews             # 除權除息預告表（etl-daily 與 etl-quotes 也會跑）
 stockhub.bat                  # 雙擊開選單；或 start|stop|restart|status：本機資料庫 + 網站（邏輯在 scripts/stockhub.ps1）
 scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日）；記錄在 .local/logs
 ```
@@ -82,7 +83,9 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 - 新排程任務：繼承 `Job`、用 `@register_job` 註冊，並在 `stockhub/etl/jobs/__init__.py` 匯入；寫入一律用 `upsert()`，長任務用 `ctx.save_checkpoint()`。
 - 新 schema：只加遷移檔（`make db-new`），必附 `COMMENT ON`、`down` 段與 pytest schema 測試，再跑 `make db-types`。
 - 指標公式：`py/stockhub/engine/indicators.py` 與 `web/src/lib/indicators.ts` 逐式對應；改任一邊都要同步另一邊，並用 `py/scripts/gen_indicator_fixture.py` 重產 `testdata/indicators.json`。
-- 持股計算：`py/stockhub/engine/portfolio.py` 與 `web/src/lib/portfolio.ts` 逐式對應（平均成本、手續費、證交稅、配息推算、今日損益），改任一邊都要同步另一邊，並用 `py/scripts/gen_portfolio_fixture.py` 重產 `testdata/portfolio.json`。交易寫入一律經 `applyTransactionChange`（重播檢查賣超、重算自動費用、寫稽核紀錄）。配息推算不入庫，頁面每次重算並標示「估算」。
+- 持股計算：`py/stockhub/engine/portfolio.py` 與 `web/src/lib/portfolio.ts` 逐式對應（平均成本、手續費、證交稅、配息推算、今日損益），改任一邊都要同步另一邊，並用 `py/scripts/gen_portfolio_fixture.py` 重產 `testdata/portfolio.json`。交易寫入一律經 `applyTransactionChange`（重播檢查賣超、重算自動費用、寫稽核紀錄）。配息推算不入庫，頁面每次重算並標示「估算」；有 `dividend_receipts` 實收時改用實收。讀持股的 Python 程式一律用 `common/portfolio_store.holdings()`（引擎重播），不要自己加總交易股數。
+- `corporate_action_previews` 是預告快照，只供推算與當天暫時套用（`with_previews`）；正式紀錄永遠是 `corporate_actions`。
+- 警示寫進 `alerts`（唯一鍵 kind + 股票 + 交易日就是冷卻），經 `Notifier` 送出；新種類要擴充 `kind` 的 CHECK。
 - 所有手動操作（交易、自選、設定、事件確認）都寫 `audit_log`，`action` 用 `領域.動作`（例如 `portfolio.update`），新動作要在 `components/admin/audit-log.tsx` 加中文標籤。
 - 還原價 = 原始價 × `adj_factor`；漲跌一律用還原後的前收（`rebasedPrevClose`），不要直接拿原始前收算。
 - 圖表顏色只用 token：漲跌 `--price-up/down`，線 `--series-1..3`（已用 dataviz 驗證，最多三條會交錯的線）；Tailwind v4 會刪掉沒被 utility 用到的變數，新 token 要有對應的 `bg-*` 等用法。
