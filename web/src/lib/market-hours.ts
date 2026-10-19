@@ -39,3 +39,10 @@ export function isFresherThanDaily(quote: LiveQuote | null, latestBarDate: strin
   if (!quote || quote.price === null) return false;
   return latestBarDate === null || quote.tradeDate > latestBarDate;
 }
+
+const TAIPEI_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" });
+
+/** Today's date in Taipei as "YYYY-MM-DD". */
+export function taipeiToday(now: Date = new Date()): string {
+  return TAIPEI_DATE.format(now);
+}

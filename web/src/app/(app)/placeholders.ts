@@ -1,10 +1,5 @@
 /** Copy for placeholder pages, kept in one place so later milestones can delete entries. */
 export const PLACEHOLDERS = {
-  portfolio: {
-    title: "持股",
-    milestone: "M2",
-    features: ["持股與損益", "交易紀錄（以股為單位）", "ETF 配息自動推算", "手續費與證交稅"],
-  },
   market: {
     title: "市場",
     milestone: "M1 / M5",
