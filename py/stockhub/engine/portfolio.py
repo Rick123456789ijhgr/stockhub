@@ -16,7 +16,14 @@ Conventions (decided in M2, see docs/DECISIONS.md D-067..):
   holding before the ex-date, i.e. after every trade dated before it.
 - Within one day: corporate actions first, then buys, then sells (so a same-day round
   trip never goes short), each in input order.
-- A sell larger than the holding is reported as an issue and left out of the replay.
+- Day trades (現股當沖) settle on their own: the day's day-trade buys and sells are
+  matched (up to the smaller side, in input order); the matched shares realize
+  sell proceeds - their fees and tax - the matched buys' price and fees, without touching
+  the inventory's average cost. Unmatched day-trade shares are ordinary buys and sells.
+  Fees and tax of a partly matched trade are split pro rata by shares.
+- A sell larger than the holding is reported as an issue and left out of the replay (for
+  a partly matched day-trade sell, only its unmatched part).
+- Received dividends (`Receipt`) replace the estimate of that event's cash and/or shares.
 """
 
 from __future__ import annotations
@@ -117,6 +124,7 @@ class Trade:
     fee: float = 0.0
     tax: float = 0.0
     rebate: float = 0.0
+    day_trade: bool = False
 
 
 @dataclass(frozen=True)
@@ -131,6 +139,29 @@ class Action:
     ratio: float | None = None
     prev_close: float | None = None
     reference_price: float | None = None
+
+
+@dataclass(frozen=True)
+class Receipt:
+    """What actually arrived for one event (None = keep the estimate for that part)."""
+
+    cash: float | None = None
+    shares: int | None = None
+
+
+def receipt_key(stock: str, ex_date: str, action_type: str) -> str:
+    return f"{stock}|{ex_date}|{action_type}"
+
+
+@dataclass(frozen=True)
+class Preview:
+    """An announced, not yet official event (除權除息預告); cash None = not announced."""
+
+    stock: str
+    ex_date: str
+    action_type: str
+    cash_dividend: float | None = None
+    stock_dividend_ratio: float | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +219,28 @@ def entitlement(a: Action) -> Entitlement | None:
     return None
 
 
+# (since, rate, threshold): 二代健保補充保費 on dividends
+NHI_RATES = (
+    ("2021-01-01", 0.0211, 20_000),
+    ("2016-01-01", 0.0191, 20_000),
+    ("2013-01-01", 0.02, 5_000),
+)
+NHI_CAP = 10_000_000
+PAR_VALUE = 10
+
+
+def nhi_premium(cash: float, stock_shares: int, ex_date: str) -> int:
+    """二代健保補充保費 on one dividend payment: cash plus stock dividends at par, when the
+    payment reaches the year's threshold (capped at 10 million); 0 before 2013."""
+    for since, rate, threshold in NHI_RATES:
+        if ex_date >= since:
+            base = cash + stock_shares * PAR_VALUE
+            if base < threshold:
+                return 0
+            return round_money(min(base, NHI_CAP) * rate, "round")
+    return 0
+
+
 @dataclass
 class DividendEntry:
     stock: str
@@ -195,12 +248,16 @@ class DividendEntry:
     action_type: str
     shares_held: int
     cash_per_share: float
-    cash: int
+    cash: float  # received when `received`, else the estimate
     stock_ratio: float
     stock_shares: int
     share_ratio: float
     shares_after: int
     implied: bool
+    est_cash: int
+    est_stock_shares: int
+    nhi: int  # estimated premium on the estimate; 0 once received (already net)
+    received: bool
 
 
 @dataclass
@@ -214,6 +271,7 @@ class RealizedEntry:
     fee: float
     tax: float
     pnl: float
+    day_trade: bool = False
 
 
 @dataclass
@@ -257,6 +315,25 @@ class _Day:
     sells: list[Trade] = field(default_factory=list)
 
 
+def with_previews(
+    actions: Sequence[Action], previews: Iterable[Preview], as_of: str
+) -> list[Action]:
+    """Actions plus previews whose ex-date has come (up to `as_of`) but which the official
+    table does not carry yet, so today's dividend counts before the evening import."""
+    known = {(a.stock, a.ex_date) for a in actions}
+    extra = [
+        Action(v.stock, v.ex_date, v.action_type, v.cash_dividend, v.stock_dividend_ratio)
+        for v in previews
+        if v.ex_date <= as_of and (v.stock, v.ex_date) not in known
+    ]
+    return [*actions, *extra]
+
+
+def _part(total: float, part: int, whole: int) -> float:
+    """`total` (a fee or tax) pro rata for `part` of `whole` shares; exact when whole."""
+    return total if part == whole else total * part / whole
+
+
 def replay(
     trades: Sequence[Trade],
     actions: Iterable[Action],
@@ -265,6 +342,7 @@ def replay(
     marks: dict[str, Mark] | None = None,
     securities: dict[str, Security] | None = None,
     fees: FeeSettings | None = None,
+    receipts: dict[str, Receipt] | None = None,
 ) -> Ledger:
     """Replay trades (in id order) and corporate actions up to `as_of`, then value the open
     positions at `marks`. Positions are sorted by stock key; actions on stocks that were
@@ -272,6 +350,7 @@ def replay(
     marks = marks or {}
     securities = securities or {}
     fee_settings = fees or FeeSettings()
+    received = receipts or {}
     days: dict[str, dict[str, _Day]] = {}
     for t in trades:
         day = days.setdefault(t.stock, {}).setdefault(t.date, _Day())
@@ -290,37 +369,70 @@ def replay(
         stale = False
         for date in sorted(days[stock]):
             day = days[stock][date]
+            on_mark = mark is not None and date == mark.date
             if mark is not None and date > mark.date:
                 if base is None:
                     base = p.shares
                 stale = True
             for a in day.actions:
-                _apply_action(p, a, out)
-            if mark is not None and date == mark.date:
+                _apply_action(p, a, out, received)
+            if on_mark:
                 base = p.shares
+            dt_buy = sum(t.quantity for t in day.buys if t.day_trade)
+            dt_sell = sum(t.quantity for t in day.sells if t.day_trade)
+            matched = min(dt_buy, dt_sell)
+            buy_left = matched
+            dt_cost = 0.0
             for t in day.buys:
-                p.shares += t.quantity
-                p.cost += t.quantity * t.price + t.fee
+                m = min(t.quantity, buy_left) if t.day_trade else 0
+                buy_left -= m
+                rest = t.quantity - m
+                if m > 0:
+                    dt_cost += m * t.price + _part(t.fee, m, t.quantity)
+                if rest > 0:
+                    p.shares += rest
+                    p.cost += rest * t.price + _part(t.fee, rest, t.quantity)
                 p.rebates += t.rebate
-                if mark is not None and date == mark.date:
+                if on_mark:
                     mark_buys += t.quantity * t.price
+            sell_left = matched
             for t in day.sells:
-                if t.quantity > p.shares:
-                    out.issues.append(Issue(t.id, stock, date, p.shares, t.quantity))
-                    continue
-                cost_out = p.cost if t.quantity == p.shares else p.cost * t.quantity / p.shares
-                proceeds = t.quantity * t.price
-                pnl = proceeds - t.fee - t.tax - cost_out
-                out.realized.append(
-                    RealizedEntry(
-                        t.id, stock, date, t.quantity, proceeds, cost_out, t.fee, t.tax, pnl
+                m = min(t.quantity, sell_left) if t.day_trade else 0
+                sell_left -= m
+                rest = t.quantity - m
+                fee_m = _part(t.fee, m, t.quantity) if m > 0 else 0.0
+                tax_m = _part(t.tax, m, t.quantity) if m > 0 else 0.0
+                if m > 0:
+                    cost_m = dt_cost if sell_left == 0 else dt_cost * m / (sell_left + m)
+                    dt_cost -= cost_m
+                    proceeds_m = m * t.price
+                    pnl_m = proceeds_m - fee_m - tax_m - cost_m
+                    out.realized.append(
+                        RealizedEntry(
+                            t.id, stock, date, m, proceeds_m, cost_m, fee_m, tax_m, pnl_m, True
+                        )
                     )
+                    p.realized += pnl_m
+                    if on_mark:
+                        mark_sells += proceeds_m
+                p.rebates += t.rebate
+                if rest == 0:
+                    continue
+                if rest > p.shares:
+                    out.issues.append(Issue(t.id, stock, date, p.shares, rest))
+                    continue
+                fee_r = t.fee - fee_m
+                tax_r = t.tax - tax_m
+                cost_out = p.cost if rest == p.shares else p.cost * rest / p.shares
+                proceeds = rest * t.price
+                pnl = proceeds - fee_r - tax_r - cost_out
+                out.realized.append(
+                    RealizedEntry(t.id, stock, date, rest, proceeds, cost_out, fee_r, tax_r, pnl)
                 )
                 p.realized += pnl
-                p.rebates += t.rebate
-                p.shares -= t.quantity
+                p.shares -= rest
                 p.cost = 0.0 if p.shares == 0 else p.cost - cost_out
-                if mark is not None and date == mark.date:
+                if on_mark:
                     mark_sells += proceeds
         if base is None:
             base = p.shares
@@ -332,15 +444,18 @@ def replay(
     return out
 
 
-def _apply_action(p: Position, a: Action, out: Ledger) -> None:
+def _apply_action(p: Position, a: Action, out: Ledger, receipts: dict[str, Receipt]) -> None:
     held = p.shares
     if held <= 0:
         return
     e = entitlement(a)
     if e is None:
         return
-    cash = round_money(held * e.cash_per_share)
-    stock_shares = round_money(held * e.stock_ratio)
+    est_cash = round_money(held * e.cash_per_share)
+    est_shares = round_money(held * e.stock_ratio)
+    r = receipts.get(receipt_key(p.stock, a.ex_date, a.action_type))
+    cash: float = est_cash if r is None or r.cash is None else r.cash
+    stock_shares = est_shares if r is None or r.shares is None else r.shares
     after = held if e.share_ratio == 1.0 else round_money(held * e.share_ratio)
     p.shares = after + stock_shares
     p.dividends += cash
@@ -360,6 +475,10 @@ def _apply_action(p: Position, a: Action, out: Ledger) -> None:
             e.share_ratio,
             p.shares,
             e.implied,
+            est_cash,
+            est_shares,
+            0 if r is not None else nhi_premium(est_cash, est_shares, a.ex_date),
+            r is not None,
         )
     )
 
@@ -406,3 +525,47 @@ def totals(positions: Iterable[Position]) -> Totals:
         t.rebates += p.rebates
         t.day_change += p.day_change or 0.0
     return t
+
+
+@dataclass
+class UpcomingEntry:
+    stock: str
+    ex_date: str
+    action_type: str
+    shares: int
+    cash_per_share: float | None
+    cash: int | None  # None while the amount is not announced
+    stock_ratio: float
+    stock_shares: int
+    nhi: int | None
+
+
+def upcoming(
+    positions: Iterable[Position], previews: Iterable[Preview], as_of: str
+) -> list[UpcomingEntry]:
+    """Announced events after `as_of` on open positions, assuming the holding stays as it is
+    until the day before the ex-date. Sorted by ex-date, then stock."""
+    held = {p.stock: p.shares for p in positions if p.shares > 0}
+    out: list[UpcomingEntry] = []
+    for v in sorted(previews, key=lambda v: (v.ex_date, v.stock)):
+        shares = held.get(v.stock, 0)
+        if v.ex_date <= as_of or shares <= 0:
+            continue
+        ratio = v.stock_dividend_ratio or 0.0
+        stock_shares = round_money(shares * ratio)
+        cash = None if v.cash_dividend is None else round_money(shares * v.cash_dividend)
+        nhi = None if cash is None else nhi_premium(cash, stock_shares, v.ex_date)
+        out.append(
+            UpcomingEntry(
+                v.stock,
+                v.ex_date,
+                v.action_type,
+                shares,
+                v.cash_dividend,
+                cash,
+                ratio,
+                stock_shares,
+                nhi,
+            )
+        )
+    return out

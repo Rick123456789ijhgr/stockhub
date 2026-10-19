@@ -108,6 +108,7 @@ function toTrade(r: TransactionRow): Trade {
     fee: r.fee,
     tax: r.tax,
     rebate: r.feeRebate,
+    dayTrade: r.dayTrade,
   };
 }
 

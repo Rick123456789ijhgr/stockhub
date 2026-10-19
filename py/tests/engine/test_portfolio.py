@@ -10,7 +10,15 @@ import pytest
 
 from stockhub.common.settings import PROJECT_ROOT
 from stockhub.engine import portfolio as pf
-from stockhub.engine.portfolio import Action, FeeSettings, Mark, Security, Trade
+from stockhub.engine.portfolio import (
+    Action,
+    FeeSettings,
+    Mark,
+    Preview,
+    Receipt,
+    Security,
+    Trade,
+)
 
 FIXTURE = PROJECT_ROOT / "testdata" / "portfolio.json"
 
@@ -144,6 +152,76 @@ def test_same_day_round_trip_processes_buys_first() -> None:
     assert ledger.realized[0].pnl == pytest.approx(1000 - 151)
 
 
+def test_day_trades_settle_apart_from_the_inventory() -> None:
+    trades = [
+        Trade("1", "A", "2026-01-05", "buy", 1000, 100, fee=100),
+        Trade("2", "A", "2026-01-06", "buy", 2000, 120, fee=240, day_trade=True),
+        Trade("3", "A", "2026-01-06", "sell", 1000, 125, fee=125, tax=187, day_trade=True),
+    ]
+    ledger = pf.replay(trades, [], as_of="2026-10-19")
+    (r,) = ledger.realized
+    # matched 1,000: cost = 1,000 * 120 + half the buy fee (120)
+    assert r.day_trade
+    assert r.pnl == pytest.approx(125_000 - 125 - 187 - 120_120)
+    (p,) = ledger.positions
+    # inventory: the old 1,000 at 100 plus the unmatched 1,000 at 120 (+ the other half fee)
+    assert p.shares == 2000
+    assert p.cost == pytest.approx(100_100 + 120_120)
+
+
+def test_day_trade_sell_beyond_matching_uses_the_inventory() -> None:
+    trades = [
+        Trade("1", "A", "2026-01-05", "buy", 1000, 100),
+        Trade("2", "A", "2026-01-06", "buy", 500, 110, day_trade=True),
+        Trade("3", "A", "2026-01-06", "sell", 800, 112, fee=80, tax=134, day_trade=True),
+    ]
+    ledger = pf.replay(trades, [], as_of="2026-10-19")
+    matched, rest = ledger.realized
+    assert (matched.quantity, matched.day_trade) == (500, True)
+    assert matched.fee == pytest.approx(50)  # 80 pro rata
+    assert (rest.quantity, rest.day_trade, rest.cost) == (300, False, 30_000)
+    assert ledger.positions[0].shares == 700
+
+
+def test_receipts_replace_the_estimate() -> None:
+    trades = [Trade("1", "A", "2026-06-01", "buy", 10_000, 50)]
+    actions = [Action("A", "2026-07-01", "cash_and_stock_dividend", 3.0, 0.0105)]
+    est = pf.replay(trades, actions, as_of="2026-10-19").dividends[0]
+    assert (est.cash, est.stock_shares, est.received) == (30_000, 105, False)
+    # 30,000 + 105 shares at par 10 = 31,050 -> 2.11%
+    assert est.nhi == 655
+    key = pf.receipt_key("A", "2026-07-01", "cash_and_stock_dividend")
+    ledger = pf.replay(trades, actions, as_of="2026-10-19", receipts={key: Receipt(29_335, 104)})
+    got = ledger.dividends[0]
+    assert (got.cash, got.stock_shares, got.est_cash, got.nhi, got.received) == (
+        29_335,
+        104,
+        30_000,
+        0,
+        True,
+    )
+    assert ledger.positions[0].shares == 10_104
+
+
+def test_previews_count_on_the_ex_date_and_project_ahead() -> None:
+    trades = [Trade("1", "A", "2026-06-01", "buy", 2000, 50)]
+    official = [Action("A", "2026-07-01", "cash_dividend", 1.0)]
+    previews = [
+        Preview("A", "2026-07-01", "cash_dividend", 9.9),  # already official: ignored
+        Preview("A", "2026-10-19", "cash_dividend", 0.5),  # today: applied
+        Preview("A", "2026-11-20", "cash_dividend", None),  # not announced
+        Preview("A", "2027-01-15", "stock_dividend", 0.0, 0.05),
+    ]
+    actions = pf.with_previews(official, previews, "2026-10-19")
+    ledger = pf.replay(trades, actions, as_of="2026-10-19")
+    assert [d.cash for d in ledger.dividends] == [2000, 1000]
+    coming = pf.upcoming(ledger.positions, previews, "2026-10-19")
+    assert [(u.ex_date, u.cash, u.stock_shares) for u in coming] == [
+        ("2026-11-20", None, 0),
+        ("2027-01-15", 0, 100),
+    ]
+
+
 def test_valuation_and_day_change() -> None:
     trades = [
         Trade("1", "A", "2026-10-01", "buy", 2000, 100, fee=285),
@@ -197,14 +275,23 @@ def test_matches_shared_fixture() -> None:
         rate = pf.tax_rate(case["type"], case["symbol"], case["date"], case["day_trade"])
         assert rate == case["expected"]["rate"], f"tax[{i}]"
         assert pf.transaction_tax(case["amount"], rate) == case["expected"]["tax"], f"tax[{i}]"
+    for i, case in enumerate(data["nhi"]):
+        got = pf.nhi_premium(case["cash"], case["stock_shares"], case["ex_date"])
+        assert got == case["expected"], f"nhi[{i}]"
     for case in data["replay"]:
+        previews = [Preview(**v) for v in case["previews"]]
         ledger = pf.replay(
             [Trade(**t) for t in case["trades"]],
-            [Action(**a) for a in case["actions"]],
+            pf.with_previews([Action(**a) for a in case["actions"]], previews, case["as_of"]),
             as_of=case["as_of"],
             marks={k: Mark(**m) for k, m in case["marks"].items()},
             securities={k: Security(**s) for k, s in case["securities"].items()},
             fees=FeeSettings(**case["fees"]),
+            receipts={k: Receipt(**r) for k, r in case["receipts"].items()},
         )
-        actual = {"ledger": asdict(ledger), "totals": asdict(pf.totals(ledger.positions))}
+        actual = {
+            "ledger": asdict(ledger),
+            "totals": asdict(pf.totals(ledger.positions)),
+            "upcoming": [asdict(u) for u in pf.upcoming(ledger.positions, previews, case["as_of"])],
+        }
         _close(actual, case["expected"], case["name"])

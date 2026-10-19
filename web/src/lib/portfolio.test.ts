@@ -10,6 +10,9 @@ import {
   type FeeSettings,
   type Mark,
   netFee,
+  nhiPremium,
+  type Preview,
+  type Receipt,
   replay,
   roundMoney,
   type Security,
@@ -17,6 +20,8 @@ import {
   totals,
   type Trade,
   transactionTax,
+  upcoming,
+  withPreviews,
 } from "./portfolio";
 
 /** The fixture is written by Python (snake_case); the TS port uses camelCase. */
@@ -38,6 +43,7 @@ type ReplayCase = {
   marks: Record<string, Mark>;
   securities: Record<string, Security>;
   fees: FeeSettings;
+  previews: Preview[];
   expected: unknown;
 };
 
@@ -51,13 +57,17 @@ type Fixture = {
     amount: number;
     expected: { rate: number; tax: number };
   }[];
+  nhi: { cash: number; stockShares: number; exDate: string; expected: number }[];
   replay: ReplayCase[];
 };
 
 // Shared with py/tests/engine/test_portfolio.py (CLAUDE.md rule 11).
-const fixture = camel(
-  JSON.parse(readFileSync(new URL("../../../testdata/portfolio.json", import.meta.url), "utf-8")),
-) as Fixture;
+const raw = JSON.parse(
+  readFileSync(new URL("../../../testdata/portfolio.json", import.meta.url), "utf-8"),
+) as { replay: { receipts: Record<string, Receipt> }[] };
+const fixture = camel(raw) as Fixture;
+// Receipt keys embed the action type ("1|2026-04-23|cash_dividend"): keep them as written.
+const receipts = raw.replay.map((c) => c.receipts);
 
 function expectClose(actual: unknown, expected: unknown, path: string) {
   if (Array.isArray(expected)) {
@@ -92,14 +102,29 @@ describe("portfolio math matches the Python reference", () => {
     });
   });
 
-  it.each(fixture.replay.map((c) => [c.name, c] as const))("replay: %s", (_name, c) => {
-    const ledger = replay(c.trades, c.actions, {
+  it("nhi", () => {
+    fixture.nhi.forEach((c, i) =>
+      expect(nhiPremium(c.cash, c.stockShares, c.exDate), `nhi[${i}]`).toBe(c.expected),
+    );
+  });
+
+  it.each(fixture.replay.map((c, i) => [c.name, c, i] as const))("replay: %s", (_name, c, i) => {
+    const ledger = replay(c.trades, withPreviews(c.actions, c.previews, c.asOf), {
       asOf: c.asOf,
       marks: c.marks,
       securities: c.securities,
       fees: c.fees,
+      receipts: receipts[i],
     });
-    expectClose({ ledger, totals: totals(ledger.positions) }, c.expected, c.name);
+    expectClose(
+      {
+        ledger,
+        totals: totals(ledger.positions),
+        upcoming: upcoming(ledger.positions, c.previews, c.asOf),
+      },
+      c.expected,
+      c.name,
+    );
   });
 });
 
@@ -127,6 +152,7 @@ describe("hand-checked cases", () => {
       fee: 0,
       tax: 0,
       rebate: 0,
+      dayTrade: false,
     });
     const ledger = replay([t("1", "buy", 1000), t("2", "sell", 1500)], [], { asOf: "2026-10-19" });
     expect(ledger.issues).toEqual([
