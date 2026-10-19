@@ -192,7 +192,22 @@ export interface MonthlyRevenue {
 
 export interface PortfolioTransactions {
   created_at: Generated<Timestamp>;
+  /**
+   * Same-day round trip (現股當沖); only changes the tax rate.
+   */
+  day_trade: Generated<boolean>;
+  /**
+   * Brokerage fee charged on the trade (TWD); with the rebate discount mode this is the undiscounted fee.
+   */
   fee: Generated<Numeric>;
+  /**
+   * Fee (and rebate) entered by hand: kept when price or quantity is edited.
+   */
+  fee_manual: Generated<boolean>;
+  /**
+   * Estimated discount refunded later by the broker (rebate mode), counted as income.
+   */
+  fee_rebate: Generated<Numeric>;
   id: Generated<Int8>;
   note: string | null;
   /**
@@ -205,7 +220,14 @@ export interface PortfolioTransactions {
   quantity: Int8;
   side: string;
   stock_id: Int8;
+  /**
+   * Securities transaction tax (TWD); sells only.
+   */
   tax: Generated<Numeric>;
+  /**
+   * Tax entered by hand: kept when price or quantity is edited.
+   */
+  tax_manual: Generated<boolean>;
   trade_date: string;
   updated_at: Generated<Timestamp>;
 }
@@ -377,7 +399,14 @@ export interface TradingCalendar {
 
 export interface Watchlist {
   added_at: Generated<Timestamp>;
+  /**
+   * Free-text note shown on /watchlist.
+   */
   note: string | null;
+  /**
+   * Custom order on /watchlist (ascending; ties by added_at).
+   */
+  position: Generated<number>;
   stock_id: Int8;
 }
 

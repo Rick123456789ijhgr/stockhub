@@ -246,3 +246,23 @@ def test_prices_daily_coverage_follows_writes(pg: psycopg.Connection) -> None:
     assert coverage() == [("2026-10-15", "twse", 1), ("2026-10-16", "twse", 1)]
     pg.execute("TRUNCATE prices_daily CASCADE")
     assert coverage() == []
+
+
+def test_m2_portfolio_columns_and_watchlist_position(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    row = pg.execute(
+        "INSERT INTO portfolio_transactions (stock_id, trade_date, side, quantity, price) "
+        "VALUES (%s, '2026-10-16', 'buy', 1000, 1000) "
+        "RETURNING day_trade, fee_rebate, fee_manual, tax_manual",
+        (stock_id,),
+    ).fetchone()
+    assert row == (False, Decimal("0.00"), False, False)
+    _expect(
+        pg,
+        errors.CheckViolation,
+        "UPDATE portfolio_transactions SET fee_rebate = -1 WHERE stock_id = %s",
+        (stock_id,),
+    )
+    pg.execute("INSERT INTO watchlist (stock_id) VALUES (%s)", (stock_id,))
+    position = pg.execute("SELECT position FROM watchlist WHERE stock_id = %s", (stock_id,))
+    assert position.fetchone() == (0,)
