@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isFresherThanDaily, isSessionOpen, type LiveQuote } from "./market-hours";
+import { isFresherThanDaily, isSessionOpen, type LiveQuote, taipeiToday } from "./market-hours";
 
 describe("isSessionOpen", () => {
   it("follows Taipei time, not the machine's", () => {
@@ -31,5 +31,12 @@ describe("isFresherThanDaily", () => {
     expect(isFresherThanDaily(quote, "2026-10-19")).toBe(false);
     expect(isFresherThanDaily({ ...quote, price: null }, "2026-10-16")).toBe(false);
     expect(isFresherThanDaily(null, null)).toBe(false);
+  });
+});
+
+describe("taipeiToday", () => {
+  it("rolls over at Taipei midnight", () => {
+    expect(taipeiToday(new Date("2026-10-18T15:59:00Z"))).toBe("2026-10-18");
+    expect(taipeiToday(new Date("2026-10-18T16:00:00Z"))).toBe("2026-10-19");
   });
 });

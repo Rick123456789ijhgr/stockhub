@@ -4,3 +4,6 @@
 *.gz binary
 # Recorded exchange responses must stay byte-identical (cp950 HTML).
 py/tests/fixtures/*.html binary
+# cmd.exe misparses LF-only batch files; PowerShell 5.1 needs the UTF-8 BOM for Chinese text.
+*.bat text eol=crlf
+*.ps1 text eol=crlf

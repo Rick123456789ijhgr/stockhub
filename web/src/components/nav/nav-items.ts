@@ -8,6 +8,7 @@ import {
   ListFilter,
   type LucideIcon,
   Settings,
+  Star,
   Wallet,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "首頁", icon: House, primary: true },
   { href: "/portfolio", label: "持股", icon: Wallet, primary: true },
   { href: "/stocks", label: "個股", icon: ChartCandlestick, primary: true },
+  { href: "/watchlist", label: "自選", icon: Star },
   { href: "/market", label: "市場", icon: Globe, primary: true },
   { href: "/screener", label: "篩選器", icon: ListFilter },
   { href: "/backtest", label: "回測", icon: History },

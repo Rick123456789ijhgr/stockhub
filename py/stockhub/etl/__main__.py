@@ -1,4 +1,4 @@
-"""CLI: python -m stockhub.etl list | run <job> [--date YYYY-MM-DD] [--param k=v ...]
+"""CLI: python -m stockhub.etl list | notify-test | run <job> [--date YYYY-MM-DD] [--param k=v ...]
 
 Exit codes: 0 succeeded/skipped, 1 failed, 2 usage/config error, 3 already running.
 """
@@ -14,7 +14,7 @@ from datetime import date
 from stockhub.common.db import get_engine
 from stockhub.common.notifier import build_notifier
 from stockhub.common.rawstore import build_rawstore
-from stockhub.common.settings import ConfigError, get_settings
+from stockhub.common.settings import ConfigError, Settings, get_settings
 from stockhub.etl.jobs.base import (
     JobAlreadyRunningError,
     UnknownJobError,
@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m stockhub.etl", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="list available jobs")
+    sub.add_parser("notify-test", help="send a test message through the configured notifier")
     run = sub.add_parser("run", help="run a job and record it in job_runs")
     run.add_argument("job")
     run.add_argument("--date", type=_date, help="Taipei trading date (default: today)")
@@ -68,6 +69,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    if args.command == "notify-test":
+        return notify_test(settings)
 
     params = dict(args.param)
     if args.date:
@@ -98,6 +102,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         + (f"\n{result.error}" if result.error else "")
     )
     return 1 if result.status == "failed" else 0
+
+
+def notify_test(settings: Settings) -> int:
+    """Send one message through NOTIFIER (console or email) to check the setup."""
+    target = (
+        f"email {', '.join(settings.alert_email_to)} via {settings.smtp_host}:{settings.smtp_port}"
+        if settings.notifier == "email"
+        else "console"
+    )
+    try:
+        build_notifier(settings).send(
+            "[StockHub] 通知測試",
+            "這是一封測試通知。收到代表持股警示與任務失敗通知的寄送設定正確。",
+            "info",
+        )
+    except Exception as exc:  # SMTP auth / TLS / network errors: show them plainly
+        print(f"notify-test failed ({target}): {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    print(f"notify-test sent ({target})")
+    return 0
 
 
 if __name__ == "__main__":

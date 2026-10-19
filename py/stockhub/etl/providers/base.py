@@ -25,6 +25,7 @@ DataKind = Literal[
     "delistings",
     "corporate_actions",
     "dividend_details",
+    "ex_rights_previews",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -171,6 +172,40 @@ class DividendDetail(_Model):
     """Price per subscribed share (每股認購金額); None without a subscription."""
 
 
+PreviewActionType = Literal[
+    "cash_dividend", "stock_dividend", "cash_and_stock_dividend", "rights_issue"
+]
+
+
+class ExRightsPreview(_Model):
+    """An announced upcoming 除權息 (除權除息預告表). Amounts may still be unannounced."""
+
+    symbol: str
+    market: Market
+    ex_date: date
+    label: Literal["息", "權", "權息"]
+    """The exchange's label."""
+    action_type: PreviewActionType
+    cash_dividend: Decimal | None = Field(default=None, ge=0)
+    """Cash per share; None while the amount is not announced (ETFs often publish it late)."""
+    stock_dividend_ratio: Decimal = Field(default=Decimal(0), ge=0)
+    """Free new shares per existing share."""
+    rights_ratio: Decimal = Field(default=Decimal(0), ge=0)
+    """All new shares of a cash offering per existing share (as in DividendDetail)."""
+    subscription_price: Decimal | None = Field(default=None, gt=0)
+
+
+def preview_action_type(
+    label: str, cash: Decimal | None, stock_ratio: Decimal, rights_ratio: Decimal
+) -> PreviewActionType:
+    """Classify a preview by what it carries; the label only decides an all-zero row."""
+    if stock_ratio > 0:
+        return "cash_and_stock_dividend" if cash else "stock_dividend"
+    if cash or "息" in label:
+        return "cash_dividend"
+    return "rights_issue" if rights_ratio > 0 or label == "權" else "cash_dividend"
+
+
 class FinancialItem(_Model):
     """One reported line item, as published (usually year-to-date)."""
 
@@ -295,6 +330,17 @@ class DividendDetailProvider(Provider):
         """The event's parts, or an empty list when the source has no detail for it."""
 
 
+class ExRightsPreviewProvider(Provider):
+    preview_markets: ClassVar[frozenset[Market]]
+
+    @abstractmethod
+    def fetch_ex_rights_previews(self, market: Market) -> RawResponse:
+        """The exchange's current 除權除息預告表 (a snapshot, no date parameter)."""
+
+    @abstractmethod
+    def parse_ex_rights_previews(self, raw: RawResponse) -> list[ExRightsPreview]: ...
+
+
 class FinancialProvider(Provider):
     @abstractmethod
     def fetch_financials(self, symbol: str, period_end: date) -> RawResponse: ...
@@ -324,4 +370,5 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "delistings": DelistingProvider,
     "corporate_actions": CorporateActionProvider,
     "dividend_details": DividendDetailProvider,
+    "ex_rights_previews": ExRightsPreviewProvider,
 }

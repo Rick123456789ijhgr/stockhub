@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
 
-from stockhub.etl.providers.base import PermanentProviderError, TransientProviderError
+from stockhub.etl.providers.base import (
+    PermanentProviderError,
+    TransientProviderError,
+    preview_action_type,
+)
 
 USER_AGENT = "StockHub/0.1 (personal non-commercial research; rate-limited)"
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
@@ -53,6 +58,44 @@ def clean_number(value: str | None) -> str | None:
     if not text or set(text) <= {"-", "+", " "} or text in {"X", "除權", "除息"}:
         return None
     return text
+
+
+def maybe_decimal(value: str | None) -> Decimal | None:
+    """Like clean_number, but notes in number columns ('尚未公告', '註4') become None too."""
+    text = clean_number(value)
+    if text is None:
+        return None
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return None
+
+
+def preview_fields(
+    label: str, cash: str | None, stock_ratio: str | None, rights: str | None, price: str | None
+) -> dict[str, Any]:
+    """Shared normalization of both exchanges' 除權除息預告 rows.
+
+    The label loses its 除 prefix (TPEx writes 除權息, TWSE 權息). A 息 event whose cash is
+    blank or 0 has not announced its amount yet (cash None), which ETFs often do late.
+    """
+    tag = label.strip().removeprefix("除")
+    if tag not in ("息", "權", "權息"):
+        raise ValueError(f"unknown ex-rights label {label!r}")
+    amount = maybe_decimal(cash)
+    if amount == 0 and "息" in tag:
+        amount = None
+    ratio = maybe_decimal(stock_ratio) or Decimal(0)
+    offering = maybe_decimal(rights) or Decimal(0)
+    sub_price = maybe_decimal(price)
+    return {
+        "label": tag,
+        "action_type": preview_action_type(tag, amount, ratio, offering),
+        "cash_dividend": amount,
+        "stock_dividend_ratio": ratio,
+        "rights_ratio": offering,
+        "subscription_price": sub_price if sub_price and sub_price > 0 else None,
+    }
 
 
 def roc_date(value: str) -> date:

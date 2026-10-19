@@ -246,3 +246,49 @@ def test_prices_daily_coverage_follows_writes(pg: psycopg.Connection) -> None:
     assert coverage() == [("2026-10-15", "twse", 1), ("2026-10-16", "twse", 1)]
     pg.execute("TRUNCATE prices_daily CASCADE")
     assert coverage() == []
+
+
+def test_m2_portfolio_columns_and_watchlist_position(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    row = pg.execute(
+        "INSERT INTO portfolio_transactions (stock_id, trade_date, side, quantity, price) "
+        "VALUES (%s, '2026-10-16', 'buy', 1000, 1000) "
+        "RETURNING day_trade, fee_rebate, fee_manual, tax_manual",
+        (stock_id,),
+    ).fetchone()
+    assert row == (False, Decimal("0.00"), False, False)
+    _expect(
+        pg,
+        errors.CheckViolation,
+        "UPDATE portfolio_transactions SET fee_rebate = -1 WHERE stock_id = %s",
+        (stock_id,),
+    )
+    pg.execute("INSERT INTO watchlist (stock_id) VALUES (%s)", (stock_id,))
+    position = pg.execute("SELECT position FROM watchlist WHERE stock_id = %s", (stock_id,))
+    assert position.fetchone() == (0,)
+
+
+def test_corporate_action_previews_key_and_checks(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO corporate_action_previews (stock_id, ex_date, source, label, action_type, "
+        "cash_dividend) VALUES (%s, '2026-10-22', 'twse', %s, 'cash_dividend', NULL)"
+    )
+    pg.execute(sql, (stock_id, "息"))
+    row = pg.execute(
+        "SELECT stock_dividend_ratio, rights_ratio FROM corporate_action_previews"
+    ).fetchone()
+    assert row == (Decimal(0), Decimal(0))
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, "息"))
+    _expect(pg, errors.CheckViolation, sql.replace("'twse'", "'tpex'"), (stock_id, "除息"))
+
+
+def test_dividend_receipts_need_an_amount(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO dividend_receipts (stock_id, ex_date, action_type, cash, shares) "
+        "VALUES (%s, '2026-07-01', 'cash_dividend', %s, %s)"
+    )
+    pg.execute(sql, (stock_id, Decimal("4320"), None))
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, Decimal("1"), None))
+    _expect(pg, errors.CheckViolation, sql.replace("07-01", "08-01"), (stock_id, None, None))

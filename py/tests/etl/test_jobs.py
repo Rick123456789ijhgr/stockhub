@@ -84,8 +84,8 @@ def test_unknown_job(run: Any) -> None:
     with pytest.raises(
         UnknownJobError,
         match=(
-            "available: backfill_prices, compute_adj_factors, daily_prices, "
-            "derive_delisted_etfs, freshness_check"
+            "available: backfill_prices, check_holding_alerts, compute_adj_factors, "
+            "daily_prices, derive_delisted_etfs, freshness_check"
         ),
     ):
         run("nope")
@@ -287,3 +287,27 @@ def test_cli_run_exit_codes(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["run", "nope"]) == 2
     with pytest.raises(SystemExit):
         main(["run", "heartbeat", "--date", "16/10/2026"])
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_cli_notify_test(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["notify-test"]) == 0
+    captured = capsys.readouterr()
+    assert "notify-test sent (console)" in captured.out
+    assert "[notify:info] [StockHub] 通知測試" in captured.err
+
+
+def test_notify_test_reports_smtp_failures(capsys: pytest.CaptureFixture[str]) -> None:
+    from stockhub.common.settings import Settings
+    from stockhub.etl.__main__ import notify_test
+
+    settings = Settings(
+        database_url="postgresql://x@localhost/x",
+        notifier="email",
+        smtp_host="127.0.0.1",
+        smtp_port=1,  # nothing listens here
+        smtp_from="me@example.com",
+        alert_email_to=["me@example.com"],
+    )
+    assert notify_test(settings) == 1
+    assert "notify-test failed (email me@example.com via 127.0.0.1:1)" in capsys.readouterr().err

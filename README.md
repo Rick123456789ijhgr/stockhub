@@ -134,6 +134,29 @@ ETL CLI 的結束碼：0 成功或略過、1 任務失敗、2 用法或設定錯
 
 缺少必要設定時，Python 會在啟動時列出所有缺少的變數並結束。
 
+### Email 通知（持股警示、任務失敗）
+
+預設 `NOTIFIER=console`，通知只印在終端機與 `.local/logs`。改用 Email（以 Gmail 為例）：
+
+1. Google 帳戶開啟兩步驟驗證，到「應用程式密碼」（myaccount.google.com/apppasswords）建立一組 16 碼密碼。不要用帳號本身的密碼。
+2. 在根目錄 `.env` 填入（不要提交到版本庫）：
+
+   ```
+   NOTIFIER=email
+   ALERT_EMAIL_TO=收件信箱（可逗號分隔多個）
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_STARTTLS=true
+   SMTP_USERNAME=你的 Gmail 地址
+   SMTP_PASSWORD=應用程式密碼（16 碼，空白可省略）
+   SMTP_FROM=你的 Gmail 地址
+   ```
+
+3. `make notify-test` 寄一封測試信；失敗時會印出 SMTP 錯誤（例如帳密錯誤、連不上）。
+4. 排程任務每次執行都會重新讀 `.env`，不用重新註冊。
+
+其他郵件服務：port 465 用 `SMTP_STARTTLS=false`（直接 TLS），587 用 `true`。
+
 ## 部署
 
 ### Neon（資料庫）

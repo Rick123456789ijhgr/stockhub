@@ -27,6 +27,30 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface Alerts {
+  created_at: Generated<Timestamp>;
+  /**
+   * Inputs of the decision (price, reference, change, threshold, shares, source).
+   */
+  detail: Generated<Json>;
+  id: Generated<Int8>;
+  /**
+   * holding_move = a holding moved beyond its volatility threshold (PLAN.md section 5); M6 adds news, institutional flows, macro.
+   */
+  kind: string;
+  /**
+   * When the Notifier accepted it; NULL if sending failed.
+   */
+  notified_at: Timestamp | null;
+  severity: string;
+  stock_id: Int8;
+  title: string;
+  /**
+   * Taipei trading date the alert is about.
+   */
+  trade_date: string;
+}
+
 export interface AuditLog {
   action: string;
   /**
@@ -37,6 +61,38 @@ export interface AuditLog {
   detail: Generated<Json>;
   id: Generated<Int8>;
   target: string | null;
+}
+
+export interface CorporateActionPreviews {
+  /**
+   * Classified from the parts, same vocabulary as corporate_actions.
+   */
+  action_type: string;
+  /**
+   * Cash per share in TWD; NULL while not announced (ETFs often publish late).
+   */
+  cash_dividend: Numeric | null;
+  ex_date: string;
+  /**
+   * First snapshot that listed the event (raw_object_id too); later snapshots only update the parts.
+   */
+  fetched_at: Generated<Timestamp>;
+  /**
+   * The exchange's label without the 除 prefix.
+   */
+  label: string;
+  raw_object_id: Int8 | null;
+  /**
+   * All new shares of the cash offering per existing share (as corporate_actions.rights_ratio).
+   */
+  rights_ratio: Generated<Numeric>;
+  source: string;
+  /**
+   * Free new shares per existing share.
+   */
+  stock_dividend_ratio: Generated<Numeric>;
+  stock_id: Int8;
+  subscription_price: Numeric | null;
 }
 
 export interface CorporateActions {
@@ -116,6 +172,27 @@ export interface CorporateActionsQuarantine {
   symbol: string;
 }
 
+export interface DividendReceipts {
+  /**
+   * Matches the corporate_actions (or preview) row the estimate came from.
+   */
+  action_type: string;
+  /**
+   * Net cash received (after the transfer fee and NHI premium); NULL keeps the cash estimate.
+   */
+  cash: Numeric | null;
+  created_at: Generated<Timestamp>;
+  ex_date: string;
+  note: string | null;
+  pay_date: string | null;
+  /**
+   * Stock dividend shares received; NULL keeps the share estimate.
+   */
+  shares: Int8 | null;
+  stock_id: Int8;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface FinancialItemMap {
   industry_type: string;
   /**
@@ -192,7 +269,22 @@ export interface MonthlyRevenue {
 
 export interface PortfolioTransactions {
   created_at: Generated<Timestamp>;
+  /**
+   * Same-day round trip (現股當沖); only changes the tax rate.
+   */
+  day_trade: Generated<boolean>;
+  /**
+   * Brokerage fee charged on the trade (TWD); with the rebate discount mode this is the undiscounted fee.
+   */
   fee: Generated<Numeric>;
+  /**
+   * Fee (and rebate) entered by hand: kept when price or quantity is edited.
+   */
+  fee_manual: Generated<boolean>;
+  /**
+   * Estimated discount refunded later by the broker (rebate mode), counted as income.
+   */
+  fee_rebate: Generated<Numeric>;
   id: Generated<Int8>;
   note: string | null;
   /**
@@ -205,7 +297,14 @@ export interface PortfolioTransactions {
   quantity: Int8;
   side: string;
   stock_id: Int8;
+  /**
+   * Securities transaction tax (TWD); sells only.
+   */
   tax: Generated<Numeric>;
+  /**
+   * Tax entered by hand: kept when price or quantity is edited.
+   */
+  tax_manual: Generated<boolean>;
   trade_date: string;
   updated_at: Generated<Timestamp>;
 }
@@ -377,14 +476,24 @@ export interface TradingCalendar {
 
 export interface Watchlist {
   added_at: Generated<Timestamp>;
+  /**
+   * Free-text note shown on /watchlist.
+   */
   note: string | null;
+  /**
+   * Custom order on /watchlist (ascending; ties by added_at).
+   */
+  position: Generated<number>;
   stock_id: Int8;
 }
 
 export interface DB {
+  alerts: Alerts;
   audit_log: AuditLog;
+  corporate_action_previews: CorporateActionPreviews;
   corporate_actions: CorporateActions;
   corporate_actions_quarantine: CorporateActionsQuarantine;
+  dividend_receipts: DividendReceipts;
   financial_item_map: FinancialItemMap;
   financials: Financials;
   job_runs: JobRuns;

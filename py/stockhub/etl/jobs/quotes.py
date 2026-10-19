@@ -10,13 +10,15 @@ from __future__ import annotations
 import logging
 import time as time_module
 from collections.abc import Callable, Sequence
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, ClassVar
 
 from sqlalchemy import Connection, text
 
-from stockhub.common.timeutil import TAIPEI, utcnow
+from stockhub.common.portfolio_store import holdings
+from stockhub.common.timeutil import TAIPEI, taipei_today, utcnow
 from stockhub.common.trading_calendar import is_trading_day
+from stockhub.etl.jobs.alerts import check_holding_moves
 from stockhub.etl.jobs.base import Job, JobContext, JobOutcome, register_job
 from stockhub.etl.providers.base import Market, Quote, QuoteProvider
 
@@ -28,19 +30,22 @@ SESSION_OPEN = time(9, 0)
 BATCH = QuoteProvider.max_symbols
 
 
-def polled_stocks(conn: Connection, extra: Sequence[str] = ()) -> list[tuple[int, str, Market]]:
-    """Active stocks on the watchlist, held (net shares > 0) or named explicitly."""
+def polled_stocks(
+    conn: Connection, extra: Sequence[str] = (), today: date | None = None
+) -> list[tuple[int, str, Market]]:
+    """Active stocks on the watchlist, held (replayed with splits, reductions and stock
+    dividends) or named explicitly."""
+    held = list(holdings(conn, today or taipei_today()))
     rows = conn.execute(
         text(
             "SELECT s.id, s.symbol, s.market FROM stocks s "
             "WHERE s.delisted_date IS NULL AND ("
             "  s.id IN (SELECT stock_id FROM watchlist)"
-            "  OR s.id IN (SELECT stock_id FROM portfolio_transactions GROUP BY stock_id "
-            "              HAVING sum(CASE WHEN side = 'buy' THEN quantity ELSE -quantity END) > 0)"
+            "  OR s.id = ANY(:held)"
             "  OR s.symbol = ANY(:extra)) "
             "ORDER BY s.symbol"
         ),
-        {"extra": list(extra)},
+        {"extra": list(extra), "held": held},
     ).all()
     return [(r.id, r.symbol, r.market) for r in rows]
 
@@ -125,9 +130,9 @@ class PollQuotesJob(Job):
         until = _time_param(ctx.params.get("until"), DEFAULT_UNTIL)
         once = str(ctx.params.get("once", "")).lower() in {"1", "true", "yes"}
 
+        today = self.now().astimezone(TAIPEI).date()
         with ctx.engine.connect() as conn:
-            targets = polled_stocks(conn, extra)
-            today = self.now().astimezone(TAIPEI).date()
+            targets = polled_stocks(conn, extra, today)
             trading = is_trading_day(conn, today)
         if not targets:
             return JobOutcome("skipped", "沒有自選股或持股，也沒有指定 symbols")
@@ -137,6 +142,7 @@ class PollQuotesJob(Job):
         ids = {symbol: stock_id for stock_id, symbol, _ in targets}
         requests = [(symbol, market) for _, symbol, market in targets]
         rounds = 0
+        alerts = 0
         while True:
             started = self.now()
             local = started.astimezone(TAIPEI).time()
@@ -149,12 +155,24 @@ class PollQuotesJob(Job):
                     ctx.add_rows(
                         store_quotes(conn, fetched.items, ids, fetched.provider, fetched.raw.id)
                     )
+            alerts += self._check_alerts(ctx, today)
             rounds += 1
             if once or local >= until:
                 break
             elapsed = (self.now() - started).total_seconds()
             self.sleep(max(0.0, interval - elapsed))
-        return JobOutcome(message=f"{len(targets)} 檔，輪詢 {rounds} 次")
+        note = f"，持股警示 {alerts} 則" if alerts else ""
+        return JobOutcome(message=f"{len(targets)} 檔，輪詢 {rounds} 次{note}")
+
+    @staticmethod
+    def _check_alerts(ctx: JobContext, today: date) -> int:
+        """Holding alerts after each poll; a failure here must not stop the quotes."""
+        try:
+            with ctx.engine.begin() as conn:
+                return check_holding_moves(conn, ctx.notifier, today)
+        except Exception:
+            log.exception("holding alert check failed")
+            return 0
 
 
 def _seconds_until(now: datetime, at: time) -> float:

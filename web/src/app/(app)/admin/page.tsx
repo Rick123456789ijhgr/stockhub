@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AuditLogList } from "@/components/admin/audit-log";
+import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
 import { PriceGapList } from "@/components/admin/price-gap-review";
 import { AppearanceSettings } from "@/components/appearance-controls";
 import { PageHeader } from "@/components/coming-soon";
@@ -8,19 +10,19 @@ import { PriceChange } from "@/components/price-change";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { listAuditLog } from "@/lib/audit";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatInteger } from "@/lib/format";
 import { countPendingGaps, listPendingGaps } from "@/lib/price-gaps";
+import { getFeeSettings } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "設定" };
 
 const PLANNED = [
-  { name: "自選清單、手續費設定", milestone: "M2" },
   { name: "題材編輯", milestone: "M5" },
   { name: "警示規則", milestone: "M6" },
-  { name: "排程管理", milestone: "M1 起" },
-  { name: "稽核紀錄（讀取函式已備妥：lib/audit.ts）", milestone: "M2 起" },
+  { name: "排程管理", milestone: "之後" },
 ];
 
 export default function AdminPage() {
@@ -28,6 +30,19 @@ export default function AdminPage() {
     <>
       <PageHeader title="設定" description="資料確認與顯示設定；手動操作都會寫入稽核紀錄。" />
       <div className="space-y-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">手續費</CardTitle>
+            <CardDescription>
+              新增交易時自動帶入手續費與證交稅，也用來估算持股的賣出成本。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+              <Fees />
+            </Suspense>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">待確認的價格跳空</CardTitle>
@@ -75,9 +90,32 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">稽核紀錄</CardTitle>
+            <CardDescription>最近 {AUDIT_SHOWN} 筆手動操作（交易、自選、設定、事件確認）。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+              <AuditLog />
+            </Suspense>
+          </CardContent>
+        </Card>
       </div>
     </>
   );
+}
+
+const AUDIT_SHOWN = 50;
+
+async function Fees() {
+  await requireUser();
+  return <FeeSettingsForm initial={await getFeeSettings(getDb())} />;
+}
+
+async function AuditLog() {
+  await requireUser();
+  return <AuditLogList entries={await listAuditLog(getDb(), { limit: AUDIT_SHOWN })} />;
 }
 
 const SHOWN = 200;

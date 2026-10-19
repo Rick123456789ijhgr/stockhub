@@ -61,6 +61,10 @@ def official_handler(request: httpx.Request) -> httpx.Response:
             empty = {"stat": "ok", "tables": [{"fields": FIELDS_TPEX, "data": []}]}
             return httpx.Response(200, json=empty)
         name = "tpex_delisted_2026.json"
+    elif path.endswith("/TWT48U_ALL"):
+        name = "twse_twt48u_all.json"
+    elif path.endswith("/tpex_exright_prepost"):
+        name = "tpex_exright_prepost.json"
     elif path.endswith("/getStockInfo.jsp"):
         name = "twse_mis_20261016.json"
     elif path.endswith("/TWT49UDetail"):
@@ -101,6 +105,7 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "delistings": [twse, tpex],
             "corporate_actions": [twse, tpex],
             "dividend_details": [twse],
+            "ex_rights_previews": [twse, tpex],
             "quote": [TwseMisProvider(client)],
         }
     )

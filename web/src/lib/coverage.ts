@@ -3,6 +3,7 @@ import "server-only";
 import { type Kysely, sql } from "kysely";
 
 import type { DB } from "@/lib/db";
+import { taipeiToday } from "@/lib/market-hours";
 
 import type { DayCoverage } from "./coverage-grid";
 
@@ -93,10 +94,6 @@ export async function getRunningBackfills(db: Kysely<DB>): Promise<RunningBackfi
     });
   }
   return out;
-}
-
-function taipeiToday(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
 }
 
 function shiftDays(iso: string, days: number): string {
