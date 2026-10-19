@@ -6,7 +6,7 @@ PY  := cd py && uv run
 WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
-	migrate-test db-new db-types py-install py-test py-fmt etl-list etl-heartbeat etl-daily \
+	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
 	etl-backfill etl-history etl-adjust etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
@@ -65,6 +65,9 @@ py-fmt: ## Auto-fix and format Python code
 
 etl-list: ## List ETL jobs
 	$(PY) python -m stockhub.etl list
+
+notify-test: ## Send a test message through NOTIFIER (console or email) to check SMTP settings
+	$(PY) python -m stockhub.etl notify-test
 
 etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 	$(PY) python -m stockhub.etl run heartbeat

@@ -53,6 +53,7 @@ make etl-adjust               # 重算還原因子（在 /admin 確認跳空後�
 make etl-dividends            # 證交所權息拆分（start= end=，預設近 30 天）
 make etl-etf-delistings       # 從已存的日線表推算下市 ETF（不連網，回填完成後才跑）
 make etl-previews             # 除權除息預告表（etl-daily 與 etl-quotes 也會跑）
+make notify-test              # 經 NOTIFIER 寄一則測試通知（設定 SMTP 後用；步驟見 README）
 stockhub.bat                  # 雙擊開選單；或 start|stop|restart|status：本機資料庫 + 網站（邏輯在 scripts/stockhub.ps1）
 scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日）；記錄在 .local/logs
 ```
