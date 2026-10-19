@@ -14,6 +14,15 @@
   --color-up: var(--price-up);
   --color-down: var(--price-down);
   --color-flat: var(--price-flat);
+  /* Data coverage (/status): ordinal blue ramp + status warning; never the price colors. */
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-coverage-full: var(--coverage-full);
+  --color-coverage-partial: var(--coverage-partial);
+  --color-coverage-gap: var(--coverage-gap);
+  --color-coverage-closed: var(--coverage-closed);
+  --color-coverage-empty: var(--coverage-empty);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -59,6 +68,17 @@
   --red: oklch(0.577 0.215 27.3);
   --green: oklch(0.56 0.15 150);
   --price-flat: var(--muted-foreground);
+  /* Validated with the dataviz palette script (ordinal, light surface). */
+  --coverage-full: #2a78d6;
+  --coverage-partial: #86b6ef;
+  --coverage-gap: #fab219;
+  --coverage-closed: #e8e7e2;
+  --coverage-empty: #c3c2b7;
+  /* Chart indicator lines (MA5/20/60, K/D, DIF/signal): validated categorical slots that
+     avoid the price colors; capped at three because lines overlap (all-pairs check). */
+  --series-1: #2a78d6;
+  --series-2: #eda100;
+  --series-3: #e87ba4;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -94,6 +114,14 @@
 }
 
 .dark {
+  --series-1: #3987e5;
+  --series-2: #c98500;
+  --series-3: #d55181;
+  --coverage-full: #6da7ec;
+  --coverage-partial: #1c5cab;
+  --coverage-gap: #fab219;
+  --coverage-closed: #2c2c2a;
+  --coverage-empty: #4a4a46;
   --red: oklch(0.68 0.19 25);
   --green: oklch(0.72 0.17 150);
   --background: oklch(0.145 0 0);

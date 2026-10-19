@@ -21,6 +21,7 @@ function call(path: string): Response {
 
 describe("proxy", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.stubEnv("ALLOWED_EMAIL", "me@example.com");
     session.current = null;
   });
@@ -50,6 +51,13 @@ describe("proxy", () => {
 
   it("treats a session whose email left the allowlist as anonymous", () => {
     session.current = { user: { email: "former@example.com" } };
+    expect(call("/api/status").status).toBe(401);
+  });
+
+  it("lets everything through when the local auth bypass is on", () => {
+    vi.stubEnv("AUTH_DISABLED", "true");
+    expect(call("/api/status").headers.get("x-middleware-next")).toBe("1");
+    vi.stubEnv("VERCEL", "1");
     expect(call("/api/status").status).toBe(401);
   });
 

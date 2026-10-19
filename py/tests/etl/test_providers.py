@@ -25,7 +25,7 @@ from stockhub.etl.providers import (
 )
 from stockhub.etl.providers.fake import FakePriceProvider, FlakyFakeProvider
 
-START, END = date(2026, 10, 12), date(2026, 10, 16)  # Mon..Fri
+DAY = date(2026, 10, 16)  # a Friday
 
 RouterFactory = Callable[..., ProviderRouter]
 
@@ -71,10 +71,11 @@ def _raw_count(engine: Engine) -> int:
 
 def test_primary_success_lands_raw_and_parses(make_router: RouterFactory, clean_db: Engine) -> None:
     router = make_router(FakePriceProvider(), FlakyFakeProvider(fail_rate=1.0))
-    fetched = router.daily_prices(START, END, ["2330"])
+    fetched = router.daily_prices(DAY, "twse")
     assert fetched.provider == "fake"
     assert not fetched.used_fallback
-    assert [b.trade_date.day for b in fetched.items] == [12, 13, 14, 15, 16]
+    assert [b.symbol for b in fetched.items] == ["2330", "0050"]
+    assert {b.trade_date for b in fetched.items} == {DAY}
     assert all(isinstance(b, DailyBar) for b in fetched.items)
     assert fetched.raw.created
     assert _raw_count(clean_db) == 1
@@ -84,7 +85,7 @@ def test_transient_errors_are_retried_with_exponential_backoff(
     make_router: RouterFactory, clock: FakeClock
 ) -> None:
     flaky = FlakyFakeProvider(fail_first=2)
-    fetched = make_router(flaky).daily_prices(START, END)
+    fetched = make_router(flaky).daily_prices(DAY, "twse")
     assert fetched.provider == "flaky_fake"
     assert flaky.calls == 3
     assert [a.attempt for a in fetched.attempts] == [1, 2]
@@ -96,7 +97,7 @@ def test_primary_exhausting_retries_falls_back(
 ) -> None:
     flaky = FlakyFakeProvider(fail_rate=1.0)
     with caplog.at_level(logging.WARNING):
-        fetched = make_router(flaky, FakePriceProvider()).daily_prices(START, END)
+        fetched = make_router(flaky, FakePriceProvider()).daily_prices(DAY, "twse")
     assert fetched.provider == "fake"
     assert fetched.used_fallback
     assert flaky.calls == 3
@@ -111,7 +112,7 @@ def test_primary_exhausting_retries_falls_back(
 
 def test_permanent_error_skips_retries(make_router: RouterFactory, clock: FakeClock) -> None:
     flaky = FlakyFakeProvider(fail_rate=1.0, permanent=True)
-    fetched = make_router(flaky, FakePriceProvider()).daily_prices(START, END)
+    fetched = make_router(flaky, FakePriceProvider()).daily_prices(DAY, "twse")
     assert fetched.provider == "fake"
     assert flaky.calls == 1
     assert clock.sleeps == []
@@ -122,7 +123,7 @@ def test_all_providers_failing_raises_clear_error(make_router: RouterFactory) ->
         FlakyFakeProvider(fail_rate=1.0), FlakyFakeProvider(fail_rate=1.0, permanent=True)
     )
     with pytest.raises(AllProvidersFailedError) as exc:
-        router.daily_prices(START, END)
+        router.daily_prices(DAY, "twse")
     assert exc.value.kind == "price"
     assert len(exc.value.attempts) == 4
     message = str(exc.value)
@@ -138,7 +139,7 @@ class BrokenParser(FakePriceProvider):
 
 
 def test_parse_error_keeps_raw_and_falls_back(make_router: RouterFactory, clean_db: Engine) -> None:
-    fetched = make_router(BrokenParser(), FakePriceProvider()).daily_prices(START, END, ["0050"])
+    fetched = make_router(BrokenParser(), FakePriceProvider()).daily_prices(DAY, "twse")
     assert fetched.provider == "fake"
     assert fetched.attempts[0].error.startswith("parse: KeyError")
     # Both providers produced the same payload: stored once, still recoverable.
@@ -152,10 +153,10 @@ class SlowSource(FakePriceProvider):
 
 def test_rate_limit_spaces_calls_per_provider(make_router: RouterFactory, clock: FakeClock) -> None:
     router = make_router(SlowSource())
-    router.daily_prices(START, START)
-    router.daily_prices(START, START)
+    router.daily_prices(DAY, "twse")
+    router.daily_prices(DAY, "twse")
     clock.now += 2.0
-    router.daily_prices(START, START)
+    router.daily_prices(DAY, "twse")
     assert clock.sleeps == [0.5]
 
 
@@ -183,7 +184,7 @@ def test_flaky_fail_rate_is_seeded() -> None:
         out = []
         for _ in range(20):
             try:
-                p.fetch_daily_prices(START, START)
+                p.fetch_daily_prices(DAY, "twse")
                 out.append(False)
             except Exception:
                 out.append(True)
@@ -203,13 +204,13 @@ def test_registry_from_names_and_settings(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("PROVIDERS_PRICE", "fake")
     registry = ProviderRegistry.from_settings(load_settings())
     assert [p.name for p in registry.providers_for("price")] == ["fake"]
-    with pytest.raises(ConfigError, match="PROVIDERS_QUOTE"):
-        registry.providers_for("quote")
+    with pytest.raises(ConfigError, match="PROVIDERS_FINANCIAL"):
+        registry.providers_for("financial")
 
 
 def test_registry_rejects_unknown_or_incapable_providers() -> None:
-    with pytest.raises(ConfigError, match="unknown provider 'twse'"):
-        ProviderRegistry.from_names({"price": ["twse"]})
+    with pytest.raises(ConfigError, match="unknown provider 'nope'"):
+        ProviderRegistry.from_names({"price": ["nope"]})
     with pytest.raises(ConfigError, match="cannot serve quote data"):
         ProviderRegistry.from_names({"quote": ["fake"]})
 

@@ -5,6 +5,7 @@ description = "StockHub batch ETL, features and backtest engine"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "google-cloud-storage>=2.18",
+    "httpx>=0.28",
     "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.7",

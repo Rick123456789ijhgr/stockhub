@@ -54,3 +54,29 @@ export function formatInteger(value: number | string | null | undefined): string
   if (value == null || value === "") return "—";
   return new Intl.NumberFormat("zh-TW").format(Number(value));
 }
+
+/** Price string from the DB ("2420.0000") -> "2,420.00"; null -> "—". */
+export function formatPrice(value: string | null | undefined, digits = 2): string {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Number(value));
+}
+
+/** Shares -> lots (張, 1,000 shares), the unit Taiwanese quotes are read in. */
+export function formatLots(shares: string | number | null | undefined): string {
+  if (shares == null || shares === "") return "—";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
+    Math.round(Number(shares) / 1000),
+  );
+}
+
+/** TWD -> 億 (100 million) with two decimals. */
+export function formatHundredMillion(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value) / 1e8);
+}

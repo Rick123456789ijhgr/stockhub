@@ -6,12 +6,13 @@ import hashlib
 import json
 import random
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import ClassVar
 
 from stockhub.etl.providers.base import (
     DailyBar,
+    Market,
     PermanentProviderError,
     PriceProvider,
     RawResponse,
@@ -44,19 +45,16 @@ class FakePriceProvider(PriceProvider):
     """Weekday bars derived from a hash of (symbol, date): stable across runs."""
 
     name: ClassVar[str] = "fake"
+    markets: ClassVar[frozenset[Market]] = frozenset({"twse", "tpex"})
 
-    def fetch_daily_prices(
-        self, start: date, end: date, symbols: Sequence[str] | None = None
-    ) -> RawResponse:
-        if start > end:
-            raise PermanentProviderError(f"start {start} is after end {end}")
-        rows: list[dict[str, object]] = []
-        day = start
-        while day <= end:
-            if day.isoweekday() < 6:
-                rows.extend(_fake_bar(s, day) for s in symbols or DEFAULT_SYMBOLS)
-            day += timedelta(days=1)
-        params = {"start": start.isoformat(), "end": end.isoformat(), "symbols": symbols}
+    def __init__(self, symbols: Sequence[str] = DEFAULT_SYMBOLS) -> None:
+        self.symbols = tuple(symbols)
+
+    def fetch_daily_prices(self, trade_date: date, market: Market) -> RawResponse:
+        rows = (
+            [_fake_bar(s, trade_date) for s in self.symbols] if trade_date.isoweekday() < 6 else []
+        )
+        params = {"date": trade_date.isoformat(), "market": market}
         return RawResponse("daily_prices", {"data": rows}, params)
 
     def parse_daily_prices(self, raw: RawResponse) -> list[DailyBar]:
@@ -95,18 +93,18 @@ class FlakyFakeProvider(FakePriceProvider):
         fail_first: int = 0,
         permanent: bool = False,
         seed: int = 0,
+        symbols: Sequence[str] = DEFAULT_SYMBOLS,
     ) -> None:
+        super().__init__(symbols)
         if not 0.0 <= fail_rate <= 1.0:
             raise ValueError("fail_rate must be between 0 and 1")
         self.fail_rate, self.fail_first, self.permanent = fail_rate, fail_first, permanent
         self.calls = 0
         self._rng = random.Random(seed)  # noqa: S311 - test fixture
 
-    def fetch_daily_prices(
-        self, start: date, end: date, symbols: Sequence[str] | None = None
-    ) -> RawResponse:
+    def fetch_daily_prices(self, trade_date: date, market: Market) -> RawResponse:
         self.calls += 1
         if self.calls <= self.fail_first or self._rng.random() < self.fail_rate:
             error = PermanentProviderError if self.permanent else TransientProviderError
             raise error(f"{self.name}: simulated failure on call {self.calls}")
-        return super().fetch_daily_prices(start, end, symbols)
+        return super().fetch_daily_prices(trade_date, market)

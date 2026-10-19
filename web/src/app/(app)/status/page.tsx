@@ -14,9 +14,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/session";
+import { AutoRefresh } from "@/components/status/auto-refresh";
+import { ScheduleHealthCard } from "@/components/status/schedule-health";
+import {
+  BackfillCard,
+  StatTiles,
+  YearBars,
+  YearCoverage,
+} from "@/components/status/data-progress";
+import { getDataTotals, getDayCoverage, getRunningBackfills, taipeiToday } from "@/lib/coverage";
+import { fetchedRange, summarizeYears } from "@/lib/coverage-grid";
 import { getDb } from "@/lib/db";
 import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/format";
-import { getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
+import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
+import { getScheduleRuns, getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
 
 export const metadata: Metadata = { title: "資料狀態" };
 
@@ -34,12 +45,12 @@ const STATUS_VARIANT: Record<JobRunStatus, "secondary" | "destructive" | "outlin
   skipped: "outline",
 };
 
-export default function StatusPage() {
+export default function StatusPage({ searchParams }: PageProps<"/status">) {
   return (
     <>
-      <PageHeader title="資料狀態" description="排程任務紀錄與各資料集的最新日期（時間為台北時間）。" />
-      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-        <StatusContent />
+      <PageHeader title="資料狀態" description="資料抓取進度、每日涵蓋與任務紀錄（時間為台北時間）。" />
+      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+        <StatusContent searchParams={searchParams} />
       </Suspense>
     </>
   );
@@ -47,32 +58,76 @@ export default function StatusPage() {
 
 // Layouts and pages render in parallel, so the page checks the session itself before
 // touching data (the layout gate and the proxy are not enough on their own).
-async function StatusContent() {
+async function StatusContent({ searchParams }: { searchParams: PageProps<"/status">["searchParams"] }) {
   await requireUser();
-  const { jobRuns, datasets } = await getStatusData(getDb());
+  const db = getDb();
+  const today = taipeiToday();
+  const thisYear = Number(today.slice(0, 4));
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, params] = await Promise.all([
+    getStatusData(db),
+    getDayCoverage(db, thisYear),
+    getDataTotals(db),
+    getRunningBackfills(db),
+    getScheduleRuns(db),
+    searchParams,
+  ]);
+
+  const pending = backfills.map((b) => ({ from: b.next ?? b.start, to: b.end }));
+  const years = summarizeYears(days, today, pending);
+  const range = fetchedRange(days);
+  const requested = Number(Array.isArray(params.year) ? params.year[0] : params.year);
+  const selectedYear = years.some((y) => y.year === requested)
+    ? requested
+    : Number((range?.last ?? today).slice(0, 4));
+  const coveredDays = years.reduce((sum, y) => sum + y.fetched + y.partial, 0);
+  const running = backfills.length > 0 || jobRuns.some((r) => r.status === "running");
+  const now = new Date();
+  const schedules = SCHEDULES.map((s) => scheduleHealth(s, scheduleRuns, now));
 
   return (
     <>
+      <AutoRefresh seconds={running ? 5 : 60} />
 
-      <section aria-labelledby="datasets" className="mb-6">
-        <h2 id="datasets" className="sr-only">
-          資料集
+      <section aria-labelledby="totals" className="mb-6">
+        <h2 id="totals" className="sr-only">
+          總覽
         </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {datasets.map((d) => (
-            <Card key={d.dataset} size="sm">
-              <CardHeader>
-                <CardDescription>
-                  {d.label}
-                  <span className="ml-1 font-mono text-xs">({d.dataset})</span>
-                </CardDescription>
-                <CardTitle className="text-lg tabular-nums">
-                  {d.latestDate ?? <span className="text-muted-foreground">尚無資料</span>}
-                </CardTitle>
-              </CardHeader>
-            </Card>
+        <StatTiles totals={totals} coveredDays={coveredDays} latest={range?.last ?? null} />
+      </section>
+
+      <section aria-label="排程" className="mb-6">
+        <ScheduleHealthCard items={schedules} />
+      </section>
+
+      {backfills.length > 0 ? (
+        <section aria-labelledby="running" className="mb-6 space-y-3">
+          <h2 id="running" className="text-base font-semibold">
+            進行中（每 5 秒自動更新）
+          </h2>
+          {backfills.map((run) => (
+            <BackfillCard key={run.id} run={run} now={new Date()} />
           ))}
-        </div>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="coverage" className="mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle id="coverage" className="text-base">
+              日線涵蓋
+            </CardTitle>
+            <CardDescription>
+              每年已抓取的交易日（深色：上市、上櫃都有；淺色：只有一個市場）。點年份看每日明細。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+            <YearBars years={years} selected={selectedYear} />
+            <div>
+              <h3 className="mb-2 text-sm font-medium">{selectedYear} 年每日涵蓋</h3>
+              <YearCoverage year={selectedYear} days={days} today={today} pending={pending} />
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       <section aria-labelledby="job-runs">

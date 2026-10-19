@@ -5,11 +5,6 @@ export const PLACEHOLDERS = {
     milestone: "M2",
     features: ["持股與損益", "交易紀錄（以股為單位）", "ETF 配息自動推算", "手續費與證交稅"],
   },
-  stocks: {
-    title: "個股",
-    milestone: "M1 起",
-    features: ["K 線與技術指標", "基本面與估值", "籌碼", "新聞與社群情緒"],
-  },
   market: {
     title: "市場",
     milestone: "M1 / M5",

@@ -7,8 +7,15 @@ import { cn } from "@/lib/utils";
 
 import { isActive, isMoreActive, MORE_ITEM, NAV_ITEMS, type NavItem } from "./nav-items";
 
+/**
+ * usePathname() is request data on dynamic routes (e.g. /stocks/[symbol]), so the layout
+ * renders these inside <Suspense>; the `pathname=""` variants are the static fallbacks.
+ */
 export function SidebarNav() {
-  const pathname = usePathname();
+  return <SidebarNavList pathname={usePathname()} />;
+}
+
+export function SidebarNavList({ pathname }: { pathname: string }) {
   return (
     <nav aria-label="主選單" className="flex flex-col gap-1">
       {NAV_ITEMS.map((item) => (
@@ -36,7 +43,10 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
 }
 
 export function BottomNav() {
-  const pathname = usePathname();
+  return <BottomNavList pathname={usePathname()} />;
+}
+
+export function BottomNavList({ pathname }: { pathname: string }) {
   const items = [...NAV_ITEMS.filter((item) => item.primary), MORE_ITEM];
   return (
     <nav aria-label="主選單" className="grid grid-cols-5">

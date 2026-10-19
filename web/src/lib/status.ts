@@ -4,6 +4,7 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "@/lib/db";
 import { summarizeError } from "@/lib/format";
+import { SCHEDULES, type ScheduleRun } from "@/lib/schedule-health";
 
 export type JobRunStatus = "running" | "succeeded" | "failed" | "skipped";
 
@@ -51,7 +52,7 @@ export async function getStatusData(db: Kysely<DB>, limit = 50): Promise<StatusD
       .limit(limit)
       .execute(),
     db
-      .selectFrom("prices_daily")
+      .selectFrom("prices_daily_coverage")
       .select((eb) => eb.fn.max("trade_date").as("latest"))
       .executeTakeFirst(),
   ]);
@@ -71,4 +72,24 @@ export async function getStatusData(db: Kysely<DB>, limit = 50): Promise<StatusD
     })),
     datasets: DATASETS.map((d) => ({ ...d, latestDate: prices?.latest ?? null })),
   };
+}
+
+/** Runs of the scheduled jobs in the past 30 days, for scheduleHealth(). */
+export async function getScheduleRuns(db: Kysely<DB>): Promise<ScheduleRun[]> {
+  const jobs = [...new Set(SCHEDULES.flatMap((s) => s.jobs))];
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .selectFrom("job_runs")
+    .select(["job_name", "status", "started_at", "finished_at", "error"])
+    .where("job_name", "in", jobs)
+    .where("started_at", ">=", since)
+    .orderBy("started_at", "desc")
+    .execute();
+  return rows.map((r) => ({
+    jobName: r.job_name,
+    status: r.status as ScheduleRun["status"],
+    startedAt: r.started_at.toISOString(),
+    finishedAt: r.finished_at?.toISOString() ?? null,
+    errorSummary: summarizeError(r.error),
+  }));
 }

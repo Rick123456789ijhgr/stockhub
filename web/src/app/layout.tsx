@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { Providers } from "@/components/providers";
+import { APPEARANCE_SCRIPT } from "@/lib/appearance";
 
 import "./globals.css";
 
@@ -18,8 +19,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // data-price-colors: "tw" = red up / green down (default), "intl" swaps them.
-    <html lang="zh-Hant-TW" data-price-colors="tw" className="h-full antialiased">
+    // data-price-colors: "tw" = red up / green down (default), "intl" swaps them. The head
+    // script applies the stored theme and colors before first paint, so <html> differs
+    // from the server render on purpose.
+    <html
+      lang="zh-Hant-TW"
+      data-price-colors="tw"
+      className="h-full antialiased"
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
+      </head>
       <body className="min-h-full">
         <Providers>{children}</Providers>
       </body>

@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { BottomNav, SidebarNav } from "@/components/nav/nav-links";
+import { ThemeToggle } from "@/components/appearance-controls";
+import {
+  BottomNav,
+  BottomNavList,
+  SidebarNav,
+  SidebarNavList,
+} from "@/components/nav/nav-links";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
@@ -16,8 +22,11 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
     <div className="min-h-dvh md:grid md:grid-cols-[13rem_1fr]">
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r bg-sidebar px-3 py-5 md:flex">
         <Brand />
-        <SidebarNav />
-        <div className="mt-auto px-1">
+        <Suspense fallback={<SidebarNavList pathname="" />}>
+          <SidebarNav />
+        </Suspense>
+        <div className="mt-auto space-y-2 px-1">
+          <ThemeToggle />
           <Suspense fallback={<Skeleton className="h-8 w-full" />}>
             <UserMenu />
           </Suspense>
@@ -25,8 +34,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-10 flex h-12 items-center border-b bg-background/95 px-4 backdrop-blur md:hidden">
+        <header className="sticky top-0 z-10 flex h-12 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:hidden">
           <Brand />
+          <ThemeToggle />
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-24 md:px-8 md:py-8">
           <Suspense fallback={<PageSkeleton />}>
@@ -36,7 +46,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        <BottomNav />
+        <Suspense fallback={<BottomNavList pathname="" />}>
+          <BottomNav />
+        </Suspense>
       </div>
     </div>
   );

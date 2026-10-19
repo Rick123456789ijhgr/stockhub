@@ -40,26 +40,80 @@ export interface AuditLog {
 }
 
 export interface CorporateActions {
+  /**
+   * The exchange's label: cash_and_stock_dividend = 權息 on one day. What a TWSE 權息 consisted of is in cash_dividend / stock_dividend_ratio / rights_ratio once its detail page is fetched (a 權息 can be cash plus a subscription).
+   */
   action_type: string;
   /**
-   * Cash dividend per share in TWD.
+   * Cash per share in TWD: the dividend, or the refund of a capital reduction; NULL when the source does not separate it.
    */
   cash_dividend: Numeric | null;
+  /**
+   * Raw per-event detail page the cash / stock / rights parts came from (TWSE TWT49UDetail since 2009); set even when the page had no data, so it is not fetched again.
+   */
+  detail_raw_object_id: Int8 | null;
+  /**
+   * First trading day at the new basis: the ex-date, or the day trading resumes after a reduction/split.
+   */
   ex_date: string;
   fetched_at: Generated<Timestamp>;
   id: Generated<Int8>;
   pay_date: string | null;
   /**
+   * Exchange-published close before the event (除權息前收盤價 / 停止買賣前收盤價).
+   */
+  prev_close: Numeric | null;
+  /**
+   * Backward adjustment for bars before ex_date: reference_price / prev_close (else 1 / ratio). prices_daily.adj_factor is the product over later events.
+   */
+  price_factor: Generated<Numeric | null>;
+  /**
    * Shares after / shares before, for capital reductions and splits.
    */
   ratio: Numeric | null;
   raw_object_id: Int8 | null;
+  /**
+   * Exchange-published reference price on ex_date (除權息參考價 / 恢復買賣參考價).
+   */
+  reference_price: Numeric | null;
+  /**
+   * New shares existing holders may subscribe per share (現金增資認購率); NULL when the source does not say.
+   */
+  rights_ratio: Numeric | null;
   source: string;
   /**
    * New shares received per existing share (0.05 = 50 shares per 1000).
    */
   stock_dividend_ratio: Numeric | null;
   stock_id: Int8;
+  /**
+   * Subscription price per new share (現金增資認購價) for rights_ratio.
+   */
+  subscription_price: Numeric | null;
+}
+
+export interface CorporateActionsQuarantine {
+  /**
+   * As parsed; unknown for derived price gaps.
+   */
+  action_type: string;
+  created_at: Generated<Timestamp>;
+  ex_date: string;
+  id: Generated<Int8>;
+  /**
+   * The parsed action (or, for gaps, the two adjusted closes) as received.
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  reasons: string[];
+  /**
+   * accepted, discarded, explained (a later import explains the gap) or NULL while pending.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  stock_id: Int8 | null;
+  symbol: string;
 }
 
 export interface FinancialItemMap {
@@ -182,6 +236,72 @@ export interface PricesDaily {
   volume: Generated<Int8>;
 }
 
+export interface PricesDailyCoverage {
+  /**
+   * Rows in prices_daily for the date and market.
+   */
+  bars: number;
+  /**
+   * The stock's current stocks.market (same grouping as the old live query; a transferred stock counts in its new market).
+   */
+  market: string;
+  trade_date: string;
+}
+
+export interface PricesDailyQuarantine {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  /**
+   * The parsed bar as received (prices as strings).
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  /**
+   * Failed checks, e.g. high_below_low, partial_ohlc.
+   */
+  reasons: string[];
+  /**
+   * How it was resolved (accepted, discarded, refetched); NULL while pending.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  stock_id: Int8;
+  trade_date: string;
+}
+
+export interface QuotesLatest {
+  ask: Numeric | null;
+  bid: Numeric | null;
+  fetched_at: Generated<Timestamp>;
+  high: Numeric | null;
+  low: Numeric | null;
+  open: Numeric | null;
+  /**
+   * Reference price the exchange measures the day's change against.
+   */
+  prev_close: Numeric | null;
+  /**
+   * Last trade; kept from the previous poll of the same day when a tick carries none.
+   */
+  price: Numeric | null;
+  /**
+   * Exchange time of the snapshot (UTC).
+   */
+  quote_time: Timestamp;
+  raw_object_id: Int8 | null;
+  source: string;
+  stock_id: Int8;
+  /**
+   * Taipei trading date of the snapshot; older than today means no quote yet today.
+   */
+  trade_date: string;
+  /**
+   * Cumulative regular-session volume in shares.
+   */
+  volume: Generated<Int8>;
+}
+
 export interface RawObjects {
   /**
    * Size of the uncompressed payload in bytes.
@@ -213,13 +333,28 @@ export interface Settings {
 
 export interface Stocks {
   created_at: Generated<Timestamp>;
+  /**
+   * First day no longer listed (終止上市／上櫃日); the last trading day is the trading day before. NULL = active.
+   */
   delisted_date: string | null;
+  /**
+   * Reason published with the delisting (TPEx only; TWSE publishes none).
+   */
+  delisting_reason: string | null;
   id: Generated<Int8>;
+  /**
+   * Industry name as listed on the exchange ISIN page (e.g. 半導體業); industry_code is filled once an official code mapping is imported.
+   */
+  industry: string | null;
   industry_code: string | null;
   /**
    * Listing date; with symbol forms the natural key because symbols can be reused after delisting.
    */
   listed_date: string;
+  /**
+   * True when listed_date is a lower bound, not the official date: delisting lists carry no listing date, so it is the first stored trading day (or the previous same-symbol delisting / 1962-02-09 before any price is stored).
+   */
+  listed_date_estimated: Generated<boolean>;
   /**
    * twse = listed (上市), tpex = OTC (上櫃).
    */
@@ -249,12 +384,16 @@ export interface Watchlist {
 export interface DB {
   audit_log: AuditLog;
   corporate_actions: CorporateActions;
+  corporate_actions_quarantine: CorporateActionsQuarantine;
   financial_item_map: FinancialItemMap;
   financials: Financials;
   job_runs: JobRuns;
   monthly_revenue: MonthlyRevenue;
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
+  prices_daily_coverage: PricesDailyCoverage;
+  prices_daily_quarantine: PricesDailyQuarantine;
+  quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
   settings: Settings;
   stocks: Stocks;

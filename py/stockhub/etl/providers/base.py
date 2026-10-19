@@ -16,7 +16,29 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-DataKind = Literal["price", "financial", "quote"]
+DataKind = Literal[
+    "price",
+    "financial",
+    "quote",
+    "calendar",
+    "securities",
+    "delistings",
+    "corporate_actions",
+    "dividend_details",
+]
+Market = Literal["twse", "tpex"]
+"""twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
+ActionDataset = Literal["dividend", "capital_reduction", "par_value_change", "etf_split"]
+"""Exchange tables of price-adjusting events: 除權息, 減資, 變更面額, ETF 分割."""
+ActionType = Literal[
+    "cash_dividend",
+    "stock_dividend",
+    "cash_and_stock_dividend",
+    "rights_issue",
+    "capital_reduction",
+    "split",
+    "reverse_split",
+]
 
 
 # ----------------------------------------------------------------------------- errors
@@ -73,6 +95,80 @@ class DailyBar(_Model):
     close: Decimal | None
     volume: int = Field(ge=0, description="shares")
     turnover: Decimal = Field(ge=0, description="TWD")
+    name: str | None = None
+    """Security name as printed in the day's table (finds securities missing from the master)."""
+
+
+class CalendarEntry(_Model):
+    """A date the exchange announced as special: a holiday, or an explicit trading day."""
+
+    day: date
+    name: str
+    is_trading_day: bool
+
+
+class Security(_Model):
+    """One listed security from an exchange's master list."""
+
+    symbol: str
+    name: str
+    market: Market
+    type: Literal["stock", "etf"]
+    listed_date: date
+    industry: str | None = None
+    isin: str | None = None
+
+
+class Delisting(_Model):
+    """A security the exchange stopped listing (終止上市／終止上櫃)."""
+
+    symbol: str
+    name: str
+    market: Market
+    delisted_date: date
+    """First day it no longer traded; the last trading day is the trading day before."""
+    reason: str | None = None
+
+
+class CorporateAction(_Model):
+    """A price-adjusting event as published with its exchange reference price.
+
+    The exchange's reference price already accounts for everything that changed per-share
+    value (cash, stock dividends, rights, refunds, ratio changes), so
+    reference_price / prev_close is the backward adjustment for that day. ETF splits on
+    TPEx carry only a ratio, which then stands in for the prices.
+    """
+
+    symbol: str
+    market: Market
+    ex_date: date
+    """First trading day at the new basis (ex-date, or the day trading resumes)."""
+    action_type: ActionType
+    # Not constrained here: sources publish the odd junk row (0.00 / negative prices), which
+    # the quality check quarantines instead of failing the whole table.
+    prev_close: Decimal | None = None
+    reference_price: Decimal | None = None
+    cash_dividend: Decimal | None = Field(default=None, ge=0)
+    """Cash per share (dividend, or capital refund for reductions); None when not published."""
+    stock_dividend_ratio: Decimal | None = Field(default=None, ge=0)
+    ratio: Decimal | None = Field(default=None, gt=0)
+    """Shares after / shares before (reductions, splits)."""
+
+
+class DividendDetail(_Model):
+    """What one 除權息 event consisted of, per existing share (TWSE publishes only the total
+    in its event table since 2009; the per-event detail page has the parts)."""
+
+    symbol: str
+    ex_date: date
+    cash_dividend: Decimal = Field(ge=0)
+    """Cash per share in TWD."""
+    stock_dividend_ratio: Decimal = Field(ge=0)
+    """Free new shares per existing share (無償配股; 0.05 = 50 per 1000)."""
+    rights_ratio: Decimal = Field(ge=0)
+    """New shares existing holders may subscribe per share (現金增資認購; 0 when none)."""
+    subscription_price: Decimal | None = Field(default=None, gt=0)
+    """Price per subscribed share (每股認購金額); None without a subscription."""
 
 
 class FinancialItem(_Model):
@@ -88,12 +184,24 @@ class FinancialItem(_Model):
 
 
 class Quote(_Model):
-    """Intraday snapshot."""
+    """Intraday snapshot of one security."""
 
     symbol: str
-    price: Decimal
-    volume: int = Field(ge=0, description="cumulative shares today")
+    market: Market
+    trade_date: date
+    """Taipei trading date the snapshot belongs to."""
     at: AwareDatetime
+    """Exchange time of the last update."""
+    price: Decimal | None
+    """Last trade; None when no trade has printed yet (or the feed omits it this tick)."""
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    prev_close: Decimal | None = None
+    """Previous close / reference price the exchange measures today's change against."""
+    volume: int = Field(ge=0, description="cumulative shares today")
+    bid: Decimal | None = None
+    ask: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -116,14 +224,75 @@ class Provider(ABC):
 
 
 class PriceProvider(Provider):
-    @abstractmethod
-    def fetch_daily_prices(
-        self, start: date, end: date, symbols: Sequence[str] | None = None
-    ) -> RawResponse:
-        """Daily bars for [start, end]; symbols=None means the whole market."""
+    markets: ClassVar[frozenset[Market]]
+    """Markets this source can serve; the router skips it for others."""
 
     @abstractmethod
-    def parse_daily_prices(self, raw: RawResponse) -> list[DailyBar]: ...
+    def fetch_daily_prices(self, trade_date: date, market: Market) -> RawResponse:
+        """All bars of one market on one date (official sources publish whole-market days)."""
+
+    @abstractmethod
+    def parse_daily_prices(self, raw: RawResponse) -> list[DailyBar]:
+        """Empty list = the market did not trade that day."""
+
+
+class CalendarProvider(Provider):
+    @abstractmethod
+    def fetch_calendar(self, year: int) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_calendar(self, raw: RawResponse) -> list[CalendarEntry]:
+        """Announced special dates of the year; an empty list means not published."""
+
+
+class SecurityListProvider(Provider):
+    security_markets: ClassVar[frozenset[Market]]
+    """Markets whose master list this source publishes (separate from price markets)."""
+
+    @abstractmethod
+    def fetch_securities(self, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_securities(self, raw: RawResponse) -> list[Security]: ...
+
+
+class DelistingProvider(Provider):
+    delisting_markets: ClassVar[frozenset[Market]]
+    """Markets whose delisting list this source publishes."""
+
+    @abstractmethod
+    def fetch_delistings(self, market: Market, year: int) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_delistings(self, raw: RawResponse) -> list[Delisting]:
+        """Securities delisted during the requested year (may include market transfers)."""
+
+
+class CorporateActionProvider(Provider):
+    action_sources: ClassVar[dict[tuple[Market, ActionDataset], date]]
+    """(market, dataset) pairs this source publishes, each with its first available date."""
+
+    @abstractmethod
+    def fetch_corporate_actions(
+        self, market: Market, dataset: ActionDataset, start: date, end: date
+    ) -> RawResponse:
+        """Events dated in [start, end]; start is never before the dataset's first date."""
+
+    @abstractmethod
+    def parse_corporate_actions(self, raw: RawResponse) -> list[CorporateAction]: ...
+
+
+class DividendDetailProvider(Provider):
+    detail_markets: ClassVar[frozenset[Market]]
+    detail_since: ClassVar[date]
+    """First ex-date with a detail page (earlier event tables carry the parts themselves)."""
+
+    @abstractmethod
+    def fetch_dividend_detail(self, market: Market, symbol: str, ex_date: date) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_dividend_detail(self, raw: RawResponse) -> list[DividendDetail]:
+        """The event's parts, or an empty list when the source has no detail for it."""
 
 
 class FinancialProvider(Provider):
@@ -135,8 +304,12 @@ class FinancialProvider(Provider):
 
 
 class QuoteProvider(Provider):
+    max_symbols: ClassVar[int] = 50
+    """Largest batch one request may carry; callers split longer lists."""
+
     @abstractmethod
-    def fetch_quotes(self, symbols: Sequence[str]) -> RawResponse: ...
+    def fetch_quotes(self, symbols: Sequence[tuple[str, Market]]) -> RawResponse:
+        """Latest snapshot of each (symbol, market)."""
 
     @abstractmethod
     def parse_quotes(self, raw: RawResponse) -> list[Quote]: ...
@@ -146,4 +319,9 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "price": PriceProvider,
     "financial": FinancialProvider,
     "quote": QuoteProvider,
+    "calendar": CalendarProvider,
+    "securities": SecurityListProvider,
+    "delistings": DelistingProvider,
+    "corporate_actions": CorporateActionProvider,
+    "dividend_details": DividendDetailProvider,
 }

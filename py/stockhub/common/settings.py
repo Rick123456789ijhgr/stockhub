@@ -49,15 +49,25 @@ class Settings(BaseSettings):
     smtp_from: str | None = None
     smtp_starttls: bool = True
 
-    providers_price: CommaList = Field(default_factory=lambda: ["fake"])
+    providers_price: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_financial: CommaList = Field(default_factory=list)
-    providers_quote: CommaList = Field(default_factory=list)
+    providers_quote: CommaList = Field(default_factory=lambda: ["twse_mis"])
+    providers_calendar: CommaList = Field(default_factory=lambda: ["twse"])
+    providers_securities: CommaList = Field(default_factory=lambda: ["twse"])
+    providers_delistings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_corporate_actions: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_dividend_details: CommaList = Field(default_factory=lambda: ["twse"])
 
     @field_validator(
         "alert_email_to",
         "providers_price",
         "providers_financial",
         "providers_quote",
+        "providers_calendar",
+        "providers_securities",
+        "providers_delistings",
+        "providers_corporate_actions",
+        "providers_dividend_details",
         mode="before",
     )
     @classmethod

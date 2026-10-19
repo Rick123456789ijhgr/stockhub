@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { decideAccess } from "@/lib/auth/access";
 import { allowlistFromEnv, isAllowedEmail } from "@/lib/auth/allowlist";
+import { isAuthDisabled } from "@/lib/auth/mode";
 
 /**
  * Next.js 16 proxy (formerly middleware): every route and /api/* requires a session,
@@ -10,6 +11,7 @@ import { allowlistFromEnv, isAllowedEmail } from "@/lib/auth/allowlist";
  * themselves (lib/auth/session.ts); this is the first gate, not the only one.
  */
 export const proxy = auth((req) => {
+  if (isAuthDisabled()) return NextResponse.next();
   const email = req.auth?.user?.email;
   const signedIn = isAllowedEmail(email, allowlistFromEnv());
   const decision = decideAccess(req.nextUrl.pathname, req.nextUrl.search, signedIn);
