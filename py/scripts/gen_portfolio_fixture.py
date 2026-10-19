@@ -284,7 +284,8 @@ def main() -> None:
         ],
     }
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    text = json.dumps(data, indent=1, ensure_ascii=False) + "\n"
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {OUT}")
 
 
