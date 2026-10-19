@@ -3,7 +3,7 @@
 個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選器與回測。單人使用，全端專案。
 
 - 完整規劃摘要：`docs/PLAN.md`
-- 目前任務：`docs/M0.md`（里程碑 M0：地基）
+- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）
 - 與規劃有偏離時，記錄在 `docs/DECISIONS.md`（日期、原因、取捨），不要默默改。
 
 ## 技術棧
@@ -81,6 +81,8 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 - 新排程任務：繼承 `Job`、用 `@register_job` 註冊，並在 `stockhub/etl/jobs/__init__.py` 匯入；寫入一律用 `upsert()`，長任務用 `ctx.save_checkpoint()`。
 - 新 schema：只加遷移檔（`make db-new`），必附 `COMMENT ON`、`down` 段與 pytest schema 測試，再跑 `make db-types`。
 - 指標公式：`py/stockhub/engine/indicators.py` 與 `web/src/lib/indicators.ts` 逐式對應；改任一邊都要同步另一邊，並用 `py/scripts/gen_indicator_fixture.py` 重產 `testdata/indicators.json`。
+- 持股計算：`py/stockhub/engine/portfolio.py` 與 `web/src/lib/portfolio.ts` 逐式對應（平均成本、手續費、證交稅、配息推算、今日損益），改任一邊都要同步另一邊，並用 `py/scripts/gen_portfolio_fixture.py` 重產 `testdata/portfolio.json`。交易寫入一律經 `applyTransactionChange`（重播檢查賣超、重算自動費用、寫稽核紀錄）。配息推算不入庫，頁面每次重算並標示「估算」。
+- 所有手動操作（交易、自選、設定、事件確認）都寫 `audit_log`，`action` 用 `領域.動作`（例如 `portfolio.update`），新動作要在 `components/admin/audit-log.tsx` 加中文標籤。
 - 還原價 = 原始價 × `adj_factor`；漲跌一律用還原後的前收（`rebasedPrevClose`），不要直接拿原始前收算。
 - 圖表顏色只用 token：漲跌 `--price-up/down`，線 `--series-1..3`（已用 dataviz 驗證，最多三條會交錯的線）；Tailwind v4 會刪掉沒被 utility 用到的變數，新 token 要有對應的 `bg-*` 等用法。
 - 手動確認的事件 `corporate_actions.source = 'manual'`；匯入同一天的官方事件時會刪掉它。`action_type` 保留交易所的標示（它是自然鍵的一部分），事件實際內容看 `cash_dividend`、`stock_dividend_ratio`、`rights_ratio`。
