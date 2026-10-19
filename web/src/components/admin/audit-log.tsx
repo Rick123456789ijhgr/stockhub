@@ -12,6 +12,8 @@ const ACTION_LABEL: Record<string, string> = {
   "portfolio.create": "新增交易",
   "portfolio.update": "修改交易",
   "portfolio.delete": "刪除交易",
+  "portfolio.receipt": "輸入股利實收",
+  "portfolio.receipt_clear": "股利改回估算",
 };
 
 /** Newest-first audit entries; the detail JSON is collapsed per row. */

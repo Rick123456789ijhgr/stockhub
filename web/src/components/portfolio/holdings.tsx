@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { direction, PriceChange } from "@/components/price-change";
 import { Badge } from "@/components/ui/badge";
 import { formatInteger, formatPrice, formatTaipeiDateTime } from "@/lib/format";
-import type { DividendEntry, Position, RealizedEntry } from "@/lib/portfolio";
+import type { Position, RealizedEntry, UpcomingEntry } from "@/lib/portfolio";
 import type { MarkInfo, StockRef } from "@/lib/portfolio-data";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +37,7 @@ function MarkLabel({ mark }: { mark: MarkInfo | undefined }) {
   return <span>{mark.date} 收盤</span>;
 }
 
-function StockName({ stock }: { stock: StockRef | undefined }) {
+export function StockName({ stock }: { stock: StockRef | undefined }) {
   if (!stock) return null;
   return (
     <Link href={`/stocks/${stock.symbol}`} className="font-medium hover:underline">
@@ -165,7 +165,7 @@ function Cell({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-const ACTION_LABEL: Record<string, string> = {
+export const ACTION_LABEL: Record<string, string> = {
   cash_dividend: "除息",
   stock_dividend: "除權",
   cash_and_stock_dividend: "除權息",
@@ -174,50 +174,44 @@ const ACTION_LABEL: Record<string, string> = {
   reverse_split: "合併",
 };
 
-function ratioText(value: number): string {
+export function ratioText(value: number): string {
   return String(Number(value.toFixed(6)));
 }
 
-/** Estimated dividends and share changes, newest first. */
-export function DividendList({
-  dividends,
+/** Announced events after today on open positions, assuming the holding stays as it is. */
+export function UpcomingList({
+  upcoming,
   stocks,
 }: {
-  dividends: DividendEntry[];
+  upcoming: UpcomingEntry[];
   stocks: Record<string, StockRef>;
 }) {
-  if (dividends.length === 0) {
-    return <p className="text-sm text-muted-foreground">持有期間沒有除權息或股數變動。</p>;
+  if (upcoming.length === 0) {
+    return <p className="text-sm text-muted-foreground">持股目前沒有已公告的除權息。</p>;
   }
   return (
     <ul className="divide-y text-sm">
-      {[...dividends]
-        .sort((a, b) => (a.exDate < b.exDate ? 1 : a.exDate > b.exDate ? -1 : 0))
-        .map((d) => {
-        const shareChange = d.sharesAfter - d.sharesHeld - d.stockShares;
-        return (
-          <li key={`${d.stock}-${d.exDate}-${d.actionType}`} className="space-y-0.5 py-2">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-xs text-muted-foreground tabular-nums">{d.exDate}</span>
-              <span className="text-xs">{ACTION_LABEL[d.actionType] ?? d.actionType}</span>
-              <StockName stock={stocks[d.stock]} />
-              <Badge variant="outline">估算</Badge>
-              {d.implied ? <Badge variant="secondary">比例由參考價推算</Badge> : null}
-            </div>
-            <div className="text-xs text-muted-foreground tabular-nums">
-              除權息前持有 {formatInteger(d.sharesHeld)} 股
-              {d.cash > 0
-                ? `，每股 ${ratioText(d.cashPerShare)} 元，${d.actionType === "capital_reduction" ? "退還股款" : "現金股利"} ${formatInteger(d.cash)} 元`
+      {upcoming.map((u) => (
+        <li key={`${u.stock}-${u.exDate}-${u.actionType}`} className="space-y-0.5 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-xs text-muted-foreground tabular-nums">{u.exDate}</span>
+            <span className="text-xs">{ACTION_LABEL[u.actionType] ?? u.actionType}</span>
+            <StockName stock={stocks[u.stock]} />
+            <Badge variant="outline">預估</Badge>
+          </div>
+          <div className="text-xs text-muted-foreground tabular-nums">
+            以目前 {formatInteger(u.shares)} 股計
+            {u.cash === null
+              ? "，現金股利待公告"
+              : u.cash > 0
+                ? `，每股 ${ratioText(u.cashPerShare ?? 0)} 元，現金股利約 ${formatInteger(u.cash)} 元`
                 : ""}
-              {d.stockShares > 0 ? `，配股 ${ratioText(d.stockRatio * 1000)}‰ = ${formatInteger(d.stockShares)} 股` : ""}
-              {shareChange !== 0
-                ? `，股數 × ${ratioText(d.shareRatio)}（${shareChange > 0 ? "+" : ""}${formatInteger(shareChange)} 股）`
-                : ""}
-              ，之後 {formatInteger(d.sharesAfter)} 股
-            </div>
-          </li>
-        );
-      })}
+            {u.stockShares > 0 ? `，配股約 ${formatInteger(u.stockShares)} 股` : ""}
+            {u.nhi ? `，補充保費約 ${formatInteger(u.nhi)} 元` : ""}
+            。除權息前一交易日（含）前買進才有權利。
+          </div>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -236,15 +230,17 @@ export function RealizedList({
       {[...realized]
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : Number(b.id) - Number(a.id)))
         .map((r) => (
-        <li key={r.id} className="flex items-start justify-between gap-3 py-2">
+        <li key={`${r.id}-${r.dayTrade}`} className="flex items-start justify-between gap-3 py-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="text-xs text-muted-foreground tabular-nums">{r.date}</span>
               <StockName stock={stocks[r.stock]} />
+              {r.dayTrade ? <Badge variant="secondary">當沖</Badge> : null}
             </div>
             <div className="text-xs text-muted-foreground tabular-nums">
               賣出 {formatInteger(r.quantity)} 股，收入 {formatInteger(Math.round(r.proceeds))}
-              ，成本 {formatInteger(Math.round(r.cost))}，費用 {formatInteger(r.fee + r.tax)}
+              ，{r.dayTrade ? "當日買進成本" : "成本"} {formatInteger(Math.round(r.cost))}
+              ，費用 {formatInteger(Math.round(r.fee + r.tax))}
             </div>
           </div>
           <div className="shrink-0 text-right">

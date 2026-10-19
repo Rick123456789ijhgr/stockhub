@@ -148,6 +148,27 @@ export interface CorporateActionsQuarantine {
   symbol: string;
 }
 
+export interface DividendReceipts {
+  /**
+   * Matches the corporate_actions (or preview) row the estimate came from.
+   */
+  action_type: string;
+  /**
+   * Net cash received (after the transfer fee and NHI premium); NULL keeps the cash estimate.
+   */
+  cash: Numeric | null;
+  created_at: Generated<Timestamp>;
+  ex_date: string;
+  note: string | null;
+  pay_date: string | null;
+  /**
+   * Stock dividend shares received; NULL keeps the share estimate.
+   */
+  shares: Int8 | null;
+  stock_id: Int8;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface FinancialItemMap {
   industry_type: string;
   /**
@@ -447,6 +468,7 @@ export interface DB {
   corporate_action_previews: CorporateActionPreviews;
   corporate_actions: CorporateActions;
   corporate_actions_quarantine: CorporateActionsQuarantine;
+  dividend_receipts: DividendReceipts;
   financial_item_map: FinancialItemMap;
   financials: Financials;
   job_runs: JobRuns;

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
-import { DividendList, HoldingsTable, Pnl, RealizedList } from "@/components/portfolio/holdings";
+import { DividendList } from "@/components/portfolio/dividend-list";
+import { HoldingsTable, Pnl, RealizedList, UpcomingList } from "@/components/portfolio/holdings";
 import { PortfolioSummary } from "@/components/portfolio/summary";
 import { TransactionsPanel } from "@/components/portfolio/transactions-panel";
 import { SessionRefresh } from "@/components/session-refresh";
@@ -97,14 +98,27 @@ async function PortfolioContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">配息與股數變動（估算）</CardTitle>
+          <CardTitle className="text-base">即將除權息（預估）</CardTitle>
           <CardDescription>
-            依除權息日前一交易日的持股，乘上交易所公布的每股現金股利、配股率或減資、分割比例推算；
-            實際入帳金額會扣匯費與二代健保補充保費，以入帳通知為準。
+            交易所的除權除息預告表（每天開盤前與收盤後更新），以目前持股推算；ETF
+            常在除息前幾天才公告金額。
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <DividendList dividends={ledger.dividends} stocks={stocks} />
+          <UpcomingList upcoming={view.upcoming} stocks={stocks} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">配息與股數變動</CardTitle>
+          <CardDescription>
+            依除權息日前一交易日的持股，乘上交易所公布的每股現金股利、配股率或減資、分割比例推算（標示「估算」）。
+            實際入帳會扣匯費與二代健保補充保費；收到入帳通知後可以輸入實收，損益改用實收數字。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DividendList dividends={ledger.dividends} stocks={stocks} receipts={view.receipts} />
         </CardContent>
       </Card>
 

@@ -10,12 +10,19 @@ import {
   type Issue,
   type Ledger,
   type Mark,
+  type Preview,
+  type Receipt,
+  receiptKey,
   replay,
   type Security,
   type Totals,
   totals,
   type Trade,
+  upcoming,
+  type UpcomingEntry,
+  withPreviews,
 } from "@/lib/portfolio";
+import type { ReceiptInput } from "@/lib/receipt-input";
 import { getFeeSettings } from "@/lib/settings";
 import { findStock, type Market } from "@/lib/stocks";
 import { charges, type TransactionInput } from "@/lib/transaction-input";
@@ -58,7 +65,13 @@ export type PortfolioView = {
   marks: Record<string, MarkInfo>;
   ledger: Ledger;
   totals: Totals;
+  /** Announced events after today on open positions (projected). */
+  upcoming: UpcomingEntry[];
+  /** Receipt details (pay date, note) by receiptKey. */
+  receipts: Record<string, ReceiptDetail>;
 };
+
+export type ReceiptDetail = Receipt & { payDate: string | null; note: string | null };
 
 type Db = Kysely<DB> | Transaction<DB>;
 
@@ -140,6 +153,66 @@ async function loadActions(db: Db, stockIds: string[]): Promise<Action[]> {
     prevClose: numOrNull(r.prevClose),
     referencePrice: numOrNull(r.referencePrice),
   }));
+}
+
+async function loadPreviews(db: Db, stockIds: string[]): Promise<Preview[]> {
+  if (stockIds.length === 0) return [];
+  const rows = await db
+    .selectFrom("corporate_action_previews")
+    .select([
+      sql<string>`stock_id::text`.as("stock"),
+      "ex_date as exDate",
+      "action_type as actionType",
+      "cash_dividend as cashDividend",
+      "stock_dividend_ratio as stockDividendRatio",
+    ])
+    .where("stock_id", "in", stockIds)
+    .orderBy("ex_date")
+    .execute();
+  return rows.map((r) => ({
+    ...r,
+    cashDividend: numOrNull(r.cashDividend),
+    stockDividendRatio: Number(r.stockDividendRatio),
+  }));
+}
+
+async function loadReceipts(db: Db, stockIds: string[]): Promise<Record<string, ReceiptDetail>> {
+  if (stockIds.length === 0) return {};
+  const rows = await db
+    .selectFrom("dividend_receipts")
+    .select([
+      sql<string>`stock_id::text`.as("stock"),
+      "ex_date as exDate",
+      "action_type as actionType",
+      "cash",
+      sql<string | null>`shares::text`.as("shares"),
+      "pay_date as payDate",
+      "note",
+    ])
+    .where("stock_id", "in", stockIds)
+    .execute();
+  return Object.fromEntries(
+    rows.map((r) => [
+      receiptKey(r.stock, r.exDate, r.actionType),
+      { cash: numOrNull(r.cash), shares: numOrNull(r.shares), payDate: r.payDate, note: r.note },
+    ]),
+  );
+}
+
+type Events = {
+  actions: Action[];
+  previews: Preview[];
+  receipts: Record<string, ReceiptDetail>;
+};
+
+/** Official actions plus previews whose ex-date has come, and the receipts entered. */
+async function loadEvents(db: Db, stockIds: string[], asOf: string): Promise<Events> {
+  const [actions, previews, receipts] = await Promise.all([
+    loadActions(db, stockIds),
+    loadPreviews(db, stockIds),
+    loadReceipts(db, stockIds),
+  ]);
+  return { actions: withPreviews(actions, previews, asOf), previews, receipts };
 }
 
 async function loadStocks(db: Db, stockIds: string[]): Promise<Record<string, StockRef>> {
@@ -232,17 +305,18 @@ export async function loadPortfolio(db: Kysely<DB>): Promise<PortfolioView> {
   const asOf = taipeiToday();
   const transactions = await loadTransactions(db);
   const stockIds = [...new Set(transactions.map((t) => t.stockId))];
-  const [actions, stocks, marks, fees] = await Promise.all([
-    loadActions(db, stockIds),
+  const [events, stocks, marks, fees] = await Promise.all([
+    loadEvents(db, stockIds, asOf),
     loadStocks(db, stockIds),
     loadMarks(db, stockIds),
     getFeeSettings(db),
   ]);
-  const ledger = replay(transactions.map(toTrade), actions, {
+  const ledger = replay(transactions.map(toTrade), events.actions, {
     asOf,
     marks,
     securities: securities(stocks),
     fees,
+    receipts: events.receipts,
   });
   return {
     asOf,
@@ -252,6 +326,8 @@ export async function loadPortfolio(db: Kysely<DB>): Promise<PortfolioView> {
     marks,
     ledger,
     totals: totals(ledger.positions),
+    upcoming: upcoming(ledger.positions, events.previews, asOf),
+    receipts: events.receipts,
   };
 }
 
@@ -331,10 +407,12 @@ export async function applyTransactionChange(
       else next.push(after);
     }
     const touched = [...new Set([before?.stockId, after?.stockId].filter((s) => s !== undefined))];
-    const actions = await loadActions(trx, touched);
+    const asOf = taipeiToday();
+    const events = await loadEvents(trx, touched, asOf);
     const issues = (rows: TransactionRow[]) =>
-      replay(rows.filter((t) => touched.includes(t.stockId)).map(toTrade), actions, {
-        asOf: taipeiToday(),
+      replay(rows.filter((t) => touched.includes(t.stockId)).map(toTrade), events.actions, {
+        asOf,
+        receipts: events.receipts,
       }).issues;
     const known = new Set(issues(current).map((i) => i.id));
     const fresh = issues(next).filter((i) => !known.has(i.id));
@@ -383,5 +461,85 @@ export async function applyTransactionChange(
       })
       .execute();
     return { ok: true, id };
+  });
+}
+
+export type ReceiptChange =
+  | { kind: "save"; input: ReceiptInput }
+  | { kind: "clear"; symbol: string; exDate: string; actionType: string };
+
+/**
+ * Record (or clear) what actually arrived for an estimated dividend. The event must be one
+ * the holding was entitled to; received shares that would make a later sell exceed the
+ * holding are refused, like trades. Audited.
+ */
+export async function applyReceiptChange(
+  db: Kysely<DB>,
+  change: ReceiptChange,
+  actor: string,
+): Promise<{ ok: true } | { ok: false; status: 400 | 404 | 409; error: string }> {
+  const target = change.kind === "save" ? change.input : change;
+  return db.transaction().execute(async (trx) => {
+    await sql`LOCK TABLE portfolio_transactions IN SHARE ROW EXCLUSIVE MODE`.execute(trx);
+    const stock = await findStock(trx, target.symbol);
+    if (!stock) return { ok: false, status: 400, error: `找不到代號 ${target.symbol}` };
+    const stockId = String(stock.id);
+    const asOf = taipeiToday();
+    const trades = (await loadTransactions(trx)).filter((t) => t.stockId === stockId);
+    const events = await loadEvents(trx, [stockId], asOf);
+    const key = receiptKey(stockId, target.exDate, target.actionType);
+    const run = (receipts: Record<string, Receipt>) =>
+      replay(trades.map(toTrade), events.actions, { asOf, receipts });
+    const current = run(events.receipts);
+    const entry = current.dividends.find(
+      (d) => d.exDate === target.exDate && d.actionType === target.actionType,
+    );
+    if (!entry) return { ok: false, status: 404, error: "持股沒有這筆除權息" };
+    const before = events.receipts[key] ?? null;
+
+    if (change.kind === "clear") {
+      if (!before) return { ok: true };
+      await trx
+        .deleteFrom("dividend_receipts")
+        .where("stock_id", "=", stockId)
+        .where("ex_date", "=", target.exDate)
+        .where("action_type", "=", target.actionType)
+        .execute();
+    } else {
+      const { input } = change;
+      const known = new Set(current.issues.map((i) => i.id));
+      const next = run({ ...events.receipts, [key]: { cash: input.cash, shares: input.shares } });
+      const fresh = next.issues.filter((i) => !known.has(i.id));
+      if (fresh.length > 0) {
+        return { ok: false, status: 409, error: describeIssue(fresh[0], stock.symbol) };
+      }
+      const values = {
+        cash: input.cash === null ? null : String(input.cash),
+        shares: input.shares === null ? null : String(input.shares),
+        pay_date: input.payDate,
+        note: input.note,
+      };
+      await trx
+        .insertInto("dividend_receipts")
+        .values({ stock_id: stockId, ex_date: input.exDate, action_type: input.actionType, ...values })
+        .onConflict((oc) => oc.columns(["stock_id", "ex_date", "action_type"]).doUpdateSet(values))
+        .execute();
+    }
+    await trx
+      .insertInto("audit_log")
+      .values({
+        actor,
+        action: change.kind === "save" ? "portfolio.receipt" : "portfolio.receipt_clear",
+        target: stock.symbol,
+        detail: JSON.stringify({
+          exDate: target.exDate,
+          actionType: target.actionType,
+          estimate: { cash: entry.estCash, shares: entry.estStockShares },
+          before,
+          after: change.kind === "save" ? change.input : null,
+        }),
+      })
+      .execute();
+    return { ok: true };
   });
 }

@@ -281,3 +281,14 @@ def test_corporate_action_previews_key_and_checks(pg: psycopg.Connection) -> Non
     assert row == (Decimal(0), Decimal(0))
     _expect(pg, errors.UniqueViolation, sql, (stock_id, "息"))
     _expect(pg, errors.CheckViolation, sql.replace("'twse'", "'tpex'"), (stock_id, "除息"))
+
+
+def test_dividend_receipts_need_an_amount(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO dividend_receipts (stock_id, ex_date, action_type, cash, shares) "
+        "VALUES (%s, '2026-07-01', 'cash_dividend', %s, %s)"
+    )
+    pg.execute(sql, (stock_id, Decimal("4320"), None))
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, Decimal("1"), None))
+    _expect(pg, errors.CheckViolation, sql.replace("07-01", "08-01"), (stock_id, None, None))
