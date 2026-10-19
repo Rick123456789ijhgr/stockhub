@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/session";
 import { AutoRefresh } from "@/components/status/auto-refresh";
+import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
   BackfillCard,
   StatTiles,
@@ -25,7 +26,8 @@ import { getDataTotals, getDayCoverage, getRunningBackfills, taipeiToday } from 
 import { fetchedRange, summarizeYears } from "@/lib/coverage-grid";
 import { getDb } from "@/lib/db";
 import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/format";
-import { getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
+import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
+import { getScheduleRuns, getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
 
 export const metadata: Metadata = { title: "資料狀態" };
 
@@ -61,11 +63,12 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, params] = await Promise.all([
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, params] = await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
     getDataTotals(db),
     getRunningBackfills(db),
+    getScheduleRuns(db),
     searchParams,
   ]);
 
@@ -78,6 +81,8 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     : Number((range?.last ?? today).slice(0, 4));
   const coveredDays = years.reduce((sum, y) => sum + y.fetched + y.partial, 0);
   const running = backfills.length > 0 || jobRuns.some((r) => r.status === "running");
+  const now = new Date();
+  const schedules = SCHEDULES.map((s) => scheduleHealth(s, scheduleRuns, now));
 
   return (
     <>
@@ -88,6 +93,10 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
           總覽
         </h2>
         <StatTiles totals={totals} coveredDays={coveredDays} latest={range?.last ?? null} />
+      </section>
+
+      <section aria-label="排程" className="mb-6">
+        <ScheduleHealthCard items={schedules} />
       </section>
 
       {backfills.length > 0 ? (
