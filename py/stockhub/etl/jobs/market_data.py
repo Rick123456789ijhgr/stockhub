@@ -18,7 +18,15 @@ from stockhub.common.db import upsert
 from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.common.trading_calendar import is_trading_day, trading_days_between
 from stockhub.etl.jobs.base import Job, JobContext, JobError, JobOutcome, register_job
-from stockhub.etl.providers.base import CalendarEntry, DailyBar, Delisting, Market, Security
+from stockhub.etl.providers.base import (
+    CalendarEntry,
+    DailyBar,
+    Delisting,
+    Market,
+    PriceProvider,
+    RawResponse,
+    Security,
+)
 from stockhub.etl.quality import check_daily_bar
 
 log = logging.getLogger(__name__)
@@ -484,6 +492,79 @@ class BackfillPricesJob(Job):
             closed += result == "closed"
             ctx.save_checkpoint({"next": (day + timedelta(days=1)).isoformat()})
         return JobOutcome(message=f"{start}～{end}：完成 {done} 個交易日，另有 {closed} 天確認休市")
+
+
+DAILY_TABLES = {"twse": "mi_index", "tpex": "otc_quotes"}
+"""provider -> raw dataset of its daily quote table."""
+
+
+def stored_daily_tables(
+    conn: Connection, start: date | None = None, end: date | None = None
+) -> list[Any]:
+    """The latest stored daily quote table per provider and date (id, provider, dataset,
+    uri, params), oldest first; identical re-fetches share one raw object."""
+    return list(
+        conn.execute(
+            text(
+                "SELECT * FROM (SELECT DISTINCT ON (provider, params->>'date') id, provider, "
+                "dataset, uri, params FROM raw_objects "
+                "WHERE ((provider = 'twse' AND dataset = :twse) "
+                "    OR (provider = 'tpex' AND dataset = :tpex)) "
+                "AND (CAST(:start AS date) IS NULL OR (params->>'date')::date >= :start) "
+                "AND (CAST(:end AS date) IS NULL OR (params->>'date')::date <= :end) "
+                "ORDER BY provider, params->>'date', fetched_at DESC) t "
+                "ORDER BY params->>'date', provider"
+            ),
+            {**DAILY_TABLES, "start": start, "end": end},
+        ).all()
+    )
+
+
+@register_job
+class ReparseDailyPricesJob(Job):
+    name: ClassVar[str] = "reparse_daily_prices"
+    description: ClassVar[str] = (
+        "Re-parse stored daily quote tables for [start, end] after a parser fix (no network); "
+        "bars that pass now supersede their quarantined versions"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        router = ctx.require_router()
+        start = date.fromisoformat(ctx.params["start"]) if ctx.params.get("start") else None
+        end = date.fromisoformat(ctx.params["end"]) if ctx.params.get("end") else None
+        providers = router.registry.providers_for("price")
+        parsers = {p.name: p for p in providers if isinstance(p, PriceProvider)}
+        with ctx.engine.connect() as conn:
+            tables = stored_daily_tables(conn, start, end)
+        totals = IngestStats()
+        superseded = 0
+        for obj in tables:
+            parser = parsers.get(obj.provider)
+            if parser is None:
+                continue
+            raw = RawResponse(obj.dataset, ctx.rawstore.get(obj.uri), dict(obj.params))
+            bars = parser.parse_daily_prices(raw)
+            with ctx.engine.begin() as conn:
+                stats = store_daily_bars(conn, bars, obj.provider, obj.id)
+                superseded += conn.execute(
+                    text(
+                        "UPDATE prices_daily_quarantine q SET resolved_at = :now, "
+                        "resolution = 'superseded' FROM prices_daily p "
+                        "WHERE q.resolved_at IS NULL AND q.source = :source "
+                        "AND q.trade_date = :day AND p.stock_id = q.stock_id "
+                        "AND p.trade_date = q.trade_date"
+                    ),
+                    {"now": utcnow(), "source": obj.provider, "day": obj.params["date"]},
+                ).rowcount
+            ctx.add_rows(stats.written)
+            totals.written += stats.written
+            totals.quarantined += stats.quarantined
+            totals.unknown += stats.unknown
+            totals.received += stats.received
+        return JobOutcome(
+            message=f"重新解析 {len(tables)} 份日線表：{totals}；取代隔離紀錄 {superseded}"
+        )
 
 
 def _require_stocks(ctx: JobContext) -> None:

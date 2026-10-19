@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
@@ -21,9 +22,10 @@ from stockhub.etl.jobs.market_data import (
     stock_ids_on,
     store_daily_bars,
 )
-from stockhub.etl.providers.base import CalendarEntry, DailyBar, Delisting
+from stockhub.etl.providers.base import CalendarEntry, DailyBar, Delisting, RawResponse
+from stockhub.etl.providers.tpex import TpexProvider
 
-from .official_sources import official_router
+from .official_sources import fixture, official_router
 
 
 @pytest.fixture
@@ -343,3 +345,38 @@ def test_same_market_symbol_reuse_keeps_two_listings(sa_conn: Any) -> None:
         (date(1962, 2, 9), date(2008, 9, 1)),
         (date(2008, 9, 1), date(2020, 5, 4)),
     ]
+
+
+def test_tpex_zero_prices_without_volume_mean_no_trade() -> None:
+    # Until 2011-11 the OTC table printed 0.00 instead of ---- for a day without trades.
+    table = json.loads(fixture("tpex_otc_20261016.json"))
+    fields = [f.strip() for f in table["tables"][0]["fields"]]  # the source pads names
+    row = next(r for r in table["tables"][0]["data"] if r[0] == "6488")
+    for name in ("開盤", "最高", "最低", "收盤"):
+        row[fields.index(name)] = "0.00"
+    row[fields.index("成交股數")] = "0"
+    raw = RawResponse(
+        "otc_quotes", json.dumps(table, ensure_ascii=False).encode(), {"date": "2026-10-16"}
+    )
+    [bar] = [b for b in TpexProvider().parse_daily_prices(raw) if b.symbol == "6488"]
+    assert (bar.open, bar.close, bar.volume) == (None, None, 0)
+
+
+def test_reparse_daily_prices_supersedes_quarantine(run: Any, clean_db: Engine) -> None:
+    run("sync_stocks")
+    run("daily_prices", date="2026-10-16")
+    # As if the parser had once quarantined 6488 on that day instead of storing it.
+    with clean_db.begin() as conn:
+        stock_id = conn.execute(text("SELECT id FROM stocks WHERE symbol = '6488'")).scalar_one()
+        conn.execute(text("DELETE FROM prices_daily WHERE stock_id = :id"), {"id": stock_id})
+        conn.execute(
+            text(
+                "INSERT INTO prices_daily_quarantine (stock_id, trade_date, payload, reasons, "
+                "source) VALUES (:id, '2026-10-16', '{}', ARRAY['non_positive_price'], 'tpex')"
+            ),
+            {"id": stock_id},
+        )
+    result = run("reparse_daily_prices", start="2026-10-16", end="2026-10-16")
+    assert result.status == "succeeded", result.message
+    assert result.rows_written == 1  # only the missing bar; the rest are unchanged
+    assert _rows(clean_db, "SELECT resolution FROM prices_daily_quarantine") == [("superseded",)]

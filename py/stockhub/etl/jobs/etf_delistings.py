@@ -24,16 +24,14 @@ from stockhub.etl.jobs.market_data import (
     apply_delisting,
     refine_estimated_listed_dates,
     store_daily_bars,
+    stored_daily_tables,
 )
 from stockhub.etl.providers.base import DailyBar, Delisting, Market, PriceProvider, RawResponse
 
 log = logging.getLogger(__name__)
 
-DAILY_DATASETS: dict[str, tuple[str, Market]] = {
-    "twse": ("mi_index", "twse"),
-    "tpex": ("otc_quotes", "tpex"),
-}
-"""provider -> (raw dataset of its daily quote table, market)."""
+MARKET_OF: dict[str, Market] = {"twse": "twse", "tpex": "tpex"}
+"""provider of a daily quote table -> its market."""
 DERIVED_REASON = "derived:last-trade"
 """stocks.delisting_reason of ETFs found this way: the date is the day after the last trade."""
 
@@ -137,22 +135,14 @@ class DeriveDelistedEtfsJob(Job):
         }
         with ctx.engine.connect() as conn:
             known = {r.symbol for r in conn.execute(text("SELECT DISTINCT symbol FROM stocks"))}
-            objects = conn.execute(
-                text(
-                    "SELECT DISTINCT ON (provider, params->>'date') id, provider, dataset, uri, "
-                    "params FROM raw_objects "
-                    "WHERE (provider = 'twse' AND dataset = 'mi_index') "
-                    "   OR (provider = 'tpex' AND dataset = 'otc_quotes') "
-                    "ORDER BY provider, params->>'date', fetched_at DESC"
-                )
-            ).all()
+            objects = stored_daily_tables(conn)
         sightings: dict[str, Sighting] = {}
         latest: dict[Market, date] = {}
         for index, obj in enumerate(objects):
             provider = parsers.get(obj.provider)
             if provider is None:
                 continue
-            market = DAILY_DATASETS[obj.provider][1]
+            market = MARKET_OF[obj.provider]
             raw = RawResponse(obj.dataset, ctx.rawstore.get(obj.uri), dict(obj.params))
             try:
                 bars = provider.parse_daily_prices(raw)

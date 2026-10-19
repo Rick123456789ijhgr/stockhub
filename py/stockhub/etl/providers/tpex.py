@@ -87,17 +87,21 @@ class TpexProvider(PriceProvider, DelistingProvider, CorporateActionProvider):
         col = _columns(table)
         bars = []
         for row in table.get("data") or []:
-            volume = clean_number(row[col["成交股數"]])
+            volume = int(clean_number(row[col["成交股數"]]) or 0)
             turnover = clean_number(row[col["成交金額(元)"]])
+            ohlc = [_decimal(row[col[c]]) for c in ("開盤", "最高", "最低", "收盤")]
+            if volume == 0 and all(p is not None and p == 0 for p in ohlc):
+                # Until 2011-11 the table printed 0.00 for a day without trades (now "----").
+                ohlc = [None, None, None, None]
             bars.append(
                 DailyBar(
                     symbol=row[col["代號"]].strip(),
                     trade_date=requested,
-                    open=_decimal(row[col["開盤"]]),
-                    high=_decimal(row[col["最高"]]),
-                    low=_decimal(row[col["最低"]]),
-                    close=_decimal(row[col["收盤"]]),
-                    volume=int(volume or 0),
+                    open=ohlc[0],
+                    high=ohlc[1],
+                    low=ohlc[2],
+                    close=ohlc[3],
+                    volume=volume,
                     turnover=Decimal(turnover or 0),
                     name=row[col["名稱"]].strip() or None,
                 )
