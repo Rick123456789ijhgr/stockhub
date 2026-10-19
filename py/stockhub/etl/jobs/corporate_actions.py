@@ -26,8 +26,14 @@ from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.engine.adjustments import factor_segments, guess_share_ratio
 from stockhub.etl.jobs.base import Job, JobContext, JobOutcome, register_job
 from stockhub.etl.jobs.market_data import MARKETS, stock_ids_on
-from stockhub.etl.providers.base import ActionDataset, CorporateAction, DividendDetail
-from stockhub.etl.quality import check_corporate_action
+from stockhub.etl.providers.base import (
+    ActionDataset,
+    CorporateAction,
+    DividendDetail,
+    DividendDetailProvider,
+    RawResponse,
+)
+from stockhub.etl.quality import check_corporate_action, check_dividend_detail
 
 log = logging.getLogger(__name__)
 
@@ -219,21 +225,33 @@ DETAIL_TYPES = ("cash_and_stock_dividend", "stock_dividend")
 """TWSE event types whose parts the event table leaves out (pure 息 rows carry the cash)."""
 
 
+DETAIL_SOURCE = "twse:detail"
+"""corporate_actions_quarantine.source of event parts that failed check_dividend_detail."""
+
+
 def apply_dividend_detail(
     conn: Connection, action_id: int, detail: DividendDetail | None, raw_object_id: int
-) -> None:
-    """Store the parts, or just the attempt when the page had none (so it is not refetched).
+) -> bool:
+    """Store the checked parts; returns False when they were quarantined instead.
+
+    Without a detail (the page had none) only the attempt is recorded, so it is not
+    refetched. Parts that do not reproduce the exchange's reference price go to the
+    quarantine table and the event's parts stay NULL (rule 7).
 
     action_type keeps the exchange's 權/息 label (it is part of the natural key the event
     table is re-imported on); what the event consisted of is in the part columns, e.g. a
     權息 that was cash plus a subscription has stock_dividend_ratio 0 and rights_ratio > 0.
     """
-    if detail is None:
-        conn.execute(
-            text("UPDATE corporate_actions SET detail_raw_object_id = :raw WHERE id = :id"),
-            {"raw": raw_object_id, "id": action_id},
-        )
-        return
+    row = conn.execute(
+        text(
+            "SELECT c.stock_id, s.symbol, c.ex_date, c.action_type, c.prev_close, "
+            "c.reference_price FROM corporate_actions c JOIN stocks s ON s.id = c.stock_id "
+            "WHERE c.id = :id"
+        ),
+        {"id": action_id},
+    ).one()
+    reasons = check_dividend_detail(detail, row.prev_close, row.reference_price) if detail else []
+    good = detail is not None and not reasons
     conn.execute(
         text(
             "UPDATE corporate_actions SET detail_raw_object_id = :raw, cash_dividend = :cash, "
@@ -243,12 +261,48 @@ def apply_dividend_detail(
         {
             "raw": raw_object_id,
             "id": action_id,
-            "cash": detail.cash_dividend,
-            "stock": detail.stock_dividend_ratio,
-            "rights": detail.rights_ratio,
-            "price": detail.subscription_price,
+            "cash": detail.cash_dividend if good and detail else None,
+            "stock": detail.stock_dividend_ratio if good and detail else None,
+            "rights": detail.rights_ratio if good and detail else None,
+            "price": detail.subscription_price if good and detail else None,
         },
     )
+    quarantine_key = {"symbol": row.symbol, "ex_date": row.ex_date, "source": DETAIL_SOURCE}
+    if detail is not None and reasons:
+        conn.execute(
+            text(
+                "INSERT INTO corporate_actions_quarantine "
+                "(symbol, stock_id, ex_date, action_type, payload, reasons, source, raw_object_id) "
+                "VALUES (:symbol, :stock_id, :ex_date, :action_type, CAST(:payload AS jsonb), "
+                ":reasons, :source, :raw) ON CONFLICT (symbol, ex_date, action_type, source) "
+                "DO UPDATE SET payload = excluded.payload, reasons = excluded.reasons, "
+                "raw_object_id = excluded.raw_object_id, resolved_at = NULL, resolution = NULL"
+            ),
+            {
+                **quarantine_key,
+                "stock_id": row.stock_id,
+                "action_type": row.action_type,
+                "payload": json.dumps(
+                    {
+                        **detail.model_dump(mode="json"),
+                        "prev_close": str(row.prev_close),
+                        "reference_price": str(row.reference_price),
+                    }
+                ),
+                "reasons": reasons,
+                "raw": raw_object_id,
+            },
+        )
+    elif good:  # a re-parse that passes now supersedes an earlier failure
+        conn.execute(
+            text(
+                "UPDATE corporate_actions_quarantine SET resolved_at = :now, "
+                "resolution = 'superseded' WHERE symbol = :symbol AND ex_date = :ex_date "
+                "AND source = :source AND resolved_at IS NULL"
+            ),
+            {**quarantine_key, "now": utcnow()},
+        )
+    return good or detail is None
 
 
 @register_job
@@ -265,6 +319,8 @@ class SyncDividendDetailsJob(Job):
         router = ctx.require_router()
         end = date.fromisoformat(ctx.params.get("end") or taipei_today().isoformat())
         start = date.fromisoformat(ctx.params.get("start") or (end - DEFAULT_LOOKBACK).isoformat())
+        # reparse=true: parse the stored detail pages again (after a parser fix), no network.
+        reparse = str(ctx.params.get("reparse", "")).lower() in {"1", "true", "yes"}
         since = router.dividend_detail_since("twse")
         if since is None:
             return JobOutcome(message="沒有設定權息明細來源（PROVIDERS_DIVIDEND_DETAILS）")
@@ -272,26 +328,53 @@ class SyncDividendDetailsJob(Job):
             # Rows without detail_raw_object_id are the work left, so a rerun resumes.
             pending = conn.execute(
                 text(
-                    "SELECT c.id, s.symbol, c.ex_date FROM corporate_actions c "
-                    "JOIN stocks s ON s.id = c.stock_id "
+                    "SELECT c.id, s.symbol, c.ex_date, c.detail_raw_object_id AS raw_id, "
+                    "r.provider, r.dataset, r.uri, r.params "
+                    "FROM corporate_actions c JOIN stocks s ON s.id = c.stock_id "
+                    "LEFT JOIN raw_objects r ON r.id = c.detail_raw_object_id "
                     "WHERE c.source = 'twse' AND c.action_type IN :types "
-                    "AND c.detail_raw_object_id IS NULL "
+                    "AND (c.detail_raw_object_id IS NOT NULL) = :reparse "
                     "AND c.ex_date BETWEEN :start AND :end ORDER BY c.ex_date, s.symbol"
                 ).bindparams(bindparam("types", expanding=True)),
-                {"types": list(DETAIL_TYPES), "start": max(start, since), "end": end},
+                {
+                    "types": list(DETAIL_TYPES),
+                    "start": max(start, since),
+                    "end": end,
+                    "reparse": reparse,
+                },
             ).all()
-        filled = missing = 0
+        parsers = {
+            p.name: p
+            for p in router.registry.providers_for("dividend_details")
+            if isinstance(p, DividendDetailProvider)
+        }
+        filled = missing = quarantined = 0
         for row in pending:
-            fetched = router.dividend_detail("twse", row.symbol, row.ex_date)
-            detail = fetched.items[0] if fetched.items else None
+            if reparse:
+                parser = parsers[row.provider]
+                payload = ctx.rawstore.get(row.uri)
+                items = parser.parse_dividend_detail(
+                    RawResponse(row.dataset, payload, dict(row.params))
+                )
+                raw_id = row.raw_id
+            else:
+                fetched = router.dividend_detail("twse", row.symbol, row.ex_date)
+                items, raw_id = fetched.items, fetched.raw.id
+            detail = items[0] if items else None
             with ctx.engine.begin() as conn:
-                apply_dividend_detail(conn, row.id, detail, fetched.raw.id)
+                stored = apply_dividend_detail(conn, row.id, detail, raw_id)
             if detail is None:
                 missing += 1
+            elif not stored:
+                quarantined += 1
             else:
                 filled += 1
                 ctx.add_rows(1)
-        message = f"{start}～{end}：待補 {len(pending)}、補上 {filled}、來源無資料 {missing}"
+        verb = "重新解析" if reparse else "待補"
+        message = (
+            f"{start}～{end}：{verb} {len(pending)}、補上 {filled}、"
+            f"與參考價不符隔離 {quarantined}、來源無資料 {missing}"
+        )
         return JobOutcome(message=message)
 
 

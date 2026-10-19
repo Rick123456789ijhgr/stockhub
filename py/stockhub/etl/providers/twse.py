@@ -348,7 +348,9 @@ DETAIL_URL = "https://www.twse.com.tw/rwd/zh/exRight/TWT49UDetail"
 DETAIL_FIELDS = {
     "cash": "(每股配發現金股利)除息",
     "free_shares": "A. 按普通股股東持股比例每千股無償配股",
-    "rights": "按股東持股比例每千股認購",
+    "offering": "C. (有償) 現金增資",
+    "holders_part": "c. 原股東認購",
+    "holders_per_mille": "按股東持股比例每千股認購",
     "price": "每股認購金額",
 }
 
@@ -360,19 +362,30 @@ def _unit_number(value: object) -> Decimal | None:
 
 
 def parse_detail_row(symbol: str, ex_date: date, cells: dict[str, str]) -> DividendDetail:
-    """One TWT49UDetail row; share counts there are per 1000 existing shares."""
+    """One TWT49UDetail row; per-holder share counts there are per 1000 existing shares.
+
+    rights_ratio is the whole cash offering per existing share, as the exchange's reference
+    price counts it: holders subscribe only part (c. 原股東認購; the rest is underwritten or
+    for employees), so their per-1000 figure is scaled by C / c. Without an offering
+    (C = 0) the per-1000 figure repeats the free allotment and is not a subscription.
+    """
+
+    def number(key: str) -> Decimal:
+        return _unit_number(cells.get(DETAIL_FIELDS[key], "")) or Decimal(0)
+
     per_mille = Decimal(1000)
-    cash = _unit_number(cells[DETAIL_FIELDS["cash"]]) or Decimal(0)
-    free = _unit_number(cells[DETAIL_FIELDS["free_shares"]]) or Decimal(0)
-    rights = _unit_number(cells.get(DETAIL_FIELDS["rights"], "")) or Decimal(0)
-    price = _unit_number(cells.get(DETAIL_FIELDS["price"], ""))
+    offering, holders_part = number("offering"), number("holders_part")
+    rights = Decimal(0)
+    if offering > 0 and holders_part > 0:
+        rights = number("holders_per_mille") / per_mille * offering / holders_part
+    price = number("price")
     return DividendDetail(
         symbol=symbol,
         ex_date=ex_date,
-        cash_dividend=cash,
-        stock_dividend_ratio=free / per_mille,
-        rights_ratio=rights / per_mille,
-        subscription_price=price if rights > 0 and price else None,
+        cash_dividend=number("cash"),
+        stock_dividend_ratio=number("free_shares") / per_mille,
+        rights_ratio=rights.quantize(Decimal("1E-8")),
+        subscription_price=price if rights > 0 and price > 0 else None,
     )
 
 

@@ -92,3 +92,23 @@ def guess_share_ratio(price_ratio: Decimal) -> ShareRatioGuess | None:
             action = "split" if price_ratio < 1 else "reverse_split"
             best = ShareRatioGuess(ratio, action, move.quantize(Decimal("1E-4")))
     return best
+
+
+# ----------------------------------------------------------------------------- dividends
+
+
+def implied_reference_price(
+    prev_close: Decimal,
+    cash_dividend: Decimal,
+    stock_dividend_ratio: Decimal,
+    rights_ratio: Decimal = Decimal(0),
+    subscription_price: Decimal | None = None,
+) -> Decimal:
+    """The exchanges' 除權息參考價 formula, before rounding to a tick:
+
+        (prev close - cash + subscription price * rights) / (1 + free shares + rights)
+
+    Comparing it with the published reference price checks the event's parts.
+    """
+    paid = (subscription_price or Decimal(0)) * rights_ratio
+    return (prev_close - cash_dividend + paid) / (ONE + stock_dividend_ratio + rights_ratio)

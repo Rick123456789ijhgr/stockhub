@@ -23,7 +23,7 @@ from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.tpex import TpexProvider
 from stockhub.etl.providers.tpex import _dividend_row as tpex_dividend_row
 from stockhub.etl.providers.twse import TwseProvider
-from stockhub.etl.quality import check_corporate_action
+from stockhub.etl.quality import check_corporate_action, check_dividend_detail
 
 from .official_sources import official_handler, official_router
 
@@ -375,12 +375,14 @@ def _detail(**overrides: Any) -> DividendDetail:
 
 def test_twse_dividend_detail_parser() -> None:
     twse, _ = _providers()
-    # 1605 華新 權息 2025-06-04: cash 0.5 plus a cash capital increase at 20 (79.378 per 1000).
+    # 1605 華新 權息 2025-06-04: cash 0.5 plus a cash capital increase at 20. Holders
+    # subscribe 79.378 per 1000, which is 320M of the 400M offering: the reference price
+    # counts the whole offering, 0.0992 per share.
     raw = twse.fetch_dividend_detail("twse", "1605", date(2025, 6, 4))
     assert twse.parse_dividend_detail(raw) == [
         _detail(
             cash_dividend=D("0.5"),
-            rights_ratio=D("0.07937821165"),
+            rights_ratio=D("0.09922276"),
             subscription_price=D(20),
         )
     ]
@@ -428,7 +430,7 @@ def test_sync_dividend_details_fills_parts_once(
         D("0.5"),
         D(0),
     )
-    assert (華新.rights_ratio, 華新.subscription_price) == (D("0.07937821"), D(20))
+    assert (華新.rights_ratio, 華新.subscription_price) == (D("0.09922276"), D(20))
     assert (rows["6423"].action_type, rows["6423"].stock_dividend_ratio) == (
         "stock_dividend",
         D("0.0203"),
@@ -443,3 +445,62 @@ def test_sync_dividend_details_fills_parts_once(
         "SELECT cash_dividend FROM corporate_actions WHERE stock_id = "
         "(SELECT id FROM stocks WHERE symbol = '1605')",
     ) == [(D("0.5"),)]
+
+
+def test_detail_parts_must_reproduce_the_reference_price() -> None:
+    # 1605: (20.90 - 0.5 + 20 * 0.09922276) / 1.09922276 = 20.364 vs published 20.36.
+    good = _detail(cash_dividend=D("0.5"), rights_ratio=D("0.09922276"), subscription_price=D(20))
+    assert check_dividend_detail(good, D("20.90"), D("20.36")) == []
+    wrong = _detail(cash_dividend=D("0.5"), stock_dividend_ratio=D("0.1"))
+    assert check_dividend_detail(wrong, D("20.90"), D("20.36")) == ["parts_do_not_match_reference"]
+    no_price = _detail(rights_ratio=D("0.1"))
+    assert check_dividend_detail(no_price, D("20.90"), D("20.36")) == ["rights_without_price"]
+    assert check_dividend_detail(wrong, None, None) == []  # nothing to compare with
+
+
+def test_sync_dividend_details_quarantines_and_reparses(
+    run: Any, clean_db: Engine, stocks: dict[str, int]
+) -> None:
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO stocks (symbol, market, type, name, listed_date) VALUES "
+                "('1605', 'twse', 'stock', '華新', '1962-02-09'), "
+                "('6423', 'twse', 'stock', '億而得-創', '2020-01-01')"
+            )
+        )
+    run("sync_corporate_actions", start="2025-01-01", end="2025-12-31")
+    # Pretend the exchange had published another reference price for 6423.
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE corporate_actions SET reference_price = 80 WHERE stock_id = "
+                "(SELECT id FROM stocks WHERE symbol = '6423')"
+            )
+        )
+    result = run("sync_dividend_details", start="2025-01-01", end="2025-12-31")
+    assert "與參考價不符隔離 1" in result.message
+    assert _rows(
+        clean_db,
+        "SELECT symbol, reasons, resolution FROM corporate_actions_quarantine "
+        "WHERE source = 'twse:detail'",
+    ) == [("6423", ["parts_do_not_match_reference"], None)]
+    assert _rows(
+        clean_db,
+        "SELECT stock_dividend_ratio FROM corporate_actions WHERE stock_id = "
+        "(SELECT id FROM stocks WHERE symbol = '6423')",
+    ) == [(None,)]
+    # Once fixed, re-parsing the stored page (no network) stores the parts.
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE corporate_actions SET reference_price = 88.01 WHERE stock_id = "
+                "(SELECT id FROM stocks WHERE symbol = '6423')"
+            )
+        )
+    again = run("sync_dividend_details", start="2025-01-01", end="2025-12-31", reparse="true")
+    assert again.message.startswith("2025-01-01～2025-12-31：重新解析 2、補上 2")
+    assert _rows(
+        clean_db,
+        "SELECT resolution FROM corporate_actions_quarantine WHERE source = 'twse:detail'",
+    ) == [("superseded",)]

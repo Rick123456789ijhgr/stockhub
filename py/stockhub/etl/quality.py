@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from stockhub.etl.providers.base import CorporateAction, DailyBar
+from stockhub.engine.adjustments import implied_reference_price
+from stockhub.etl.providers.base import CorporateAction, DailyBar, DividendDetail
 
 FACTOR_RANGE = (Decimal("0.02"), Decimal(50))
 """Per-event price factors outside this range are almost certainly parsing or source errors
@@ -56,3 +57,28 @@ def check_corporate_action(action: CorporateAction) -> list[str]:
         # capital increase subscribed above the market price.
         reasons.append("dividend_raises_price")
     return reasons
+
+
+REFERENCE_TOLERANCE = Decimal("0.005")
+"""Parts that are right reproduce the published reference price to within its rounding to a
+tick (at most ~0.2% on low prices); 0.5% leaves room without letting wrong parts through."""
+
+
+def check_dividend_detail(
+    detail: DividendDetail, prev_close: Decimal | None, reference_price: Decimal | None
+) -> list[str]:
+    """Names of failed checks for an event's cash / stock / rights parts."""
+    if prev_close is None or reference_price is None or reference_price <= 0:
+        return []  # nothing to compare with; the parts stand on their own
+    if detail.rights_ratio > 0 and detail.subscription_price is None:
+        return ["rights_without_price"]
+    implied = implied_reference_price(
+        prev_close,
+        detail.cash_dividend,
+        detail.stock_dividend_ratio,
+        detail.rights_ratio,
+        detail.subscription_price,
+    )
+    if abs(implied / reference_price - 1) > REFERENCE_TOLERANCE:
+        return ["parts_do_not_match_reference"]
+    return []

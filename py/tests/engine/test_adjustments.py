@@ -8,6 +8,7 @@ from stockhub.engine.adjustments import (
     adj_factor_on,
     factor_segments,
     guess_share_ratio,
+    implied_reference_price,
 )
 
 D = Decimal
@@ -91,3 +92,11 @@ def test_guess_share_ratio_gives_up_on_uncommon_ratios(price_ratio: Decimal) -> 
 def test_guess_share_ratio_rejects_non_positive() -> None:
     with pytest.raises(ValueError, match="positive"):
         guess_share_ratio(D(0))
+
+
+def test_implied_reference_price() -> None:
+    # 1773 2025-06-13: cash 2.5 and 200 free shares per 1000 on a 151 close.
+    assert implied_reference_price(D(151), D("2.5"), D("0.2")) == D("123.75")
+    # 6225 2026-08-18: whole offering 1.1583 per share subscribed at 17.65 on a 44.40 close.
+    implied = implied_reference_price(D("44.40"), D(0), D(0), D("1.15827338"), D("17.65"))
+    assert abs(implied - D("30.04")) < D("0.01")
