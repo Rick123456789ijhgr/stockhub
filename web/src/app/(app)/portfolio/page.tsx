@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/coming-soon";
 import { DividendList } from "@/components/portfolio/dividend-list";
 import { HoldingsTable, Pnl, RealizedList, UpcomingList } from "@/components/portfolio/holdings";
 import { PortfolioSummary } from "@/components/portfolio/summary";
-import { TransactionsPanel } from "@/components/portfolio/transactions-panel";
+import { ShowAll, TransactionsPanel } from "@/components/portfolio/transactions-panel";
 import { SessionRefresh } from "@/components/session-refresh";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +18,13 @@ import { loadPortfolio } from "@/lib/portfolio-data";
 
 export const metadata: Metadata = { title: "持股" };
 
-export default function PortfolioPage() {
+/** Newest entries sent to the browser by default; `?all=1` shows everything. */
+const RECENT = { transactions: 50, dividends: 30, realized: 30 };
+
+const byDateDesc = <T,>(date: (x: T) => string) => (a: T, b: T) =>
+  date(a) < date(b) ? 1 : date(a) > date(b) ? -1 : 0;
+
+export default function PortfolioPage({ searchParams }: PageProps<"/portfolio">) {
   return (
     <>
       <PageHeader
@@ -26,15 +32,23 @@ export default function PortfolioPage() {
         description="平均成本法；除權息不調整成本，股利另列收入。盤中有報價時用報價（每 30 秒更新）。"
       />
       <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <PortfolioContent />
+        <PortfolioContent searchParams={searchParams} />
       </Suspense>
     </>
   );
 }
 
-async function PortfolioContent() {
+async function PortfolioContent({
+  searchParams,
+}: {
+  searchParams: PageProps<"/portfolio">["searchParams"];
+}) {
   await requireUser();
+  const all = (await searchParams).all === "1";
   const view = await loadPortfolio(getDb());
+  const cut = <T,>(items: T[], n: number) => (all ? items : items.slice(0, n));
+  const dividends = [...view.ledger.dividends].sort(byDateDesc((d) => d.exDate));
+  const realized = [...view.ledger.realized].sort(byDateDesc((r) => r.date));
   const { ledger, stocks, marks } = view;
   const open = ledger.positions.filter((p) => p.shares > 0);
   const closed = ledger.positions.filter((p) => p.shares === 0);
@@ -92,7 +106,12 @@ async function PortfolioContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <TransactionsPanel transactions={view.transactions} fees={view.fees} today={view.asOf} />
+          <TransactionsPanel
+            transactions={cut(view.transactions, RECENT.transactions)}
+            total={view.transactions.length}
+            fees={view.fees}
+            today={view.asOf}
+          />
         </CardContent>
       </Card>
 
@@ -109,7 +128,7 @@ async function PortfolioContent() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="dividends" className="scroll-mt-4">
         <CardHeader>
           <CardTitle className="text-base">配息與股數變動</CardTitle>
           <CardDescription>
@@ -118,17 +137,23 @@ async function PortfolioContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <DividendList dividends={ledger.dividends} stocks={stocks} receipts={view.receipts} />
+          <DividendList
+            dividends={cut(dividends, RECENT.dividends)}
+            stocks={stocks}
+            receipts={view.receipts}
+          />
+          <ShowAll shown={cut(dividends, RECENT.dividends).length} total={dividends.length} anchor="dividends" />
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="realized" className="scroll-mt-4">
         <CardHeader>
           <CardTitle className="text-base">已實現損益</CardTitle>
           <CardDescription>賣出收入扣除手續費、證交稅與平均成本。</CardDescription>
         </CardHeader>
         <CardContent>
-          <RealizedList realized={ledger.realized} stocks={stocks} />
+          <RealizedList realized={cut(realized, RECENT.realized)} stocks={stocks} />
+          <ShowAll shown={cut(realized, RECENT.realized).length} total={realized.length} anchor="realized" />
         </CardContent>
       </Card>
 

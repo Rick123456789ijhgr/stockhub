@@ -17,10 +17,13 @@ import { cn } from "@/lib/utils";
 /** Trade ledger with inline add / edit forms; `#add` in the URL opens the add form. */
 export function TransactionsPanel({
   transactions,
+  total,
   fees,
   today,
 }: {
+  /** The newest ones (all when the page asks for all). */
   transactions: TransactionRow[];
+  total: number;
   fees: FeeSettings;
   today: string;
 }) {
@@ -29,7 +32,6 @@ export function TransactionsPanel({
     transactions.length === 0 ? "new" : null,
   );
   const ref = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState(50);
 
   useEffect(() => {
     const open = () => {
@@ -75,7 +77,7 @@ export function TransactionsPanel({
         <p className="text-sm text-muted-foreground">還沒有交易紀錄。</p>
       ) : (
         <ul className="divide-y text-sm">
-          {transactions.slice(0, shown).map((t) =>
+          {transactions.map((t) =>
             editing === t.id ? (
               <li key={t.id} className="py-2">
                 <TransactionForm
@@ -102,12 +104,18 @@ export function TransactionsPanel({
           )}
         </ul>
       )}
-      {transactions.length > shown ? (
-        <Button variant="ghost" size="sm" onClick={() => setShown((n) => n + 100)}>
-          顯示更早的 {formatInteger(Math.min(100, transactions.length - shown))} 筆
-        </Button>
-      ) : null}
+      <ShowAll shown={transactions.length} total={total} anchor="transactions" />
     </div>
+  );
+}
+
+/** "顯示全部 N 筆" for lists the server cut to their newest entries. */
+export function ShowAll({ shown, total, anchor }: { shown: number; total: number; anchor: string }) {
+  if (shown >= total) return null;
+  return (
+    <Link href={`/portfolio?all=1#${anchor}`} className="inline-block text-sm text-muted-foreground underline-offset-2 hover:underline">
+      只顯示最近 {formatInteger(shown)} 筆，顯示全部 {formatInteger(total)} 筆
+    </Link>
   );
 }
 

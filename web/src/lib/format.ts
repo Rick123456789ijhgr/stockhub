@@ -50,33 +50,43 @@ export function summarizeError(error: string | null | undefined, max = 120): str
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
+// Formatters are created once: building an Intl.NumberFormat costs far more than using it,
+// and long lists call these thousands of times per render.
+const INTEGER = new Intl.NumberFormat("zh-TW");
+const FIXED = new Map<number, Intl.NumberFormat>();
+const LOTS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+function fixed(digits: number): Intl.NumberFormat {
+  let f = FIXED.get(digits);
+  if (!f) {
+    f = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    FIXED.set(digits, f);
+  }
+  return f;
+}
+
 export function formatInteger(value: number | string | null | undefined): string {
   if (value == null || value === "") return "—";
-  return new Intl.NumberFormat("zh-TW").format(Number(value));
+  return INTEGER.format(Number(value));
 }
 
 /** Price string from the DB ("2420.0000") -> "2,420.00"; null -> "—". */
 export function formatPrice(value: string | null | undefined, digits = 2): string {
   if (value == null) return "—";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(Number(value));
+  return fixed(digits).format(Number(value));
 }
 
 /** Shares -> lots (張, 1,000 shares), the unit Taiwanese quotes are read in. */
 export function formatLots(shares: string | number | null | undefined): string {
   if (shares == null || shares === "") return "—";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
-    Math.round(Number(shares) / 1000),
-  );
+  return LOTS.format(Math.round(Number(shares) / 1000));
 }
 
 /** TWD -> 億 (100 million) with two decimals. */
 export function formatHundredMillion(value: string | number | null | undefined): string {
   if (value == null || value === "") return "—";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value) / 1e8);
+  return fixed(2).format(Number(value) / 1e8);
 }
