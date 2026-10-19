@@ -24,7 +24,8 @@ from stockhub.common.settings import PROJECT_ROOT
 MUTABLE_TABLES = (
     "stocks, prices_daily, corporate_actions, financial_item_map, financials, monthly_revenue, "
     "raw_objects, job_runs, settings, audit_log, watchlist, portfolio_transactions, quotes_latest, "
-    "prices_daily_quarantine, corporate_actions_quarantine, corporate_action_previews, dividend_receipts"
+    "prices_daily_quarantine, corporate_actions_quarantine, corporate_action_previews, "
+    "dividend_receipts, alerts"
 )
 
 

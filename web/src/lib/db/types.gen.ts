@@ -27,6 +27,30 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface Alerts {
+  created_at: Generated<Timestamp>;
+  /**
+   * Inputs of the decision (price, reference, change, threshold, shares, source).
+   */
+  detail: Generated<Json>;
+  id: Generated<Int8>;
+  /**
+   * holding_move = a holding moved beyond its volatility threshold (PLAN.md section 5); M6 adds news, institutional flows, macro.
+   */
+  kind: string;
+  /**
+   * When the Notifier accepted it; NULL if sending failed.
+   */
+  notified_at: Timestamp | null;
+  severity: string;
+  stock_id: Int8;
+  title: string;
+  /**
+   * Taipei trading date the alert is about.
+   */
+  trade_date: string;
+}
+
 export interface AuditLog {
   action: string;
   /**
@@ -464,6 +488,7 @@ export interface Watchlist {
 }
 
 export interface DB {
+  alerts: Alerts;
   audit_log: AuditLog;
   corporate_action_previews: CorporateActionPreviews;
   corporate_actions: CorporateActions;

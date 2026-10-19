@@ -1,6 +1,7 @@
 """Scheduled jobs. Importing this package registers every built-in job."""
 
 from stockhub.etl.jobs import (
+    alerts,
     corporate_actions,
     etf_delistings,
     freshness_check,
@@ -26,6 +27,7 @@ __all__ = [
     "JobError",
     "JobOutcome",
     "JobRunResult",
+    "alerts",
     "corporate_actions",
     "etf_delistings",
     "freshness_check",

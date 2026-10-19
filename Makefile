@@ -81,6 +81,7 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) sync_ex_rights_previews
 	$(ETL) daily_prices $(if $(date),--date $(date))
 	$(ETL) compute_adj_factors
+	$(ETL) check_holding_alerts
 
 etl-corporate-actions: ## Ex-rights/dividends, reductions, splits for [start, end] (default past 30 days)
 	$(ETL) sync_corporate_actions $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
