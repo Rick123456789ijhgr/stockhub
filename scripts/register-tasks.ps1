@@ -1,7 +1,8 @@
 # Register the StockHub schedule in Windows Task Scheduler (current user, no admin needed):
 #   StockHub quotes  weekdays 08:55  make etl-quotes  (polls until 13:35; skips market holidays)
 #   StockHub daily   weekdays 18:00  make etl-daily   (calendar, master, events, prices, factors,
-#                                                     fundamentals)
+#                                                     fundamentals, chips)
+#   StockHub chips   weekdays 21:30  make etl-chips   (margin tables are published in the evening)
 #   StockHub database  at logon       scripts/local-pg.sh start (no time limit; the other tasks
 #                                     start it through this one so it never belongs to them)
 # Runs only while the user is logged on; a run missed while the PC was off starts when it
@@ -17,7 +18,8 @@ $folder = "\StockHub\"
 
 $tasks = @(
   @{ Name = "StockHub quotes"; Target = "etl-quotes"; At = "08:55"; Limit = (New-TimeSpan -Hours 6) },
-  @{ Name = "StockHub daily"; Target = "etl-daily"; At = "18:00"; Limit = (New-TimeSpan -Hours 3) }
+  @{ Name = "StockHub daily"; Target = "etl-daily"; At = "18:00"; Limit = (New-TimeSpan -Hours 3) },
+  @{ Name = "StockHub chips"; Target = "etl-chips"; At = "21:30"; Limit = (New-TimeSpan -Hours 1) }
 )
 
 $dbTask = "StockHub database"

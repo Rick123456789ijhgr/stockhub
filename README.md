@@ -69,9 +69,14 @@ make etl-quotes symbols=2330 once=1   # 只抓一次
 make etl-fundamentals                 # 財報與月營收歷史（2013 年起，FinMind；約 17 小時，可續跑）
 make etl-fundamentals symbols=2330    # 只抓某幾檔（refetch=true 重抓已抓過的）
 make etl-financials                   # 最新一季財報與月營收（官方 OpenAPI），再向 FinMind 補新申報的公司
+make etl-chips                        # 籌碼：補近 10 個交易日缺的三大法人／融資融券／外資持股，集保本週，摘要與法人警示
+make etl-chips date=2026-10-16        # 重抓某一天的籌碼
+make etl-chips-history                # 籌碼歷史（2012-05-02 起，約 11 小時，可續跑；start= end= datasets=margin,...）
 ```
 
 財報歷史來自 FinMind（公開資訊觀測站的 robots.txt 禁止爬取）：先到 finmindtrade.com 註冊免費帳號，把 token 填進 `.env` 的 `FINMIND_TOKEN`。免費帳號每小時 600 次，程式自己限制在 500 次以內，並在接近上限時暫停。品質檢查沒過的財報會進隔離區，在 `/admin` 確認（見 `docs/DECISIONS.md` D-086）。
+
+籌碼全部來自證交所、櫃買中心與集保結算所的官方資料。上櫃的三大法人個股資料只有 2014-12-01 以後；集保股權分散表官方只公開最新一週，所以大戶資料從 M4 上線開始逐週累積（見 `docs/DECISIONS.md` D-097）。融資融券晚上才公布，`etl-daily`（18:00）抓不到的部分由 21:30 的 `etl-chips` 補上。
 
 上櫃日線官方資料從 2007-07-02 起才有；還原價無法解釋的跳空（例如櫃買的面額變更）會列在 `corporate_actions_quarantine`，見 `docs/DECISIONS.md` D-053。
 
@@ -84,8 +89,9 @@ make web-dev          # http://localhost:3000
 ```
 
 - `/stocks`：搜尋股票與 ETF（搜尋時也會列出已下市公司）
-- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價；基本面（月營收、獲利率、EPS、現金流、ROE 與杜邦、變化提示、單季財報）；估值（本益比、股價淨值比、殖利率的歷史百分位、河流圖、同業比較）；近 120 日表格
-- `/status`：任務紀錄、日線涵蓋、財報回填進度；「日線更新到今天」與缺漏日的「重新抓取」按鈕
+- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價；基本面（月營收、獲利率、EPS、現金流、ROE 與杜邦、變化提示、單季財報）；估值（本益比、股價淨值比、殖利率的歷史百分位、河流圖、同業比較）；籌碼（三大法人買賣超與連買天數、融資融券、外資持股比、集保大戶持股比）；近 120 日表格
+- `/`（首頁）：持股損益、警示、三大法人買賣超排行（全市場金額與個股前 10 名）
+- `/status`：任務紀錄、日線涵蓋、財報與籌碼的回填進度；「日線更新到今天」「籌碼更新到今天」與缺漏日的「重新抓取」按鈕
 - 網站上的手動更新按鈕會把任務排入 `job_requests`。`.env` 設 `JOB_RUNNER=local` 時網站會立刻在背景執行（`scripts/scheduled.sh etl-requests`，log 在 `.local/logs/etl-requests-*.log`）；其他環境（例如 Vercel）會在下一次 `make etl-daily` 開頭執行。
 
 ### 7. 每天自動更新（選用，Windows 工作排程器）
@@ -95,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1          # �
 powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # 移除
 ```
 
-會建立三個工作（目前使用者，不需系統管理員）：平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
+會建立四個工作（目前使用者，不需系統管理員）：平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收、籌碼）、平日 21:30 籌碼（融資融券晚上才公布），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
 
 ## 常用指令
 
@@ -113,6 +119,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # �
 | `make etl-quotes` | 盤中報價輪詢 |
 | `make etl-fundamentals` / `etl-financials` | 財報與月營收歷史／最新一季與月營收 |
 | `make etl-compute-fundamentals` | 重算基本面與變化提示（`all=true` 全部重算） |
+| `make etl-chips` / `etl-chips-history` | 籌碼（補近 10 個交易日、集保、摘要、法人警示）／籌碼歷史 |
 | `make etl-requests` | 執行網站排入的任務 |
 | `make etl-list` / `etl-heartbeat` | ETL CLI |
 | `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
@@ -218,4 +225,4 @@ GitHub Actions（`.github/workflows/`）：
 
 ## 授權與資料來源
 
-僅供個人研究使用。各資料源的使用條款與額度，在正式串接前（M1 起）逐一確認並記錄在 `docs/DECISIONS.md`；爬取一律限速，優先使用官方 OpenAPI。財報歷史用 FinMind（公開資訊觀測站 robots.txt 禁止爬取，所以不抓），每天的最新一季、月營收與公司基本資料用證交所與櫃買中心 OpenAPI。
+僅供個人研究使用。各資料源的使用條款與額度，在正式串接前（M1 起）逐一確認並記錄在 `docs/DECISIONS.md`；爬取一律限速，優先使用官方 OpenAPI。財報歷史用 FinMind（公開資訊觀測站 robots.txt 禁止爬取，所以不抓），每天的最新一季、月營收與公司基本資料用證交所與櫃買中心 OpenAPI。籌碼用證交所、櫃買中心的盤後公告與集保結算所 opendata（集保網站沒有 robots.txt，每天只抓一次）。
