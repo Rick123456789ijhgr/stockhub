@@ -82,3 +82,51 @@ def check_dividend_detail(
     if abs(implied / reference_price - 1) > REFERENCE_TOLERANCE:
         return ["parts_do_not_match_reference"]
     return []
+
+
+BALANCE_TOLERANCE = Decimal("0.005")
+"""Assets vs liabilities + equity: filings balance exactly; 0.5% absorbs rounding to
+thousands and sources that leave out a small equity line."""
+QUARTER_REVENUE_TOLERANCE = Decimal("0.03")
+YTD_MATCH_TOLERANCE = Decimal("0.01")
+
+
+def check_statement(
+    statement: str,
+    basis: str,
+    values: dict[str, Decimal],
+    month_revenue: tuple[Decimal, Decimal] | None = None,
+) -> list[str]:
+    """Names of failed checks for one statement of one period (canonical item codes).
+
+    `month_revenue` is (sum of the quarter's three months, sum of the year so far up to the
+    quarter end) when every month is known. A single-quarter revenue far from the quarter's
+    months but equal to the year so far is a year-to-date figure mislabeled as a quarter
+    (seen at FinMind for the latest quarter, before its single-quarter derivation catches up).
+    """
+    reasons: list[str] = []
+    if statement == "BS":
+        assets = values.get("TotalAssets")
+        liabilities = values.get("TotalLiabilities")
+        equity = values.get("TotalEquity")
+        if assets is not None and liabilities is not None and equity is not None:
+            if assets <= 0:
+                reasons.append("non_positive_assets")
+            elif abs(assets - liabilities - equity) > assets * BALANCE_TOLERANCE:
+                reasons.append("unbalanced")
+    if statement == "IS":
+        revenue = values.get("Revenue")
+        if revenue is not None and revenue < 0:
+            reasons.append("negative_revenue")
+        if (
+            basis == "quarter"
+            and revenue is not None
+            and month_revenue is not None
+            and month_revenue[0] > 0
+            and month_revenue[1] > month_revenue[0]  # not Q1, where the two are equal
+        ):
+            quarter, ytd = month_revenue
+            off_quarter = abs(revenue / quarter - 1) > QUARTER_REVENUE_TOLERANCE
+            if off_quarter and abs(revenue / ytd - 1) <= YTD_MATCH_TOLERANCE:
+                reasons.append("ytd_as_quarter")
+    return reasons

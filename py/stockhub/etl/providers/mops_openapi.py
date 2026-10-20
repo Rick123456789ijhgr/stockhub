@@ -182,7 +182,7 @@ class MopsOpenApiMixin(
             raise PermanentProviderError(f"{self.name} does not publish {market} {key}")
         url = self.mops_urls[key]
         body = get_json_bytes(self.client, url)
-        return RawResponse(url.rsplit("/", 1)[-1], body, {"market": market, "kind": key})
+        return RawResponse(url.rsplit("/", 1)[-1].lower(), body, {"market": market, "kind": key})
 
     def fetch_financial_snapshot(self, market: Market, statement: Statement) -> RawResponse:
         if statement not in COLUMNS:

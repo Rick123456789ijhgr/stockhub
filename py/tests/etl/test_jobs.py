@@ -84,8 +84,8 @@ def test_unknown_job(run: Any) -> None:
     with pytest.raises(
         UnknownJobError,
         match=(
-            "available: backfill_prices, check_holding_alerts, compute_adj_factors, "
-            "daily_prices, derive_delisted_etfs, freshness_check"
+            "available: backfill_fundamentals, backfill_prices, check_holding_alerts, "
+            "compute_adj_factors, daily_prices, derive_delisted_etfs, freshness_check"
         ),
     ):
         run("nope")

@@ -53,6 +53,13 @@ DATASETS: dict[Statement, str] = {
     "CF": "TaiwanStockCashFlowsStatement",
 }
 REVENUE_DATASET = "TaiwanStockMonthRevenue"
+RAW_NAMES = {
+    "TaiwanStockFinancialStatements": "financial_statements",
+    "TaiwanStockBalanceSheet": "balance_sheet",
+    "TaiwanStockCashFlowsStatement": "cash_flows_statement",
+    REVENUE_DATASET: "month_revenue",
+}
+"""FinMind dataset -> RawStore dataset segment (lower snake case)."""
 BASIS: dict[Statement, Basis] = {"IS": "quarter", "BS": "instant", "CF": "ytd"}
 
 # FinMind `type` -> canonical item code (financial_item_map, industry_type 'general').
@@ -262,7 +269,7 @@ class FinMindProvider(FinancialProvider, MonthlyRevenueProvider):
     def fetch_financials(self, symbol: str, statement: Statement, start: date) -> RawResponse:
         body = self._get(DATASETS[statement], symbol, start)
         params = {"symbol": symbol, "statement": statement, "start": start.isoformat()}
-        return RawResponse(DATASETS[statement], body, params)
+        return RawResponse(RAW_NAMES[DATASETS[statement]], body, params)
 
     def parse_financials(self, raw: RawResponse) -> list[FinancialItem]:
         statement: Statement = raw.params["statement"]
@@ -292,7 +299,8 @@ class FinMindProvider(FinancialProvider, MonthlyRevenueProvider):
         # FinMind filters on `date`, the month after the revenue month: a start of 2013-01-01
         # also returns December 2012.
         body = self._get(REVENUE_DATASET, symbol, start)
-        return RawResponse(REVENUE_DATASET, body, {"symbol": symbol, "start": start.isoformat()})
+        params = {"symbol": symbol, "start": start.isoformat()}
+        return RawResponse(RAW_NAMES[REVENUE_DATASET], body, params)
 
     def parse_monthly_revenue(self, raw: RawResponse) -> list[MonthlyRevenue]:
         data = _loads(raw.payload)

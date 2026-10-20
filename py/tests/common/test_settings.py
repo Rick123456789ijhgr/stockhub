@@ -26,7 +26,8 @@ def test_defaults_and_comma_lists(monkeypatch: pytest.MonkeyPatch) -> None:
     s = load_settings()
     assert s.providers_price == ["twse", "finmind"]
     assert s.providers_quote == ["twse_mis"]
-    assert s.providers_financial == []
+    assert s.providers_financial == ["finmind"]
+    assert s.providers_financial_snapshot == ["twse", "tpex"]
     assert s.rawstore_backend == "local"
     assert s.rawstore_local_dir == (PROJECT_ROOT / ".local" / "rawstore").resolve()
 

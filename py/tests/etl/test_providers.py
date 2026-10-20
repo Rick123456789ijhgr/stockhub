@@ -202,6 +202,7 @@ def test_registry_from_names_and_settings(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://u@h/db")
     monkeypatch.setenv("PROVIDERS_PRICE", "fake")
+    monkeypatch.setenv("PROVIDERS_FINANCIAL", "")
     registry = ProviderRegistry.from_settings(load_settings())
     assert [p.name for p in registry.providers_for("price")] == ["fake"]
     with pytest.raises(ConfigError, match="PROVIDERS_FINANCIAL"):
