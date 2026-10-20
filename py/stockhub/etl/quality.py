@@ -5,7 +5,15 @@ from __future__ import annotations
 from decimal import Decimal
 
 from stockhub.engine.adjustments import implied_reference_price
-from stockhub.etl.providers.base import CorporateAction, DailyBar, DividendDetail
+from stockhub.etl.providers.base import (
+    CorporateAction,
+    DailyBar,
+    DistributionLevel,
+    DividendDetail,
+    ForeignHolding,
+    InstitutionalTrade,
+    MarginBalance,
+)
 
 FACTOR_RANGE = (Decimal("0.02"), Decimal(50))
 """Per-event price factors outside this range are almost certainly parsing or source errors
@@ -160,3 +168,75 @@ def suspect_liabilities(values: dict[str, Decimal]) -> bool:
     return (
         abs(current + noncurrent - assets) <= tolerance and abs(parent + nci - equity) <= tolerance
     )
+
+
+# ----------------------------------------------------------------------------- chips
+
+
+def check_institutional_trade(trade: InstitutionalTrade) -> list[str]:
+    """Each group's buy - sell is its net, and the groups add up to the exchange's total
+    (foreign dealers are already inside dealers, so they are not added again)."""
+    reasons: list[str] = []
+    groups = [
+        ("foreign", trade.foreign_buy, trade.foreign_sell, trade.foreign_net),
+        ("trust", trade.trust_buy, trade.trust_sell, trade.trust_net),
+        ("dealer", trade.dealer_buy, trade.dealer_sell, trade.dealer_net),
+        (
+            "foreign_dealer",
+            trade.foreign_dealer_buy,
+            trade.foreign_dealer_sell,
+            trade.foreign_dealer_net,
+        ),
+    ]
+    for name, buy, sell, net in groups:
+        if buy is not None and sell is not None and net is not None and buy - sell != net:
+            reasons.append(f"{name}_net_mismatch")
+    self_net, hedge_net = trade.dealer_self_net, trade.dealer_hedge_net
+    if self_net is not None and hedge_net is not None and self_net + hedge_net != trade.dealer_net:
+        reasons.append("dealer_parts_mismatch")
+    if trade.foreign_net + trade.trust_net + trade.dealer_net != trade.total_net:
+        reasons.append("total_mismatch")
+    return reasons
+
+
+def check_margin_balance(row: MarginBalance) -> list[str]:
+    """Today's balances follow from yesterday's and the day's flows (exact in every table
+    checked, 2012 and 2026, both exchanges)."""
+    reasons: list[str] = []
+    if row.margin_prev + row.margin_buy - row.margin_sell - row.margin_redeem != (
+        row.margin_balance
+    ):
+        reasons.append("margin_balance_mismatch")
+    if row.short_prev + row.short_sell - row.short_cover - row.short_redeem != row.short_balance:
+        reasons.append("short_balance_mismatch")
+    return reasons
+
+
+RATIO_TOLERANCE = Decimal("0.0002")
+"""Published ratios are truncated to 0.01%, so held / issued may differ by that much."""
+
+
+def check_foreign_holding(row: ForeignHolding) -> list[str]:
+    reasons: list[str] = []
+    if not Decimal(0) <= row.foreign_ratio <= Decimal(1):
+        reasons.append("ratio_out_of_range")
+    if row.limit_ratio is not None and not Decimal(0) <= row.limit_ratio <= Decimal(1):
+        reasons.append("limit_out_of_range")
+    if row.issued_shares > 0:
+        implied = Decimal(row.foreign_shares) / Decimal(row.issued_shares)
+        if abs(implied - row.foreign_ratio) > RATIO_TOLERANCE:
+            reasons.append("ratio_mismatch")
+    return reasons
+
+
+def check_distribution(levels: list[DistributionLevel]) -> list[str]:
+    """One stock-week: brackets 1-15 add up to the total (level 17) up to the published
+    adjustment (level 16, whose sign the file drops)."""
+    by = {lv.level: lv for lv in levels}
+    if 17 not in by:
+        return ["missing_total"]
+    brackets = sum(by[k].shares for k in range(1, 16) if k in by)
+    adjustment = by[16].shares if 16 in by else 0
+    if abs(brackets - by[17].shares) != adjustment:
+        return ["levels_do_not_add_up"]
+    return []

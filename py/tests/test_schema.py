@@ -432,9 +432,7 @@ def test_margin_and_holdings_checks(pg: psycopg.Connection) -> None:
         "foreign_shares, foreign_ratio, source) VALUES (%s, '2026-10-16', 100, 70, %s, 'twse')"
     )
     pg.execute(holdings, (stock_id, Decimal("0.7")))
-    _expect(
-        pg, errors.CheckViolation, holdings.replace("10-16", "10-15"), (stock_id, Decimal(70))
-    )
+    _expect(pg, errors.CheckViolation, holdings.replace("10-16", "10-15"), (stock_id, Decimal(70)))
 
 
 def test_distribution_levels_and_market_tables(pg: psycopg.Connection) -> None:

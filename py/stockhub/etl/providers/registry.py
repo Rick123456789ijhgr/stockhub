@@ -19,6 +19,7 @@ BUILTIN_MODULES = (
     "stockhub.etl.providers.tpex",
     "stockhub.etl.providers.mis",
     "stockhub.etl.providers.finmind",
+    "stockhub.etl.providers.tdcc",
 )
 
 _REGISTRY: dict[str, type[Provider]] = {}
@@ -99,5 +100,10 @@ class ProviderRegistry:
                 "monthly_revenue": settings.providers_monthly_revenue,
                 "monthly_revenue_snapshot": settings.providers_monthly_revenue_snapshot,
                 "company_profiles": settings.providers_company_profiles,
+                "institutional_trades": settings.providers_institutional_trades,
+                "margin": settings.providers_margin,
+                "foreign_holdings": settings.providers_foreign_holdings,
+                "market_institutional": settings.providers_market_institutional,
+                "shareholding_distribution": settings.providers_shareholding_distribution,
             }
         )

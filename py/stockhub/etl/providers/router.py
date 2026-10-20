@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Literal
 
 from stockhub.common.rawstore import RawObject, RawStore
 from stockhub.common.settings import ConfigError
@@ -31,6 +32,7 @@ from stockhub.etl.providers.base import (
     DataKind,
     Delisting,
     DelistingProvider,
+    DistributionLevel,
     DividendDetail,
     DividendDetailProvider,
     ExRightsPreview,
@@ -38,7 +40,15 @@ from stockhub.etl.providers.base import (
     FinancialItem,
     FinancialProvider,
     FinancialSnapshotProvider,
+    ForeignHolding,
+    ForeignHoldingProvider,
+    InstitutionalTrade,
+    InstitutionalTradeProvider,
+    MarginProvider,
+    MarginTable,
     Market,
+    MarketInstitutional,
+    MarketInstitutionalProvider,
     MonthlyRevenue,
     MonthlyRevenueProvider,
     MonthlyRevenueSnapshotProvider,
@@ -51,11 +61,21 @@ from stockhub.etl.providers.base import (
     RawResponse,
     Security,
     SecurityListProvider,
+    ShareholdingDistributionProvider,
     Statement,
 )
 from stockhub.etl.providers.registry import ProviderRegistry
 
 log = logging.getLogger(__name__)
+
+ChipKind = Literal["institutional_trades", "margin", "foreign_holdings", "market_institutional"]
+CHIP_SINCE: dict[ChipKind, str] = {
+    "institutional_trades": "institutional_since",
+    "margin": "margin_since",
+    "foreign_holdings": "foreign_holding_since",
+    "market_institutional": "market_institutional_since",
+}
+"""Chip data kind -> the provider attribute mapping each market to its first date."""
 
 
 @dataclass(frozen=True)
@@ -263,6 +283,76 @@ class ProviderRouter:
             lambda p: p.fetch_company_profiles(market),
             lambda p, raw: p.parse_company_profiles(raw),
             accepts=lambda p: market in p.profile_markets,
+        )
+
+    # ------------------------------------------------------------------ chips
+
+    def chip_since(self, kind: ChipKind, market: Market) -> date | None:
+        """First date any configured source publishes this chip table for the market; None
+        when no source covers the market."""
+        try:
+            providers = self.registry.providers_for(kind)
+        except ConfigError:
+            return None
+        since: dict[Market, date]
+        dates = [
+            since[market]
+            for p in providers
+            if market in (since := getattr(p, CHIP_SINCE[kind], {}))
+        ]
+        return min(dates, default=None)
+
+    def _chip_accepts(
+        self, kind: ChipKind, market: Market, day: date
+    ) -> Callable[[Provider], bool]:
+        def accepts(p: Provider) -> bool:
+            since: dict[Market, date] = getattr(p, CHIP_SINCE[kind], {})
+            return market in since and day >= since[market]
+
+        return accepts
+
+    def institutional_trades(self, day: date, market: Market) -> Fetched[InstitutionalTrade]:
+        return self._call(
+            "institutional_trades",
+            InstitutionalTradeProvider,
+            lambda p: p.fetch_institutional_trades(day, market),
+            lambda p, raw: p.parse_institutional_trades(raw),
+            accepts=self._chip_accepts("institutional_trades", market, day),
+        )
+
+    def margin(self, day: date, market: Market) -> Fetched[MarginTable]:
+        return self._call(
+            "margin",
+            MarginProvider,
+            lambda p: p.fetch_margin(day, market),
+            lambda p, raw: p.parse_margin(raw),
+            accepts=self._chip_accepts("margin", market, day),
+        )
+
+    def foreign_holdings(self, day: date, market: Market) -> Fetched[ForeignHolding]:
+        return self._call(
+            "foreign_holdings",
+            ForeignHoldingProvider,
+            lambda p: p.fetch_foreign_holdings(day, market),
+            lambda p, raw: p.parse_foreign_holdings(raw),
+            accepts=self._chip_accepts("foreign_holdings", market, day),
+        )
+
+    def market_institutional(self, day: date, market: Market) -> Fetched[MarketInstitutional]:
+        return self._call(
+            "market_institutional",
+            MarketInstitutionalProvider,
+            lambda p: p.fetch_market_institutional(day, market),
+            lambda p, raw: p.parse_market_institutional(raw),
+            accepts=self._chip_accepts("market_institutional", market, day),
+        )
+
+    def shareholding_distribution(self) -> Fetched[DistributionLevel]:
+        return self._call(
+            "shareholding_distribution",
+            ShareholdingDistributionProvider,
+            lambda p: p.fetch_shareholding_distribution(),
+            lambda p, raw: p.parse_shareholding_distribution(raw),
         )
 
     def quotes(self, symbols: Sequence[tuple[str, Market]]) -> Fetched[Quote]:

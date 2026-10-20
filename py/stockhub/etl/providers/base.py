@@ -30,6 +30,11 @@ DataKind = Literal[
     "monthly_revenue",
     "monthly_revenue_snapshot",
     "company_profiles",
+    "institutional_trades",
+    "margin",
+    "foreign_holdings",
+    "market_institutional",
+    "shareholding_distribution",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -251,6 +256,117 @@ class CompanyProfile(_Model):
     issued_shares: int | None = Field(default=None, ge=0)
 
 
+class InstitutionalTrade(_Model):
+    """Shares one stock was bought and sold by the institutional groups on one day (三大法人).
+
+    foreign_* excludes foreign dealers, who the exchanges count among dealers; total_net is
+    the exchange's own sum (foreign + trust + dealer). Groups an older table format did not
+    split out are None.
+    """
+
+    symbol: str
+    trade_date: date
+    foreign_buy: int = Field(ge=0)
+    foreign_sell: int = Field(ge=0)
+    foreign_net: int
+    foreign_dealer_buy: int | None = Field(default=None, ge=0)
+    foreign_dealer_sell: int | None = Field(default=None, ge=0)
+    foreign_dealer_net: int | None = None
+    trust_buy: int = Field(ge=0)
+    trust_sell: int = Field(ge=0)
+    trust_net: int
+    dealer_buy: int = Field(ge=0)
+    dealer_sell: int = Field(ge=0)
+    dealer_net: int
+    dealer_self_net: int | None = None
+    dealer_hedge_net: int | None = None
+    total_net: int
+
+
+class MarginBalance(_Model):
+    """One stock's margin purchases (融資) and short sales (融券) on one day, in shares.
+
+    The previous balances are kept for the continuity check; they are not stored.
+    """
+
+    symbol: str
+    trade_date: date
+    margin_buy: int = Field(ge=0)
+    margin_sell: int = Field(ge=0)
+    margin_redeem: int = Field(ge=0)
+    margin_prev: int = Field(ge=0)
+    margin_balance: int = Field(ge=0)
+    margin_limit: int | None = Field(default=None, ge=0)
+    short_sell: int = Field(ge=0)
+    short_cover: int = Field(ge=0)
+    short_redeem: int = Field(ge=0)
+    short_prev: int = Field(ge=0)
+    short_balance: int = Field(ge=0)
+    short_limit: int | None = Field(default=None, ge=0)
+    offset_shares: int = Field(default=0, ge=0)
+    note: str | None = None
+
+
+class MarketMargin(_Model):
+    """Whole-market balances from a margin table's summary rows."""
+
+    market: Market
+    trade_date: date
+    margin_balance: int = Field(ge=0, description="shares")
+    short_balance: int = Field(ge=0, description="shares")
+    margin_balance_amount: Decimal | None = Field(default=None, ge=0, description="TWD")
+
+
+class MarginTable(_Model):
+    """A whole margin table: per-stock rows plus the market totals it prints."""
+
+    market: Market
+    trade_date: date
+    rows: list[MarginBalance]
+    total: MarketMargin | None = None
+
+
+class ForeignHolding(_Model):
+    """Shares held by all foreign and mainland investors after one day (外資持股)."""
+
+    symbol: str
+    trade_date: date
+    issued_shares: int = Field(ge=0)
+    foreign_shares: int = Field(ge=0)
+    foreign_ratio: Decimal
+    """Fraction as published (0.7234 = 72.34%); not constrained here, the quality check is."""
+    limit_ratio: Decimal | None = None
+
+
+Investor = Literal[
+    "foreign", "foreign_dealer", "trust", "dealer", "dealer_self", "dealer_hedge", "total"
+]
+
+
+class MarketInstitutional(_Model):
+    """Whole-market traded value of one institutional group on one day, in TWD."""
+
+    market: Market
+    trade_date: date
+    investor: Investor
+    buy_amount: Decimal = Field(ge=0)
+    sell_amount: Decimal = Field(ge=0)
+    net_amount: Decimal
+
+
+class DistributionLevel(_Model):
+    """One bracket of a stock's TDCC shareholding distribution (集保戶股權分散表)."""
+
+    symbol: str
+    week_date: date
+    level: int = Field(ge=1, le=17)
+    """1-15 = holding-size brackets, 16 = adjustment (差異數調整), 17 = total."""
+    holders: int = Field(ge=0)
+    shares: int = Field(ge=0)
+    ratio: Decimal = Field(ge=0)
+    """Fraction of TDCC custody (published as a percentage)."""
+
+
 class Quote(_Model):
     """Intraday snapshot of one security."""
 
@@ -430,6 +546,58 @@ class CompanyProfileProvider(Provider):
     def parse_company_profiles(self, raw: RawResponse) -> list[CompanyProfile]: ...
 
 
+class InstitutionalTradeProvider(Provider):
+    institutional_since: ClassVar[dict[Market, date]]
+    """Markets served, each with the first date the source publishes."""
+
+    @abstractmethod
+    def fetch_institutional_trades(self, trade_date: date, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_institutional_trades(self, raw: RawResponse) -> list[InstitutionalTrade]:
+        """Empty list = nothing published for that date (holiday, or not yet)."""
+
+
+class MarginProvider(Provider):
+    margin_since: ClassVar[dict[Market, date]]
+
+    @abstractmethod
+    def fetch_margin(self, trade_date: date, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_margin(self, raw: RawResponse) -> list[MarginTable]:
+        """One table, or an empty list when nothing is published for that date."""
+
+
+class ForeignHoldingProvider(Provider):
+    foreign_holding_since: ClassVar[dict[Market, date]]
+
+    @abstractmethod
+    def fetch_foreign_holdings(self, trade_date: date, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_foreign_holdings(self, raw: RawResponse) -> list[ForeignHolding]: ...
+
+
+class MarketInstitutionalProvider(Provider):
+    market_institutional_since: ClassVar[dict[Market, date]]
+
+    @abstractmethod
+    def fetch_market_institutional(self, trade_date: date, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_market_institutional(self, raw: RawResponse) -> list[MarketInstitutional]: ...
+
+
+class ShareholdingDistributionProvider(Provider):
+    @abstractmethod
+    def fetch_shareholding_distribution(self) -> RawResponse:
+        """The latest published week (TDCC publishes no history)."""
+
+    @abstractmethod
+    def parse_shareholding_distribution(self, raw: RawResponse) -> list[DistributionLevel]: ...
+
+
 class QuoteProvider(Provider):
     max_symbols: ClassVar[int] = 50
     """Largest batch one request may carry; callers split longer lists."""
@@ -456,4 +624,9 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "monthly_revenue": MonthlyRevenueProvider,
     "monthly_revenue_snapshot": MonthlyRevenueSnapshotProvider,
     "company_profiles": CompanyProfileProvider,
+    "institutional_trades": InstitutionalTradeProvider,
+    "margin": MarginProvider,
+    "foreign_holdings": ForeignHoldingProvider,
+    "market_institutional": MarketInstitutionalProvider,
+    "shareholding_distribution": ShareholdingDistributionProvider,
 }

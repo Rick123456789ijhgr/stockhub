@@ -7,6 +7,7 @@ bulletin/exDailyQ and bulletin/revivt: ex-rights/dividend results (from late 200
 capital reductions (from 2013) with the exchange's reference prices.
 OpenAPI mopsfin_t187ap0x: latest financial statements, monthly revenue and company profiles
 of OTC companies (see mops_openapi).
+insti/dailyTrade, margin/balance, insti/qfii, insti/summary: chips (see tpex_chips).
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from stockhub.etl.providers.http import (
 )
 from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
+from stockhub.etl.providers.tpex_chips import TpexChipsMixin
 
 OTC_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc"
 DELISTED_URL = "https://www.tpex.org.tw/www/zh-tw/company/deListed"
@@ -81,6 +83,7 @@ class TpexProvider(
     CorporateActionProvider,
     ExRightsPreviewProvider,
     MopsOpenApiMixin,
+    TpexChipsMixin,
 ):
     name: ClassVar[str] = "tpex"
     min_interval: ClassVar[float] = 3.0
