@@ -42,7 +42,7 @@ export function FundamentalsStatusCard({ status, now }: { status: FundamentalsSt
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           {tiles.map((t) => (
             <div key={t.label}>
               <dt className="text-xs text-muted-foreground">{t.label}</dt>
@@ -67,7 +67,7 @@ export function FundamentalsStatusCard({ status, now }: { status: FundamentalsSt
         {status.quarantinePending > 0 ? (
           <p className="text-sm">
             有 {formatInteger(status.quarantinePending)} 份財報沒通過品質檢查，
-            <Link href="/admin" className="underline underline-offset-4">
+            <Link href="/admin?tab=review" className="underline underline-offset-4">
               到設定頁確認
             </Link>
             。
