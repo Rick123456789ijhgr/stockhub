@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { FlowRanking } from "@/components/chips/flow-ranking";
 import { PageHeader } from "@/components/coming-soon";
 import { PortfolioSummary } from "@/components/portfolio/summary";
 import { PriceChange } from "@/components/price-change";
@@ -13,10 +14,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { loadPortfolio } from "@/lib/portfolio-data";
 
-const SECTIONS = [
-  { title: "大盤與國際市場", milestone: "M1 / M5" },
-  { title: "三大法人買賣超排行", milestone: "M4" },
-];
+const SECTIONS = [{ title: "大盤與國際市場", milestone: "M1 / M5" }];
 
 export default function HomePage() {
   return (
@@ -45,12 +43,23 @@ export default function HomePage() {
               <Badge variant="secondary">新聞與總經 M6</Badge>
             </CardTitle>
             <CardDescription>
-              持股單日漲跌超過近 20 日報酬標準差 × 2.5（最低 3%）時，盤中輪詢與收盤後各檢查一次。
+              持股單日漲跌超過近 20 日報酬標準差 × 2.5（最低 3%）時，盤中輪詢與收盤後各檢查一次；外資、投信或自營商單日買賣超達持股成交量
+              10%（成交金額 5,000 萬以上）時，抓完籌碼後檢查。
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Suspense fallback={<Skeleton className="h-16 w-full" />}>
               <Alerts />
+            </Suspense>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">三大法人買賣超排行</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+              <Flows />
             </Suspense>
           </CardContent>
         </Card>
@@ -91,6 +100,11 @@ async function Holdings() {
   );
 }
 
+async function Flows() {
+  await requireUser();
+  return <FlowRanking db={getDb()} />;
+}
+
 async function Alerts() {
   await requireUser();
   const alerts = await listRecentAlerts(getDb());
@@ -110,7 +124,7 @@ async function Alerts() {
                 <PriceChange value={a.change * 100} suffix="%" />
               </>
             ) : null}
-            {a.threshold !== null ? `（門檻 ±${(a.threshold * 100).toFixed(1)}%）` : ""}
+            {a.kind === "holding_move" && a.threshold !== null ? `（門檻 ±${(a.threshold * 100).toFixed(1)}%）` : ""}
           </span>
         </li>
       ))}

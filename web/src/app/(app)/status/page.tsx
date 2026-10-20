@@ -19,6 +19,7 @@ import { requireUser } from "@/lib/auth/session";
 import { JobButton } from "@/components/jobs/job-button";
 import { hasPendingRequest, JobRequestList } from "@/components/jobs/job-request-list";
 import { AutoRefresh } from "@/components/status/auto-refresh";
+import { ChipsStatusCard } from "@/components/status/chips-status";
 import { FundamentalsStatusCard } from "@/components/status/fundamentals-status";
 import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
@@ -27,6 +28,7 @@ import {
   YearBars,
   YearCoverage,
 } from "@/components/status/data-progress";
+import { getChipsStatus } from "@/lib/chips";
 import { getDataTotals, getDayCoverage, getRunningBackfills, taipeiToday } from "@/lib/coverage";
 import { fetchedRange, gapDays, summarizeYears } from "@/lib/coverage-grid";
 import { getDb } from "@/lib/db";
@@ -71,7 +73,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, params] =
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, chips, params] =
     await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
@@ -80,6 +82,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     getScheduleRuns(db),
     listJobRequests(db, { limit: 8 }),
     getFundamentalsStatus(db),
+    getChipsStatus(db),
     searchParams,
   ]);
 
@@ -93,6 +96,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const coveredDays = years.reduce((sum, y) => sum + y.fetched + y.partial, 0);
   const running =
     backfills.length > 0 ||
+    chips.backfill !== null ||
     jobRuns.some((r) => r.status === "running") ||
     hasPendingRequest(requests);
   const problems = gapDays(days, today, pending);
@@ -122,12 +126,15 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       ) : null}
 
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <section aria-label="排程" className="min-w-0">
           <ScheduleHealthCard items={schedules} />
         </section>
         <section aria-label="財報與月營收" className="min-w-0">
           <FundamentalsStatusCard status={fundamentals} now={now} />
+        </section>
+        <section aria-label="籌碼" className="min-w-0">
+          <ChipsStatusCard status={chips} now={now} />
         </section>
       </div>
 
