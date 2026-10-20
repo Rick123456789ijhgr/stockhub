@@ -83,10 +83,7 @@ def test_date_defaults_to_taipei_today(run: Any) -> None:
 def test_unknown_job(run: Any) -> None:
     with pytest.raises(
         UnknownJobError,
-        match=(
-            "available: backfill_fundamentals, backfill_prices, check_holding_alerts, "
-            "compute_adj_factors, daily_prices, derive_delisted_etfs, freshness_check"
-        ),
+        match=r"available: .*backfill_prices, .*daily_prices, .*heartbeat",
     ):
         run("nope")
 

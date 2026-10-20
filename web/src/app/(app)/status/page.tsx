@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/session";
+import { JobButton } from "@/components/jobs/job-button";
+import { hasPendingRequest, JobRequestList } from "@/components/jobs/job-request-list";
 import { AutoRefresh } from "@/components/status/auto-refresh";
 import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
@@ -23,9 +25,11 @@ import {
   YearCoverage,
 } from "@/components/status/data-progress";
 import { getDataTotals, getDayCoverage, getRunningBackfills, taipeiToday } from "@/lib/coverage";
-import { fetchedRange, summarizeYears } from "@/lib/coverage-grid";
+import { fetchedRange, gapDays, summarizeYears } from "@/lib/coverage-grid";
 import { getDb } from "@/lib/db";
 import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/format";
+import { listJobRequests } from "@/lib/job-requests";
+import { runnerEnabled } from "@/lib/job-runner";
 import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
 import { getScheduleRuns, getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
 
@@ -63,12 +67,13 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, scheduleRuns, params] = await Promise.all([
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, params] = await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
     getDataTotals(db),
     getRunningBackfills(db),
     getScheduleRuns(db),
+    listJobRequests(db, { limit: 8 }),
     searchParams,
   ]);
 
@@ -80,7 +85,11 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     ? requested
     : Number((range?.last ?? today).slice(0, 4));
   const coveredDays = years.reduce((sum, y) => sum + y.fetched + y.partial, 0);
-  const running = backfills.length > 0 || jobRuns.some((r) => r.status === "running");
+  const running =
+    backfills.length > 0 ||
+    jobRuns.some((r) => r.status === "running") ||
+    hasPendingRequest(requests);
+  const problems = gapDays(days, today, pending);
   const now = new Date();
   const schedules = SCHEDULES.map((s) => scheduleHealth(s, scheduleRuns, now));
 
@@ -109,6 +118,39 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
           ))}
         </section>
       ) : null}
+
+      <section aria-labelledby="repair" className="mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle id="repair" className="text-base">
+              手動更新與補抓
+            </CardTitle>
+            <CardDescription>
+              {runnerEnabled()
+                ? "按下後立即在本機執行，進度顯示在下方。"
+                : "這個環境不能直接執行任務：會先排入佇列，在下一次排程（平日 18:00）開頭執行。"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <JobButton
+                label="日線更新到今天"
+                variant="default"
+                requests={[{ job: "catch_up_prices" }]}
+              />
+              {problems.length > 0 ? (
+                <JobButton
+                  label={`重新抓取全部缺漏日（${Math.min(problems.length, 30)} 天）`}
+                  requests={problems
+                    .slice(-30)
+                    .map((d) => ({ job: "daily_prices" as const, params: { date: d.date } }))}
+                />
+              ) : null}
+            </div>
+            <JobRequestList rows={requests} />
+          </CardContent>
+        </Card>
+      </section>
 
       <section aria-labelledby="coverage" className="mb-6">
         <Card>

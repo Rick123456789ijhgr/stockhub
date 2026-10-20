@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -76,6 +76,7 @@ etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 ETL := $(PY) python -m stockhub.etl run
 
 etl-daily: ## Update calendar, stock master, delistings and the day's prices (date=YYYY-MM-DD)
+	-$(PY) python -m stockhub.etl drain-requests
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
 	$(ETL) sync_delistings
@@ -109,6 +110,9 @@ etl-financials: ## Latest filed quarter and revenue month (official), then FinMi
 	$(ETL) sync_company_profiles
 	$(ETL) sync_monthly_revenue
 	$(ETL) sync_financials $(if $(max_requests),--param max_requests=$(max_requests))
+
+etl-requests: ## Run the jobs queued from the website (the site starts this itself locally)
+	$(PY) python -m stockhub.etl drain-requests
 
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))

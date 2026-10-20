@@ -591,3 +591,28 @@ class SyncMonthlyRevenueJob(Job):
             months = sorted({m.revenue_month.isoformat()[:7] for m in fetched.items})
             parts.append(f"{market} {len(rows)} 家 {'、'.join(months)}（寫入 {written}）")
         return JobOutcome(message="月營收：" + "；".join(parts))
+
+
+@register_job
+class RefreshStockFundamentalsJob(Job):
+    name: ClassVar[str] = "refresh_stock_fundamentals"
+    description: ClassVar[str] = (
+        "Re-fetch one company's statements and monthly revenue since 2013 (params: symbol)"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        router = ctx.require_router()
+        symbol = str(ctx.params.get("symbol") or "").strip()
+        with ctx.engine.connect() as conn:
+            companies = history_companies(conn, HISTORY_START, [symbol]) if symbol else []
+        if not companies:
+            raise JobError(f"找不到股票代號 {symbol!r}（ETF 沒有財報）")
+        stats = HistoryStats()
+        fetch_company_history(
+            ctx.engine.begin, router, companies[0], DATASETS, HISTORY_START, stats
+        )
+        ctx.rows_written = stats.statements.written + stats.revenue_rows
+        if stats.failures:
+            raise JobError("；".join(stats.failures))
+        return JobOutcome(message=f"{symbol}：{stats}")

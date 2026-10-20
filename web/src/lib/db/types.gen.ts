@@ -379,6 +379,28 @@ export interface FundamentalsQuarterly {
   total_liabilities: Numeric | null;
 }
 
+export interface JobRequests {
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  /**
+   * Only jobs the site may request; params are validated by the site and again by the job.
+   */
+  job_name: string;
+  /**
+   * Outcome summary or error shown on the site.
+   */
+  message: string | null;
+  params: Generated<Json>;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  /**
+   * The job_runs row of the execution.
+   */
+  run_id: Int8 | null;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+}
+
 export interface JobRuns {
   /**
    * Resume state saved during the run; a rerun with the same params resumes from the latest failed run.
@@ -671,6 +693,7 @@ export interface DB {
   financials_quarantine: FinancialsQuarantine;
   fundamental_signals: FundamentalSignals;
   fundamentals_quarterly: FundamentalsQuarterly;
+  job_requests: JobRequests;
   job_runs: JobRuns;
   monthly_revenue: MonthlyRevenue;
   monthly_revenue_growth: MonthlyRevenueGrowth;

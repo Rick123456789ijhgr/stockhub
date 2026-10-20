@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Literal
 from sqlalchemy import Connection, text
 
 from stockhub.common.db import upsert
-from stockhub.common.timeutil import taipei_today, utcnow
+from stockhub.common.timeutil import TAIPEI, taipei_today, utcnow
 from stockhub.common.trading_calendar import is_trading_day, trading_days_between
 from stockhub.etl.jobs.base import Job, JobContext, JobError, JobOutcome, register_job
 from stockhub.etl.providers.base import (
@@ -571,3 +571,99 @@ def _require_stocks(ctx: JobContext) -> None:
     with ctx.engine.connect() as conn:
         if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM stocks)")).scalar_one():
             raise JobError("股票主檔是空的，請先執行 sync_stocks")
+
+
+# ----------------------------------------------------------------------------- repairs
+
+PUBLISH_TIME = (14, 30)
+"""Taipei time after which the day's quotes are normally published."""
+
+
+@register_job
+class CatchUpPricesJob(Job):
+    name: ClassVar[str] = "catch_up_prices"
+    description: ClassVar[str] = (
+        "Fetch every trading day after the latest stored one up to today (today only after "
+        "14:30 Taipei)"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        _require_stocks(ctx)
+        today = taipei_today()
+        with ctx.engine.connect() as conn:
+            last = conn.execute(
+                text("SELECT max(trade_date) FROM prices_daily_coverage WHERE market = 'twse'")
+            ).scalar_one()
+            if last is None:
+                raise JobError("還沒有任何日線，請先執行 backfill_prices")
+            days = trading_days_between(conn, last + timedelta(days=1), today)
+        now = utcnow().astimezone(TAIPEI)
+        if days and days[-1] == today and (now.hour, now.minute) < PUBLISH_TIME:
+            days = days[:-1]
+        if not days:
+            return JobOutcome("skipped", f"日線已是最新（{last}）")
+        parts = []
+        for day in days:
+            result, message = ingest_day(ctx, day)
+            parts.append(f"{day}：{'已匯入' if result == 'ingested' else message}")
+        return JobOutcome(message="；".join(parts))
+
+
+REFETCH_LIMIT = 30
+"""Most days one repair request re-fetches (each day is two whole-market requests)."""
+
+
+def stock_missing_days(conn: Connection, stock_id: int, start: date, end: date) -> list[date]:
+    return list(
+        conn.execute(
+            text("SELECT d FROM stock_missing_days(:s, :a, :b) AS d"),
+            {"s": stock_id, "a": start, "b": end},
+        ).scalars()
+    )
+
+
+@register_job
+class RefetchStockPricesJob(Job):
+    name: ClassVar[str] = "refetch_stock_prices"
+    description: ClassVar[str] = (
+        "Re-fetch the days on which the market traded but this stock has no bar "
+        "(params: symbol, days = look-back, default 365; at most 30 days per run)"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        symbol = str(ctx.params.get("symbol") or "").strip()
+        if not symbol:
+            raise JobError("缺少 symbol 參數")
+        look_back = int(ctx.params.get("days", 365))
+        today = taipei_today()
+        start = today - timedelta(days=look_back)
+        with ctx.engine.connect() as conn:
+            stock_id = conn.execute(
+                text(
+                    "SELECT id FROM stocks WHERE symbol = :s "
+                    "ORDER BY delisted_date DESC NULLS FIRST LIMIT 1"
+                ),
+                {"s": symbol},
+            ).scalar_one_or_none()
+            if stock_id is None:
+                raise JobError(f"找不到代號 {symbol}")
+            missing = stock_missing_days(conn, stock_id, start, today)
+        if not missing:
+            return JobOutcome("skipped", f"{symbol} 近 {look_back} 天沒有缺漏的交易日")
+        todo = missing[-REFETCH_LIMIT:]
+        for day in todo:
+            ingest_day(ctx, day)
+        with ctx.engine.connect() as conn:
+            still = set(stock_missing_days(conn, stock_id, start, today))
+        filled = [d for d in todo if d not in still]
+        message = f"{symbol}：重新抓取 {len(todo)} 天，補上 {len(filled)} 天"
+        if still:
+            message += (
+                f"；仍缺 {len(still)} 天（交易所當天的日線表沒有這一檔，多半是停止交易，"
+                f"例如 {min(still)}～{max(still)}）"
+            )
+        if len(missing) > len(todo):
+            message += f"；另有 {len(missing) - len(todo)} 天較早的缺漏未處理，可再執行一次"
+        return JobOutcome(message=message)

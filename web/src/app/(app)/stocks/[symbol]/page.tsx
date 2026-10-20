@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { PriceChange } from "@/components/price-change";
 import { LiveQuote } from "@/components/stock-chart/live-quote";
 import { StockChart } from "@/components/stock-chart/stock-chart";
+import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,6 +104,7 @@ async function StockContent({ params }: { params: PageProps<"/stocks/[symbol]">[
       )}
 
       {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
+      <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
       {bars.length > 0 ? <BarsTable bars={bars} /> : null}
       <p className="mt-3 text-xs text-muted-foreground">
         表格為交易所公布的原始價；漲跌以前一交易日收盤計算，除權息日改以參考價（前收乘上還原因子）為基準，與交易所的漲跌一致。

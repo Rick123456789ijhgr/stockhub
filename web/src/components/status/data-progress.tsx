@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
+import { JobButton } from "@/components/jobs/job-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DataTotals, RunningBackfill } from "@/lib/coverage";
 import {
@@ -175,16 +176,24 @@ export function YearCoverage({
             <TriangleAlert className="size-4" aria-hidden />
             需要注意的日期（{problems.length}）
           </p>
-          <ul className="grid grid-cols-1 gap-1 text-sm tabular-nums sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 text-sm tabular-nums sm:grid-cols-2">
             {problems.map((d) => (
-              <li key={d.date}>
-                {d.date}：
-                {d.twse + d.tpex === 0
-                  ? "缺漏（重跑 daily_prices --date 這天）"
-                  : `只有${d.twse > 0 ? "上市" : "上櫃"}資料`}
+              <li key={d.date} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  {d.date}：
+                  {d.twse + d.tpex === 0 ? "缺漏" : `只有${d.twse > 0 ? "上市" : "上櫃"}資料`}
+                </span>
+                <JobButton
+                  size="xs"
+                  label="重新抓取"
+                  requests={[{ job: "daily_prices", params: { date: d.date } }]}
+                />
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            交易所當天沒有資料（例如颱風臨時休市）時，重新抓取會把這天改標為休市。
+          </p>
         </div>
       ) : null}
     </div>
