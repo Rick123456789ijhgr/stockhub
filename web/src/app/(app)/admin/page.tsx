@@ -58,7 +58,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
   const tab = activeTab(tabs, query.tab);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <PageTabs tabs={tabs} active={tab} basePath="/admin" />
       {tab === "general" ? <General /> : null}
       {tab === "review" ? (
@@ -118,7 +118,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
 
 function General() {
   return (
-    <div className="grid items-start gap-3 lg:grid-cols-[3fr_2fr]">
+    <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
       <Card size="sm">
         <CardHeader>
           <CardTitle className="text-sm">手續費</CardTitle>
@@ -132,7 +132,7 @@ function General() {
           </Suspense>
         </CardContent>
       </Card>
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         <Card size="sm">
           <CardHeader>
             <CardTitle className="text-sm">顯示</CardTitle>

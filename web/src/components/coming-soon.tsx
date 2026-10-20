@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export function PageHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <header className="mb-3 md:mb-4">
+    <header className="mb-4 md:mb-5">
       <h1 className="text-lg font-semibold tracking-tight md:text-xl">{title}</h1>
       {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
     </header>

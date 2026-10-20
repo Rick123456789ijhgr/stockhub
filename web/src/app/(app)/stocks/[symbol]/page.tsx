@@ -43,9 +43,9 @@ export default function StockPage({ params, searchParams }: PageProps<"/stocks/[
     <>
       <Link
         href="/stocks"
-        className="mb-2 inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+        className="mb-3 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground"
       >
-        <ChevronLeft className="size-3.5" aria-hidden />
+        <ChevronLeft className="size-4" aria-hidden />
         個股
       </Link>
       <Suspense fallback={<Skeleton className="h-96 w-full" />}>
@@ -72,13 +72,13 @@ async function StockContent({
   const tab = activeTab(tabs, query.tab);
 
   return (
-    <div className="space-y-3">
-      <Card size="sm">
-        <CardContent className="space-y-3">
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="space-y-4">
           <header className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 className="text-lg font-semibold tracking-tight md:text-xl">{stock.name}</h1>
+                <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{stock.name}</h1>
                 <span className="font-mono text-sm text-muted-foreground">{stock.symbol}</span>
                 <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
                 {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
@@ -88,7 +88,7 @@ async function StockContent({
                   </Badge>
                 ) : null}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {stock.industry ? `${stock.industry} · ` : ""}
                 {stock.listedDateEstimated
                   ? `最早資料 ${stock.listedDate}`
@@ -105,18 +105,20 @@ async function StockContent({
       {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
       <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
 
-      <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
-      <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
-        {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
-        {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
-      </Suspense>
-      {tab === "daily" ? (
-        bars.length > 0 ? (
-          <BarsTable bars={bars} />
-        ) : (
-          <p className="text-sm text-muted-foreground">尚無日線資料。</p>
-        )
-      ) : null}
+      <div className="space-y-4">
+        <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
+        <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
+          {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
+          {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
+        </Suspense>
+        {tab === "daily" ? (
+          bars.length > 0 ? (
+            <BarsTable bars={bars} />
+          ) : (
+            <p className="text-sm text-muted-foreground">尚無日線資料。</p>
+          )
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -140,7 +142,7 @@ function BarsTable({ bars }: { bars: DailyBarRow[] }) {
     );
   });
   return (
-    <section aria-labelledby="bars" className="space-y-2">
+    <section aria-labelledby="bars" className="space-y-3">
       <h2 id="bars" className="sr-only">
         近 {bars.length} 個交易日
       </h2>

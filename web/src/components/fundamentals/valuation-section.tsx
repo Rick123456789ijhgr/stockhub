@@ -94,11 +94,11 @@ export async function ValuationSection({ db, stock }: { db: Kysely<DB>; stock: S
   const yieldSeries = points.filter((_, i) => i % 5 === 0 || i === points.length - 1);
 
   return (
-    <section aria-labelledby="valuation" className="space-y-3">
+    <section aria-labelledby="valuation" className="space-y-4">
       <h2 id="valuation" className="sr-only">
         估值
       </h2>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         {!isEtf && hasFundamentals ? (
           <>
             <SummaryTile
@@ -127,7 +127,7 @@ export async function ValuationSection({ db, stock }: { db: Kysely<DB>; stock: S
         以收盤價（未還原）計算；百分位 = 期間內低於目前值的交易日比例，本益比排除虧損期。
       </p>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {!isEtf && hasFundamentals ? (
           <Card size="sm">
             <CardHeader>

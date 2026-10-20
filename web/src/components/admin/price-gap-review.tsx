@@ -129,7 +129,7 @@ function PriceGapItem({ gap }: { gap: PriceGap }) {
               : null}
           </p>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="grid gap-1 text-xs text-muted-foreground">
+            <label className="grid content-start gap-1 text-xs text-muted-foreground">
               股數比（後 ÷ 前）
               <input
                 inputMode="decimal"
@@ -139,7 +139,7 @@ function PriceGapItem({ gap }: { gap: PriceGap }) {
                 className="h-7 w-24 rounded-md border bg-background px-2 text-sm text-foreground tabular-nums aria-invalid:border-destructive"
               />
             </label>
-            <label className="grid gap-1 text-xs text-muted-foreground">
+            <label className="grid content-start gap-1 text-xs text-muted-foreground">
               事件類型
               <select
                 value={actionType}

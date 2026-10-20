@@ -32,7 +32,7 @@ export function Disclosure({
         <span className="min-w-0 flex-1 font-medium">{summary}</span>
         {meta ? <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{meta}</span> : null}
       </summary>
-      <div className="pt-2">{children}</div>
+      <div className="pt-3">{children}</div>
     </details>
   );
 }

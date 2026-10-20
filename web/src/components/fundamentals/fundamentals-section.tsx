@@ -91,7 +91,7 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
   const latest = withIncome.at(-1);
 
   return (
-    <section aria-labelledby="fundamentals" className="space-y-3">
+    <section aria-labelledby="fundamentals" className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-end gap-2">
         <h2 id="fundamentals" className="sr-only">
           基本面
@@ -102,7 +102,7 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {revenue.length > 0 ? <RevenueCard rows={revenue} /> : null}
         {recent.length > 0 ? (
           <Card size="sm">
@@ -193,8 +193,8 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
           </CardDescription>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 lg:grid-cols-2">
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           <TimeChart
             label="月營收"
             format="hundredMillion"
@@ -268,7 +268,7 @@ function DupontCard({ rows }: { rows: QuarterRow[] }) {
         <CardTitle className="text-sm">ROE 與杜邦分析（近四季）</CardTitle>
         <CardDescription>ROE = 淨利率 × 資產週轉率 × 權益乘數（平均資產與權益）</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <TimeChart
           label="ROE／ROA"
           format="percent"

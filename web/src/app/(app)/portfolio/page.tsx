@@ -57,7 +57,7 @@ async function PortfolioContent({
   const missing = open.filter((p) => !marks[p.stock]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {live ? <SessionRefresh /> : null}
       <PortfolioSummary totals={view.totals} />
 

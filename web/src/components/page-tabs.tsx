@@ -28,9 +28,12 @@ export function PageTabs<K extends string>({
   return (
     <nav
       aria-label="分頁"
-      className={cn("-mx-4 overflow-x-auto border-b px-4 md:mx-0 md:px-0", className)}
+      className={cn(
+        "-mx-4 overflow-x-auto overflow-y-hidden border-b px-4 [scrollbar-width:none] md:mx-0 md:px-0",
+        className,
+      )}
     >
-      <ul className="flex gap-4 text-sm whitespace-nowrap">
+      <ul className="flex gap-6 text-sm whitespace-nowrap">
         {tabs.map((tab, i) => {
           const current = tab.key === active;
           return (
@@ -40,10 +43,12 @@ export function PageTabs<K extends string>({
                 scroll={false}
                 aria-current={current ? "page" : undefined}
                 className={cn(
-                  "-mb-px inline-flex items-center gap-1.5 border-b-2 py-2",
+                  // Inset underline: a negative margin would overflow the scroll box and
+                  // show a vertical scrollbar.
+                  "inline-flex items-center gap-1.5 py-2.5",
                   current
-                    ? "border-foreground font-medium text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
+                    ? "font-medium text-foreground shadow-[inset_0_-2px_0_var(--foreground)]"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {tab.label}

@@ -165,7 +165,7 @@ export function TransactionForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           代號
           <input
             value={symbol}
@@ -181,7 +181,7 @@ export function TransactionForm({
             {info.data === null ? <span className="text-destructive">找不到這個代號</span> : null}
           </span>
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           成交日
           <input
             type="date"
@@ -192,7 +192,7 @@ export function TransactionForm({
             className={input}
           />
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           股數
           <input
             inputMode="numeric"
@@ -211,7 +211,7 @@ export function TransactionForm({
               : null}
           </span>
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           成交價
           <input
             inputMode="decimal"
@@ -264,13 +264,13 @@ export function TransactionForm({
             onChange={setTax}
           />
         ) : null}
-        <label className="flex items-center gap-2 self-center text-sm">
+        <label className="flex h-9 items-center gap-2 self-end text-sm">
           <input type="checkbox" checked={dayTrade} onChange={(e) => setDayTrade(e.target.checked)} />
           當沖
         </label>
       </div>
 
-      <label className="grid gap-1 text-xs text-muted-foreground">
+      <label className="grid content-start gap-1 text-xs text-muted-foreground">
         備註
         <input value={note} onChange={(e) => setNote(e.target.value)} className={input} />
       </label>
@@ -307,7 +307,7 @@ function ChargeField({
   onChange: (value: string | null) => void;
 }) {
   return (
-    <label className="grid gap-1 text-xs text-muted-foreground">
+    <label className="grid content-start gap-1 text-xs text-muted-foreground">
       <span className="flex items-center justify-between gap-1">
         {label}
         {value === null ? (

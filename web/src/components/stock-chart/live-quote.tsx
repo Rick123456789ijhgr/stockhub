@@ -95,7 +95,7 @@ export function QuotePanel({ symbol, latest }: { symbol: string; latest: DailyBa
       ];
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
+    <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-10">
       <div className="shrink-0">
         <div className="flex items-baseline gap-2 tabular-nums">
           <span className="text-3xl font-semibold tracking-tight">{formatPrice(price)}</span>
@@ -106,17 +106,17 @@ export function QuotePanel({ symbol, latest }: { symbol: string; latest: DailyBa
             </span>
           ) : null}
         </div>
-        <p className="text-xs text-muted-foreground tabular-nums">
+        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
           {live
             ? `盤中 ${formatTaipeiDateTime(live.quoteTime).slice(11)} 成交 · 每 30 秒更新`
             : `收盤 ${latest!.tradeDate}`}
         </p>
       </div>
-      <dl className="grid flex-1 grid-cols-3 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-4 lg:grid-cols-7">
+      <dl className="grid flex-1 grid-cols-3 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
         {stats.map((s) => (
           <div key={s.label}>
             <dt className="text-xs text-muted-foreground">{s.label}</dt>
-            <dd className="tabular-nums">{s.value}</dd>
+            <dd className="mt-0.5 tabular-nums">{s.value}</dd>
           </div>
         ))}
       </dl>

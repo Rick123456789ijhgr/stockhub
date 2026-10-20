@@ -104,7 +104,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     <>
       <AutoRefresh seconds={running ? 5 : 60} />
 
-      <section aria-labelledby="totals" className="mb-3">
+      <section aria-labelledby="totals" className="mb-4">
         <h2 id="totals" className="sr-only">
           總覽
         </h2>
@@ -112,7 +112,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
       </section>
 
       {backfills.length > 0 ? (
-        <section aria-labelledby="running" className="mb-3 space-y-3">
+        <section aria-labelledby="running" className="mb-4 space-y-3">
           <h2 id="running" className="text-sm font-semibold">
             進行中（每 5 秒自動更新）
           </h2>
@@ -122,7 +122,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       ) : null}
 
-      <div className="mb-3 grid items-start gap-3 lg:grid-cols-2">
+      <div className="mb-4 grid items-start gap-3 lg:grid-cols-2">
         <section aria-label="排程">
           <ScheduleHealthCard items={schedules} />
         </section>
@@ -131,7 +131,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       </div>
 
-      <section aria-labelledby="repair" className="mb-3">
+      <section aria-labelledby="repair" className="mb-4">
         <Card size="sm">
           <CardHeader>
             <CardTitle id="repair" className="text-sm">
@@ -164,7 +164,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </Card>
       </section>
 
-      <section aria-labelledby="coverage" className="mb-3">
+      <section aria-labelledby="coverage" className="mb-4">
         <Card size="sm">
           <CardContent>
             {/* Picking a year reloads with ?year=, so the section stays open then. */}
