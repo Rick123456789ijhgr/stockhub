@@ -8,7 +8,7 @@ import { ValuationSection } from "@/components/fundamentals/valuation-section";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
-import { QuotePanel, WatchButton } from "@/components/stock-chart/live-quote";
+import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
 import { StockChart } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
 import { Badge } from "@/components/ui/badge";
@@ -25,16 +25,19 @@ import {
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatHundredMillion, formatLots, formatPrice } from "@/lib/format";
+import { getQuoteFundamentals } from "@/lib/fundamentals";
+import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
 import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
 
-type Tab = "fundamentals" | "valuation" | "daily";
+type Tab = "chart" | "fundamentals" | "valuation" | "daily";
 const STOCK_TABS: PageTab<Tab>[] = [
+  { key: "chart", label: "走勢" },
   { key: "fundamentals", label: "基本面" },
   { key: "valuation", label: "估值" },
   { key: "daily", label: "歷史日線" },
 ];
-/** ETFs have no statements; their first tab is valuation (yield). */
+/** ETFs have no statements. */
 const ETF_TABS = STOCK_TABS.filter((t) => t.key !== "fundamentals");
 const BARS_SHOWN = 20;
 
@@ -67,19 +70,24 @@ async function StockContent({
   const db = getDb();
   const stock = await findStock(db, decodeURIComponent(symbol));
   if (!stock) notFound();
-  const bars = await getRecentBars(db, stock.id);
+  const [bars, fundamentals] = await Promise.all([
+    getRecentBars(db, stock.id),
+    getQuoteFundamentals(db, stock.id, taipeiToday()),
+  ]);
   const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
   const tab = activeTab(tabs, query.tab);
 
+  // Futu's order: section tabs on top, then the quote header, then the section.
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
       <Card>
         <CardContent className="space-y-4">
           <header className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{stock.name}</h1>
-                <span className="font-mono text-sm text-muted-foreground">{stock.symbol}</span>
+                <span className="font-mono text-lg font-semibold">{stock.symbol}</span>
+                <h1 className="text-lg font-semibold tracking-tight md:text-xl">{stock.name}</h1>
                 <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
                 {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
                 {stock.delistedDate ? (
@@ -89,24 +97,34 @@ async function StockContent({
                 ) : null}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                {stock.industry ? `${stock.industry} · ` : ""}
-                {stock.listedDateEstimated
-                  ? `最早資料 ${stock.listedDate}`
-                  : `上市（櫃）日 ${stock.listedDate}`}
+                <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
+                {stock.industry ? ` · ${stock.industry}` : ""}
+                <span className="hidden sm:inline">
+                  {stock.listedDateEstimated
+                    ? ` · 最早資料 ${stock.listedDate}`
+                    : ` · 上市（櫃）日 ${stock.listedDate}`}
+                </span>
                 {stock.delistedDate ? ` · 終止上市（櫃）日 ${stock.delistedDate}` : ""}
               </p>
             </div>
             {stock.delistedDate === null ? <WatchButton symbol={stock.symbol} /> : null}
           </header>
-          <QuotePanel symbol={stock.symbol} latest={bars[0]} />
+          <QuotePanel
+            symbol={stock.symbol}
+            latest={bars[0]}
+            fundamentals={fundamentals}
+            isEtf={stock.type === "etf"}
+          />
         </CardContent>
       </Card>
 
-      {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
-      <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
-
-      <div className="space-y-4">
-        <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
+      <div className="pt-2">
+        {tab === "chart" ? (
+          <div className="space-y-4">
+            {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
+            <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
+          </div>
+        ) : null}
         <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
           {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
           {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}

@@ -52,6 +52,16 @@ export function shiftYears(iso: string, years: number): string {
 const byKey = <T>(key: (x: T) => string) => (a: T, b: T) =>
   key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
 
+/** Price over trailing-four-quarter EPS; none for losses (EPS not positive). */
+export function peRatio(close: number, epsTtm: number | null): number | null {
+  return epsTtm !== null && epsTtm > 0 && close > 0 ? close / epsTtm : null;
+}
+
+/** Price over book value per share; none when book value is not positive. */
+export function pbRatio(close: number, bvps: number | null): number | null {
+  return bvps !== null && bvps > 0 && close > 0 ? close / bvps : null;
+}
+
 export function valuationSeries(
   prices: PricePoint[],
   quarters: QuarterPoint[],
@@ -78,8 +88,8 @@ export function valuationSeries(
       close: p.close,
       epsTtm: eps,
       bvps,
-      pe: eps !== null && eps > 0 && p.close > 0 ? p.close / eps : null,
-      pb: bvps !== null && bvps > 0 && p.close > 0 ? p.close / bvps : null,
+      pe: peRatio(p.close, eps),
+      pb: pbRatio(p.close, bvps),
       dividendTtm: dividend,
       dividendYield: p.close > 0 ? dividend / p.close : null,
     });

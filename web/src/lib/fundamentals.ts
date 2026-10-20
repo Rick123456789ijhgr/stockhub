@@ -179,6 +179,36 @@ export async function getValuationInputs(
   };
 }
 
+export type QuoteFundamentals = {
+  /** Latest quarter available on `today` (same rule as the valuation series). */
+  epsTtm: number | null;
+  bvps: number | null;
+  issuedShares: number | null;
+};
+
+/** Per-share figures and share count for the quote header's P/E, P/B and market value. */
+export async function getQuoteFundamentals(
+  db: Kysely<DB>,
+  stockId: number,
+  today: string,
+): Promise<QuoteFundamentals> {
+  const result = await sql<{ eps_ttm: string | null; bvps: string | null; shares: string | null }>`
+    SELECT f.eps_ttm, f.bvps, s.issued_shares AS shares
+    FROM stocks s
+    LEFT JOIN LATERAL (
+      SELECT eps_ttm, bvps FROM fundamentals_quarterly
+      WHERE stock_id = s.id AND available_date <= ${today}::date
+      ORDER BY period_end DESC LIMIT 1) f ON true
+    WHERE s.id = ${stockId}
+  `.execute(db);
+  const row = result.rows[0];
+  return {
+    epsTtm: num(row?.eps_ttm ?? null),
+    bvps: num(row?.bvps ?? null),
+    issuedShares: num(row?.shares ?? null),
+  };
+}
+
 export type PeerRow = {
   stockId: number;
   symbol: string;

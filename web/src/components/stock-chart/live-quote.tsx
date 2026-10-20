@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Star } from "lucide-react";
+import { ArrowDown, ArrowUp, Star } from "lucide-react";
 
-import { PriceChange } from "@/components/price-change";
+import { directionClass } from "@/components/price-change";
 import { formatHundredMillion, formatLots, formatPrice, formatTaipeiDateTime } from "@/lib/format";
+import type { QuoteFundamentals } from "@/lib/fundamentals";
 import { isFresherThanDaily, isSessionOpen, type LiveQuote as Quote } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
 import type { DailyBarRow } from "@/lib/stocks";
 import { cn } from "@/lib/utils";
+import { pbRatio, peRatio } from "@/lib/valuation";
 
 type QuoteResponse = { quote: Quote | null; watched: boolean };
 
@@ -58,68 +60,121 @@ export function WatchButton({ symbol }: { symbol: string }) {
   );
 }
 
-/**
- * Price block of the stock page: the intraday snapshot when it is newer than the latest
- * daily bar, otherwise that bar's close.
- */
-export function QuotePanel({ symbol, latest }: { symbol: string; latest: DailyBarRow | undefined }) {
+/** Which price the header shows: the intraday snapshot when newer than the daily bar. */
+function useShownQuote(symbol: string, latest: DailyBarRow | undefined) {
   const { data } = useQuote(symbol);
   const quote = data?.quote ?? null;
-  const live = isFresherThanDaily(quote, latest?.tradeDate ?? null) ? quote : null;
+  return isFresherThanDaily(quote, latest?.tradeDate ?? null) ? quote : null;
+}
 
+/** 「交易中 13:25:30」 or 「收盤 2026/10/20」 under the stock name. */
+export function QuoteStatus({ symbol, latest }: { symbol: string; latest: DailyBarRow | undefined }) {
+  const live = useShownQuote(symbol, latest);
+  if (live) {
+    const time = formatTaipeiDateTime(live.quoteTime).slice(11);
+    return <span className="tabular-nums">{isSessionOpen(new Date()) ? `交易中 ${time}` : `盤後 ${time}`}</span>;
+  }
+  if (!latest) return <span>尚無報價</span>;
+  return <span className="tabular-nums">收盤 {latest.tradeDate.replaceAll("-", "/")}</span>;
+}
+
+/**
+ * Price block of the stock page, laid out like Futu's quote header: the price and its
+ * change on the left, label-value pairs on the right. High, low and open are colored
+ * against the previous close; P/E and P/B follow the valuation tab's rules.
+ */
+export function QuotePanel({
+  symbol,
+  latest,
+  fundamentals,
+  isEtf,
+}: {
+  symbol: string;
+  latest: DailyBarRow | undefined;
+  fundamentals: QuoteFundamentals;
+  isEtf: boolean;
+}) {
+  const live = useShownQuote(symbol, latest);
   if (!live && !latest) {
     return (
       <p className="text-sm text-muted-foreground">尚無日線資料。執行 make etl-daily 或回填後再看。</p>
     );
   }
+  const bar = live ?? latest!;
   const price = live ? live.price : latest!.close;
   const prevClose = live ? live.prevClose : latest!.prevClose;
   const change = priceChange(price, prevClose);
-  const stats = live
-    ? [
-        { label: "開盤", value: formatPrice(live.open) },
-        { label: "最高", value: formatPrice(live.high) },
-        { label: "最低", value: formatPrice(live.low) },
-        { label: "昨收", value: formatPrice(live.prevClose) },
-        { label: "買進", value: formatPrice(live.bid) },
-        { label: "賣出", value: formatPrice(live.ask) },
-        { label: "累計量（張）", value: formatLots(live.volume) },
-      ]
-    : [
-        { label: "開盤", value: formatPrice(latest!.open) },
-        { label: "最高", value: formatPrice(latest!.high) },
-        { label: "最低", value: formatPrice(latest!.low) },
-        { label: "昨收", value: formatPrice(latest!.prevClose) },
-        { label: "成交量（張）", value: formatLots(latest!.volume) },
-        { label: "成交金額（億）", value: formatHundredMillion(latest!.turnover) },
-      ];
+  const close = price === null ? null : Number(price);
+  const ref = prevClose === null ? null : Number(prevClose);
+  // Colored like the price: above the previous close is "up".
+  const vsPrev = (value: string | null) =>
+    value === null || ref === null ? undefined : directionClass(Number(value) - ref);
+  const pe = close === null ? null : peRatio(close, fundamentals.epsTtm);
+  const pb = close === null ? null : pbRatio(close, fundamentals.bvps);
+  const marketCap =
+    close === null || fundamentals.issuedShares === null ? null : close * fundamentals.issuedShares;
+
+  // Pairs read in rows: two per row on phones, three on wider screens.
+  const stats: { label: string; value: string; className?: string }[] = [
+    { label: "最高", value: formatPrice(bar.high), className: vsPrev(bar.high) },
+    { label: "今開", value: formatPrice(bar.open), className: vsPrev(bar.open) },
+    { label: "最低", value: formatPrice(bar.low), className: vsPrev(bar.low) },
+    { label: "昨收", value: formatPrice(prevClose) },
+    { label: "成交量", value: `${formatLots(bar.volume)} 張` },
+    live
+      ? { label: "買／賣", value: `${formatPrice(live.bid)}／${formatPrice(live.ask)}` }
+      : { label: "成交額", value: `${formatHundredMillion(latest!.turnover)} 億` },
+    ...(isEtf
+      ? []
+      : [
+          { label: "本益比 TTM", value: pe === null ? "—" : pe.toFixed(2) },
+          { label: "股價淨值比", value: pb === null ? "—" : pb.toFixed(2) },
+        ]),
+    { label: "市值", value: formatMarketCap(marketCap) },
+  ];
 
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-10">
-      <div className="shrink-0">
-        <div className="flex items-baseline gap-2 tabular-nums">
-          <span className="text-3xl font-semibold tracking-tight">{formatPrice(price)}</span>
-          {change ? (
-            <span className="flex gap-2 text-sm">
-              <PriceChange value={change.change} />
-              <PriceChange value={change.percent} suffix="%" />
-            </span>
+    <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-center md:gap-10">
+      <div className={cn("tabular-nums", change && directionClass(change.change))}>
+        <div className="flex items-center gap-1 text-3xl font-semibold tracking-tight">
+          {formatPrice(price)}
+          {change && change.change !== 0 ? (
+            change.change > 0 ? (
+              <ArrowUp className="size-6" aria-label="上漲" />
+            ) : (
+              <ArrowDown className="size-6" aria-label="下跌" />
+            )
           ) : null}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-          {live
-            ? `盤中 ${formatTaipeiDateTime(live.quoteTime).slice(11)} 成交 · 每 30 秒更新`
-            : `收盤 ${latest!.tradeDate}`}
-        </p>
+        {change ? (
+          <div className="mt-0.5 flex gap-2 text-sm">
+            <span>
+              {change.change > 0 ? "+" : ""}
+              {change.change.toFixed(2)}
+            </span>
+            <span>
+              {change.percent > 0 ? "+" : ""}
+              {change.percent.toFixed(2)}%
+            </span>
+          </div>
+        ) : null}
       </div>
-      <dl className="grid flex-1 grid-cols-3 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label}>
-            <dt className="text-xs text-muted-foreground">{s.label}</dt>
-            <dd className="mt-0.5 tabular-nums">{s.value}</dd>
+          <div key={s.label} className="flex items-baseline justify-between gap-2">
+            <dt className="shrink-0 text-muted-foreground">{s.label}</dt>
+            <dd className={cn("truncate tabular-nums", s.className)}>{s.value}</dd>
           </div>
         ))}
       </dl>
     </div>
   );
+}
+
+/** Market value in 億, or 兆 from 10,000 億 up (as Futu shows 萬億). */
+function formatMarketCap(value: number | null): string {
+  if (value === null) return "—";
+  return value >= 1e12
+    ? `${(value / 1e12).toFixed(2)} 兆`
+    : `${formatHundredMillion(value)} 億`;
 }
