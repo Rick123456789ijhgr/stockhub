@@ -31,6 +31,8 @@ export type ChartSeries = {
   dashed?: boolean;
   /** Shown in the legend; bands without their own entry set it false. */
   legend?: boolean;
+  /** Histogram bars take the price colors by sign (buying up, selling down) instead of `color`. */
+  signed?: boolean;
   data: { time: string; value: number | null }[];
 };
 
@@ -115,7 +117,10 @@ export function TimeChart({
       const data = s.data.flatMap((p) => (p.value === null ? [] : [{ time: p.time as Time, value: p.value }]));
       const tint = color(s.color, s.alpha ?? 1);
       if (s.kind === "histogram") {
-        chart.addSeries(HistogramSeries, { color: tint, priceLineVisible: false, lastValueVisible: false }).setData(data);
+        const up = color("--price-up");
+        const down = color("--price-down");
+        const bars = s.signed ? data.map((p) => ({ ...p, color: p.value >= 0 ? up : down })) : data;
+        chart.addSeries(HistogramSeries, { color: tint, priceLineVisible: false, lastValueVisible: false }).setData(bars);
       } else {
         chart
           .addSeries(LineSeries, {
@@ -152,7 +157,14 @@ export function TimeChart({
         {at ? <span className="text-muted-foreground tabular-nums">{periodLabel(at, period)}</span> : null}
         {legend.map(({ s, value }) => (
           <span key={s.name} className="inline-flex items-center gap-1 text-muted-foreground">
-            <span className={cn("inline-block h-0.5 w-3 rounded", SWATCH[s.color])} aria-hidden />
+            {s.signed ? (
+              <span className="inline-flex h-2 w-3 overflow-hidden rounded-sm" aria-hidden>
+                <span className="w-1/2 bg-up" />
+                <span className="w-1/2 bg-down" />
+              </span>
+            ) : (
+              <span className={cn("inline-block h-0.5 w-3 rounded", SWATCH[s.color])} aria-hidden />
+            )}
             {s.name}
             <span className="text-foreground tabular-nums">{formatValue(value, format)}</span>
           </span>

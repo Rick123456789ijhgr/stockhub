@@ -18,5 +18,8 @@ describe("chart-format", () => {
     expect(formatValue(null, "percent")).toBe("—");
     expect(formatValue(Number.NaN, "eps")).toBe("—");
     expect(axisFormat(0.5, "percent")).toBe("50%");
+    expect(formatValue(-22_371_830, "lots")).toBe("-22,372 張");
+    expect(axisFormat(-22_371_830, "lots")).toBe("-2.2萬");
+    expect(axisFormat(4_500_000, "lots")).toBe("4500");
   });
 });

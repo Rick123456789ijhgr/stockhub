@@ -35,7 +35,12 @@ describe("parseJobRequest", () => {
       job: "catch_up_prices",
       params: {},
     });
+    expect(parseJobRequest({ job: "sync_chips", params: { date: "2026-10-20" } }, TODAY)).toEqual({
+      job: "sync_chips",
+      params: {},
+    });
     expect(parseJobRequest({ job: "backfill_fundamentals" }, TODAY)).toBeNull();
+    expect(parseJobRequest({ job: "backfill_chips" }, TODAY)).toBeNull();
     expect(parseJobRequest(null, TODAY)).toBeNull();
     expect(parseJobRequest("daily_prices", TODAY)).toBeNull();
   });

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { ChipsSection } from "@/components/chips/chips-section";
 import { FundamentalsSection } from "@/components/fundamentals/fundamentals-section";
 import { ValuationSection } from "@/components/fundamentals/valuation-section";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
@@ -30,11 +31,12 @@ import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
 import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
 
-type Tab = "chart" | "fundamentals" | "valuation" | "daily";
+type Tab = "chart" | "fundamentals" | "valuation" | "chips" | "daily";
 const STOCK_TABS: PageTab<Tab>[] = [
   { key: "chart", label: "走勢" },
   { key: "fundamentals", label: "基本面" },
   { key: "valuation", label: "估值" },
+  { key: "chips", label: "籌碼" },
   { key: "daily", label: "歷史日線" },
 ];
 /** ETFs have no statements. */
@@ -128,6 +130,7 @@ async function StockContent({
         <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
           {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
           {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
+          {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
         </Suspense>
         {tab === "daily" ? (
           bars.length > 0 ? (
