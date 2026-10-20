@@ -504,7 +504,7 @@ def test_shareholding_concentration_matches_engine(pg: psycopg.Connection) -> No
         (stock_id,),
     ).fetchone()
     assert row is not None
-    shares = {level: s for level, (_, s) in week.items()}
-    assert float(row[0]) == pytest.approx(holder_ratio(shares, BIG_HOLDER_LEVELS))
-    assert float(row[1]) == pytest.approx(holder_ratio(shares, [WHALE_LEVEL]))
+    by_level = {level: s for level, (_, s) in week.items()}
+    assert float(row[0]) == pytest.approx(holder_ratio(by_level, BIG_HOLDER_LEVELS))
+    assert float(row[1]) == pytest.approx(holder_ratio(by_level, [WHALE_LEVEL]))
     assert (row[2], row[3]) == (7, 918)
