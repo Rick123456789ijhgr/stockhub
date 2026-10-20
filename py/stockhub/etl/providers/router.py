@@ -23,6 +23,8 @@ from stockhub.etl.providers.base import (
     Attempt,
     CalendarEntry,
     CalendarProvider,
+    CompanyProfile,
+    CompanyProfileProvider,
     CorporateAction,
     CorporateActionProvider,
     DailyBar,
@@ -35,7 +37,11 @@ from stockhub.etl.providers.base import (
     ExRightsPreviewProvider,
     FinancialItem,
     FinancialProvider,
+    FinancialSnapshotProvider,
     Market,
+    MonthlyRevenue,
+    MonthlyRevenueProvider,
+    MonthlyRevenueSnapshotProvider,
     PermanentProviderError,
     PriceProvider,
     Provider,
@@ -45,6 +51,7 @@ from stockhub.etl.providers.base import (
     RawResponse,
     Security,
     SecurityListProvider,
+    Statement,
 )
 from stockhub.etl.providers.registry import ProviderRegistry
 
@@ -215,12 +222,47 @@ class ProviderRouter:
             accepts=lambda p: market in p.preview_markets,
         )
 
-    def financials(self, symbol: str, period_end: date) -> Fetched[FinancialItem]:
+    def financials(self, symbol: str, statement: Statement, start: date) -> Fetched[FinancialItem]:
         return self._call(
             "financial",
             FinancialProvider,
-            lambda p: p.fetch_financials(symbol, period_end),
+            lambda p: p.fetch_financials(symbol, statement, start),
             lambda p, raw: p.parse_financials(raw),
+        )
+
+    def financial_snapshot(self, market: Market, statement: Statement) -> Fetched[FinancialItem]:
+        return self._call(
+            "financial_snapshot",
+            FinancialSnapshotProvider,
+            lambda p: p.fetch_financial_snapshot(market, statement),
+            lambda p, raw: p.parse_financial_snapshot(raw),
+            accepts=lambda p: market in p.snapshot_markets,
+        )
+
+    def monthly_revenue(self, symbol: str, start: date) -> Fetched[MonthlyRevenue]:
+        return self._call(
+            "monthly_revenue",
+            MonthlyRevenueProvider,
+            lambda p: p.fetch_monthly_revenue(symbol, start),
+            lambda p, raw: p.parse_monthly_revenue(raw),
+        )
+
+    def monthly_revenue_snapshot(self, market: Market) -> Fetched[MonthlyRevenue]:
+        return self._call(
+            "monthly_revenue_snapshot",
+            MonthlyRevenueSnapshotProvider,
+            lambda p: p.fetch_monthly_revenue_snapshot(market),
+            lambda p, raw: p.parse_monthly_revenue_snapshot(raw),
+            accepts=lambda p: market in p.revenue_markets,
+        )
+
+    def company_profiles(self, market: Market) -> Fetched[CompanyProfile]:
+        return self._call(
+            "company_profiles",
+            CompanyProfileProvider,
+            lambda p: p.fetch_company_profiles(market),
+            lambda p, raw: p.parse_company_profiles(raw),
+            accepts=lambda p: market in p.profile_markets,
         )
 
     def quotes(self, symbols: Sequence[tuple[str, Market]]) -> Fetched[Quote]:

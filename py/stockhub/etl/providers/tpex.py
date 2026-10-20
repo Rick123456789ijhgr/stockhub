@@ -5,6 +5,8 @@ per 3 s. History starts on 2007-07-02 (earlier dates return an empty table, like
 Also company/deListed: OTC companies delisted in a year, including transfers to TWSE;
 bulletin/exDailyQ and bulletin/revivt: ex-rights/dividend results (from late 2007) and
 capital reductions (from 2013) with the exchange's reference prices.
+OpenAPI mopsfin_t187ap0x: latest financial statements, monthly revenue and company profiles
+of OTC companies (see mops_openapi).
 """
 
 from __future__ import annotations
@@ -39,11 +41,13 @@ from stockhub.etl.providers.http import (
     preview_fields,
     roc_date,
 )
+from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
 
 OTC_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc"
 DELISTED_URL = "https://www.tpex.org.tw/www/zh-tw/company/deListed"
 PREVIEW_URL = "https://www.tpex.org.tw/openapi/v1/tpex_exright_prepost"
+OPENAPI = "https://www.tpex.org.tw/openapi/v1"
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -72,13 +76,27 @@ def _columns(table: dict[str, Any]) -> dict[str, int]:
 
 @register_provider
 class TpexProvider(
-    PriceProvider, DelistingProvider, CorporateActionProvider, ExRightsPreviewProvider
+    PriceProvider,
+    DelistingProvider,
+    CorporateActionProvider,
+    ExRightsPreviewProvider,
+    MopsOpenApiMixin,
 ):
     name: ClassVar[str] = "tpex"
     min_interval: ClassVar[float] = 3.0
     markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
     delisting_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
     preview_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
+    snapshot_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
+    revenue_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
+    profile_markets: ClassVar[frozenset[Market]] = frozenset({"tpex"})
+    mops_market: ClassVar[Market] = "tpex"
+    mops_urls: ClassVar[dict[str, str]] = {
+        "IS": f"{OPENAPI}/mopsfin_t187ap06_O_ci",
+        "BS": f"{OPENAPI}/mopsfin_t187ap07_O_ci",
+        "revenue": f"{OPENAPI}/mopsfin_t187ap05_O",
+        "profiles": f"{OPENAPI}/mopsfin_t187ap03_O",
+    }
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()

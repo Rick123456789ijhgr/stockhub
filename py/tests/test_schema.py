@@ -298,7 +298,7 @@ def test_dividend_receipts_need_an_amount(pg: psycopg.Connection) -> None:
 
 
 def test_general_item_map_is_seeded(pg: psycopg.Connection) -> None:
-    rows = dict(
+    rows: dict[str, str] = dict(
         pg.execute(
             "SELECT item_code, statement FROM financial_item_map WHERE industry_type = 'general'"
         ).fetchall()

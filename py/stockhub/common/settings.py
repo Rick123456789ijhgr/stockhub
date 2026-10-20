@@ -49,8 +49,17 @@ class Settings(BaseSettings):
     smtp_from: str | None = None
     smtp_starttls: bool = True
 
+    finmind_token: SecretStr | None = None
+    """FinMind API token; without one FinMind allows far fewer requests per hour."""
+    finmind_requests_per_hour: int = Field(default=500, ge=1)
+    """Our own ceiling, kept below the account limit (600/h on the free tier)."""
+
     providers_price: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
-    providers_financial: CommaList = Field(default_factory=list)
+    providers_financial: CommaList = Field(default_factory=lambda: ["finmind"])
+    providers_financial_snapshot: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_monthly_revenue: CommaList = Field(default_factory=lambda: ["finmind"])
+    providers_monthly_revenue_snapshot: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_company_profiles: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_quote: CommaList = Field(default_factory=lambda: ["twse_mis"])
     providers_calendar: CommaList = Field(default_factory=lambda: ["twse"])
     providers_securities: CommaList = Field(default_factory=lambda: ["twse"])
@@ -70,6 +79,10 @@ class Settings(BaseSettings):
         "providers_corporate_actions",
         "providers_dividend_details",
         "providers_ex_rights_previews",
+        "providers_financial_snapshot",
+        "providers_monthly_revenue",
+        "providers_monthly_revenue_snapshot",
+        "providers_company_profiles",
         mode="before",
     )
     @classmethod
@@ -79,7 +92,12 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "rawstore_gcs_bucket", "smtp_host", "smtp_username", "smtp_from", mode="before"
+        "rawstore_gcs_bucket",
+        "smtp_host",
+        "smtp_username",
+        "smtp_from",
+        "finmind_token",
+        mode="before",
     )
     @classmethod
     def _blank_to_none(cls, value: object) -> object:

@@ -26,6 +26,10 @@ DataKind = Literal[
     "corporate_actions",
     "dividend_details",
     "ex_rights_previews",
+    "financial_snapshot",
+    "monthly_revenue",
+    "monthly_revenue_snapshot",
+    "company_profiles",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -206,16 +210,45 @@ def preview_action_type(
     return "rights_issue" if rights_ratio > 0 or label == "權" else "cash_dividend"
 
 
+Statement = Literal["IS", "BS", "CF"]
+Basis = Literal["quarter", "ytd", "instant"]
+"""quarter = that quarter alone; ytd = fiscal year-to-date (Q4 = full year); instant = balance."""
+
+
 class FinancialItem(_Model):
-    """One reported line item, as published (usually year-to-date)."""
+    """One line item as the source reports it, under a canonical item code
+    (financial_item_map, industry_type 'general'); amounts in TWD, EPS per share."""
 
     symbol: str
     period_end: date
-    period_type: Literal["Q", "Y"]
-    statement: Literal["IS", "BS", "CF"]
+    """Quarter end (03-31, 06-30, 09-30, 12-31)."""
+    statement: Statement
     item_code: str
     value: Decimal
+    basis: Basis
+    period_type: Literal["Q", "Y"] = "Q"
+
+
+class MonthlyRevenue(_Model):
+    """One month's revenue (營業收入) of a company, in TWD."""
+
+    symbol: str
+    revenue_month: date
+    """First day of the revenue month."""
+    revenue: Decimal
     publish_date: date | None = None
+    """When the source says it was published, if it does."""
+
+
+class CompanyProfile(_Model):
+    """Company basic data (公司基本資料) that the stock master list does not carry."""
+
+    symbol: str
+    market: Market
+    industry_code: str | None = None
+    par_value: Decimal | None = Field(default=None, gt=0)
+    """TWD per common share; None when not stated in TWD."""
+    issued_shares: int | None = Field(default=None, ge=0)
 
 
 class Quote(_Model):
@@ -342,11 +375,59 @@ class ExRightsPreviewProvider(Provider):
 
 
 class FinancialProvider(Provider):
-    @abstractmethod
-    def fetch_financials(self, symbol: str, period_end: date) -> RawResponse: ...
+    """Per-company statement history (one request per company and statement)."""
 
     @abstractmethod
-    def parse_financials(self, raw: RawResponse) -> list[FinancialItem]: ...
+    def fetch_financials(self, symbol: str, statement: Statement, start: date) -> RawResponse:
+        """Every period of one statement from `start` on."""
+
+    @abstractmethod
+    def parse_financials(self, raw: RawResponse) -> list[FinancialItem]:
+        """Items under canonical codes; unmapped source items are left in the raw object."""
+
+
+class FinancialSnapshotProvider(Provider):
+    """Whole-market snapshot of the latest filed quarter (official OpenAPI, as filed)."""
+
+    snapshot_markets: ClassVar[frozenset[Market]]
+
+    @abstractmethod
+    def fetch_financial_snapshot(self, market: Market, statement: Statement) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_financial_snapshot(self, raw: RawResponse) -> list[FinancialItem]: ...
+
+
+class MonthlyRevenueProvider(Provider):
+    """Per-company monthly revenue history."""
+
+    @abstractmethod
+    def fetch_monthly_revenue(self, symbol: str, start: date) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_monthly_revenue(self, raw: RawResponse) -> list[MonthlyRevenue]: ...
+
+
+class MonthlyRevenueSnapshotProvider(Provider):
+    """Whole-market revenue of the latest published month."""
+
+    revenue_markets: ClassVar[frozenset[Market]]
+
+    @abstractmethod
+    def fetch_monthly_revenue_snapshot(self, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_monthly_revenue_snapshot(self, raw: RawResponse) -> list[MonthlyRevenue]: ...
+
+
+class CompanyProfileProvider(Provider):
+    profile_markets: ClassVar[frozenset[Market]]
+
+    @abstractmethod
+    def fetch_company_profiles(self, market: Market) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_company_profiles(self, raw: RawResponse) -> list[CompanyProfile]: ...
 
 
 class QuoteProvider(Provider):
@@ -371,4 +452,8 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "corporate_actions": CorporateActionProvider,
     "dividend_details": DividendDetailProvider,
     "ex_rights_previews": ExRightsPreviewProvider,
+    "financial_snapshot": FinancialSnapshotProvider,
+    "monthly_revenue": MonthlyRevenueProvider,
+    "monthly_revenue_snapshot": MonthlyRevenueSnapshotProvider,
+    "company_profiles": CompanyProfileProvider,
 }

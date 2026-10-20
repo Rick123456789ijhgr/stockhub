@@ -7,6 +7,8 @@ Endpoints (robots.txt allows them; we stay at one request per 3 s):
 - company/suspendListing    companies delisted in a year (終止上市公司, from 2001)
 - TWT49U / TWTAUU / TWTB8U / TWTCAU  ex-rights/dividend results, capital reductions (from
   2011), par-value changes and ETF splits, each with the exchange's reference price
+- OpenAPI opendata/t187ap0x  latest financial statements, monthly revenue and company
+  profiles of listed companies (see mops_openapi)
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from stockhub.etl.providers.http import (
     preview_fields,
     roc_date,
 )
+from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
 
 MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
@@ -57,6 +60,7 @@ ISIN_URL = "https://isin.twse.com.tw/isin/C_public.jsp"
 ISIN_MODES: dict[Market, int] = {"twse": 2, "tpex": 4}
 DELISTED_URL = "https://www.twse.com.tw/rwd/zh/company/suspendListing"
 PREVIEW_URL = "https://openapi.twse.com.tw/v1/exchangeReport/TWT48U_ALL"
+OPENDATA = "https://openapi.twse.com.tw/v1/opendata"
 
 NO_DATA = "沒有符合條件的資料"
 # ISIN sections we keep; warrants, ETNs, TDRs, preferred shares and REITs are out of scope.
@@ -86,6 +90,7 @@ class TwseProvider(
     CorporateActionProvider,
     DividendDetailProvider,
     ExRightsPreviewProvider,
+    MopsOpenApiMixin,
 ):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0
@@ -94,6 +99,16 @@ class TwseProvider(
     delisting_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     detail_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
     preview_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    snapshot_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    revenue_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    profile_markets: ClassVar[frozenset[Market]] = frozenset({"twse"})
+    mops_market: ClassVar[Market] = "twse"
+    mops_urls: ClassVar[dict[str, str]] = {
+        "IS": f"{OPENDATA}/t187ap06_L_ci",
+        "BS": f"{OPENDATA}/t187ap07_L_ci",
+        "revenue": f"{OPENDATA}/t187ap05_L",
+        "profiles": f"{OPENDATA}/t187ap03_L",
+    }
     detail_since: ClassVar[date] = date(2009, 1, 1)
     """TWT49UDetail answers 無相關資料 for earlier events; their TWT49U rows split 權值/息值."""
 
