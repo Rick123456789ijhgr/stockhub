@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { AuditLogList } from "@/components/admin/audit-log";
 import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
+import { FinancialsQuarantineList } from "@/components/admin/financials-quarantine-review";
 import { PriceGapList } from "@/components/admin/price-gap-review";
 import { AppearanceSettings } from "@/components/appearance-controls";
 import { PageHeader } from "@/components/coming-soon";
@@ -14,6 +15,7 @@ import { listAuditLog } from "@/lib/audit";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatInteger } from "@/lib/format";
+import { listQuarantinedStatements } from "@/lib/fundamentals-status";
 import { countPendingGaps, listPendingGaps } from "@/lib/price-gaps";
 import { getFeeSettings } from "@/lib/settings";
 
@@ -56,6 +58,19 @@ export default function AdminPage() {
           <CardContent>
             <Suspense fallback={<Skeleton className="h-40 w-full" />}>
               <PriceGaps />
+            </Suspense>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">待確認的財報</CardTitle>
+            <CardDescription>
+              品質檢查沒過的整份報表（例如資料源把年初至今的累計數當成單季），沒有寫入正式資料。通常選「捨棄」：資料源修正後，下次抓取通過檢查就會自動取代；確定沒問題才選「仍然採用」。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+              <FinancialsQuarantine />
             </Suspense>
           </CardContent>
         </Card>
@@ -135,4 +150,10 @@ async function PriceGaps() {
       <PriceGapList gaps={gaps} />
     </div>
   );
+}
+
+async function FinancialsQuarantine() {
+  await requireUser();
+  const rows = await listQuarantinedStatements(getDb());
+  return <FinancialsQuarantineList rows={rows} />;
 }

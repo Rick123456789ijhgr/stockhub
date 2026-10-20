@@ -48,6 +48,7 @@ BALANCE_ITEMS = (
     "CurrentAssets",
     "CurrentLiabilities",
     "TotalLiabilities",
+    "TotalEquity",
     "EquityParent",
     "Inventories",
     "AccountsReceivable",
@@ -259,6 +260,9 @@ def compute_quarters(rows: Iterable[Row], par_value: Decimal | None = None) -> l
         )
         common = b["OrdinaryShare"] if b["OrdinaryShare"] is not None else b["CapitalStock"]
         shares = common / par if common is not None and common > 0 else None
+        liabilities = b["TotalLiabilities"]
+        if liabilities is None and b["TotalAssets"] is not None and b["TotalEquity"] is not None:
+            liabilities = b["TotalAssets"] - b["TotalEquity"]  # liability lines quarantined
         bvps = b["BookValuePerShare"]
         if bvps is None:
             bvps = _div(b["EquityParent"], shares)
@@ -300,7 +304,7 @@ def compute_quarters(rows: Iterable[Row], par_value: Decimal | None = None) -> l
             "total_assets": b["TotalAssets"],
             "current_assets": b["CurrentAssets"],
             "current_liabilities": b["CurrentLiabilities"],
-            "total_liabilities": b["TotalLiabilities"],
+            "total_liabilities": liabilities,
             "equity_parent": b["EquityParent"],
             "inventories": b["Inventories"],
             "accounts_receivable": b["AccountsReceivable"],
@@ -318,7 +322,7 @@ def compute_quarters(rows: Iterable[Row], par_value: Decimal | None = None) -> l
             "dupont_net_margin": _div(nip_ttm, revenue_ttm) if (revenue_ttm or 0) > 0 else None,
             "dupont_asset_turnover": _div(revenue_ttm, avg_assets),
             "dupont_equity_multiplier": _div(avg_assets, avg_equity),
-            "debt_ratio": _div(b["TotalLiabilities"], b["TotalAssets"]),
+            "debt_ratio": _div(liabilities, b["TotalAssets"]),
             "current_ratio": _div(b["CurrentAssets"], b["CurrentLiabilities"]),
             "revenue_yoy": _growth(f["Revenue"], revenue_prev),
             "eps_yoy": eps_yoy,

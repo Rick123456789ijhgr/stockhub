@@ -130,3 +130,33 @@ def check_statement(
             if off_quarter and abs(revenue / ytd - 1) <= YTD_MATCH_TOLERANCE:
                 reasons.append("ytd_as_quarter")
     return reasons
+
+
+LIABILITY_ITEMS = frozenset(
+    {
+        "TotalLiabilities",
+        "CurrentLiabilities",
+        "NoncurrentLiabilities",
+        "ShortTermBorrowings",
+        "LongTermBorrowings",
+        "BondsPayable",
+    }
+)
+
+
+def suspect_liabilities(values: dict[str, Decimal]) -> bool:
+    """An unbalanced balance sheet whose asset side (current + non-current = total) and
+    equity side (parent + non-controlling = total) both add up: the liability figures are
+    the wrong ones (seen at FinMind, e.g. current and non-current liabilities duplicated)."""
+    assets = values.get("TotalAssets")
+    parts = [
+        values.get(k) for k in ("CurrentAssets", "NoncurrentAssets", "EquityParent", "TotalEquity")
+    ]
+    if assets is None or assets <= 0 or any(p is None for p in parts):
+        return False
+    current, noncurrent, parent, equity = (p for p in parts if p is not None)
+    nci = values.get("EquityNCI") or Decimal(0)
+    tolerance = assets * BALANCE_TOLERANCE
+    return (
+        abs(current + noncurrent - assets) <= tolerance and abs(parent + nci - equity) <= tolerance
+    )

@@ -188,3 +188,12 @@ def test_revenue_record_and_month_yoy() -> None:
         ("revenue_record", date(2025, 6, 1)),
         ("revenue_month_yoy", date(2025, 6, 1)),
     }
+
+
+def test_liabilities_fall_back_to_assets_minus_equity(rows: list[Row]) -> None:
+    p = Q["2026Q2"]
+    kept = [r for r in rows if not (r.period_end == p and r.item_code == "TotalLiabilities")]
+    kept.append(Row(p, "BS", "TotalEquity", D(600), "instant", "finmind"))
+    q = _by_period(compute_quarters(kept))[p]
+    assert q.get("total_liabilities") == D(600)
+    assert q.get("debt_ratio") == D("0.5")

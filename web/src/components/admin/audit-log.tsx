@@ -15,6 +15,8 @@ const ACTION_LABEL: Record<string, string> = {
   "portfolio.receipt": "輸入股利實收",
   "portfolio.receipt_clear": "股利改回估算",
   "jobs.request": "排入資料任務",
+  "financials.quarantine_accept": "採用隔離的財報",
+  "financials.quarantine_reject": "捨棄隔離的財報",
 };
 
 /** Newest-first audit entries; the detail JSON is collapsed per row. */

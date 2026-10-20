@@ -376,3 +376,49 @@ def test_sync_financials_leaves_unfetched_companies_to_a_running_backfill(
         )
     _run(clean_db, router, "sync_financials")
     assert handler.finmind == []
+
+
+def test_liability_lines_alone_are_quarantined_when_both_sides_add_up(
+    clean_db: Engine, stocks: dict[str, int]
+) -> None:
+    def bs(code: str, value: int) -> FinancialItem:
+        return FinancialItem(
+            symbol="1101",
+            period_end=date(2026, 6, 30),
+            statement="BS",
+            item_code=code,
+            value=D(value),
+            basis="instant",
+        )
+
+    # FinMind 1409-style: liabilities 172 and duplicated parts, but 254 = 195 + 59.
+    items = [
+        bs("TotalAssets", 254),
+        bs("CurrentAssets", 100),
+        bs("NoncurrentAssets", 154),
+        bs("TotalLiabilities", 172),
+        bs("CurrentLiabilities", 22),
+        bs("NoncurrentLiabilities", 22),
+        bs("EquityParent", 48),
+        bs("EquityNCI", 11),
+        bs("TotalEquity", 59),
+    ]
+    with clean_db.begin() as conn:
+        stats = store_statements(conn, stocks["1101"], items, "finmind", None)
+        written = set(conn.execute(text("SELECT item_code FROM financials")).scalars())
+        held = conn.execute(text("SELECT reasons, payload FROM financials_quarantine")).one()
+    assert written == {
+        "TotalAssets",
+        "CurrentAssets",
+        "NoncurrentAssets",
+        "EquityParent",
+        "EquityNCI",
+        "TotalEquity",
+    }
+    assert held.reasons == ["liabilities_inconsistent"]
+    assert {i["item_code"] for i in held.payload} == {
+        "TotalLiabilities",
+        "CurrentLiabilities",
+        "NoncurrentLiabilities",
+    }
+    assert (stats.quarantined, stats.written) == (1, 6)

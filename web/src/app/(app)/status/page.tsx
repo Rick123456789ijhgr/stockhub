@@ -17,6 +17,7 @@ import { requireUser } from "@/lib/auth/session";
 import { JobButton } from "@/components/jobs/job-button";
 import { hasPendingRequest, JobRequestList } from "@/components/jobs/job-request-list";
 import { AutoRefresh } from "@/components/status/auto-refresh";
+import { FundamentalsStatusCard } from "@/components/status/fundamentals-status";
 import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
   BackfillCard,
@@ -28,6 +29,7 @@ import { getDataTotals, getDayCoverage, getRunningBackfills, taipeiToday } from 
 import { fetchedRange, gapDays, summarizeYears } from "@/lib/coverage-grid";
 import { getDb } from "@/lib/db";
 import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/format";
+import { getFundamentalsStatus } from "@/lib/fundamentals-status";
 import { listJobRequests } from "@/lib/job-requests";
 import { runnerEnabled } from "@/lib/job-runner";
 import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
@@ -67,13 +69,15 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, params] = await Promise.all([
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, params] =
+    await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
     getDataTotals(db),
     getRunningBackfills(db),
     getScheduleRuns(db),
     listJobRequests(db, { limit: 8 }),
+    getFundamentalsStatus(db),
     searchParams,
   ]);
 
@@ -118,6 +122,10 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
           ))}
         </section>
       ) : null}
+
+      <section aria-label="財報與月營收" className="mb-6">
+        <FundamentalsStatusCard status={fundamentals} now={now} />
+      </section>
 
       <section aria-labelledby="repair" className="mb-6">
         <Card>

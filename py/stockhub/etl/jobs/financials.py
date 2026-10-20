@@ -38,7 +38,7 @@ from stockhub.etl.providers.base import (
     Statement,
 )
 from stockhub.etl.providers.router import ProviderRouter
-from stockhub.etl.quality import check_statement
+from stockhub.etl.quality import LIABILITY_ITEMS, check_statement, suspect_liabilities
 
 log = logging.getLogger(__name__)
 
@@ -147,9 +147,15 @@ def store_statements(
         context = (revenue_context or {}).get(period_end) if statement == "IS" else None
         reasons = check_statement(statement, basis, values, context)
         key = {"s": stock_id, "p": period_end, "st": statement, "src": source}
+        held = group
+        if reasons == ["unbalanced"] and suspect_liabilities(values):
+            # Keep the sound items; only the liability figures wait for review.
+            held = [i for i in group if i.item_code in LIABILITY_ITEMS]
+            group = [i for i in group if i.item_code not in LIABILITY_ITEMS]
+            reasons = ["liabilities_inconsistent"]
         if reasons:
             payload = [
-                {"item_code": i.item_code, "value": str(i.value), "basis": i.basis} for i in group
+                {"item_code": i.item_code, "value": str(i.value), "basis": i.basis} for i in held
             ]
             changed = conn.execute(
                 text(
@@ -165,15 +171,17 @@ def store_statements(
                 {**key, "payload": json.dumps(payload), "reasons": reasons, "raw": raw_object_id},
             ).rowcount
             stats.quarantined += 1 if changed else 0
-            continue
-        stats.superseded += conn.execute(
-            text(
-                "UPDATE financials_quarantine SET resolved_at = now(), resolution = 'superseded' "
-                "WHERE stock_id = :s AND period_end = :p AND statement = :st AND source = :src "
-                "AND resolved_at IS NULL"
-            ),
-            key,
-        ).rowcount
+            if held is group:
+                continue
+        else:
+            stats.superseded += conn.execute(
+                text(
+                    "UPDATE financials_quarantine SET resolved_at = now(), "
+                    "resolution = 'superseded' WHERE stock_id = :s AND period_end = :p "
+                    "AND statement = :st AND source = :src AND resolved_at IS NULL"
+                ),
+                key,
+            ).rowcount
         for item in group:
             previous = latest.get((period_end, statement, item.item_code))
             if previous is not None and previous[1] == item.value:
@@ -628,3 +636,50 @@ class RefreshStockFundamentalsJob(Job):
         with ctx.engine.begin() as conn:
             quarters, signals = compute_company(conn, companies[0].id)
         return JobOutcome(message=f"{symbol}：{stats}；重算 {quarters} 季、{signals} 則提示")
+
+
+@register_job
+class RecheckFinancialsQuarantineJob(Job):
+    name: ClassVar[str] = "recheck_financials_quarantine"
+    description: ClassVar[str] = (
+        "Run the current quality checks again over pending quarantined statements (no "
+        "network; after a check changes): passing items move to financials"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        with ctx.engine.connect() as conn:
+            pending = conn.execute(
+                text(
+                    "SELECT q.id, q.stock_id, s.symbol, q.period_end, q.statement, q.source, "
+                    "q.payload, q.raw_object_id FROM financials_quarantine q "
+                    "JOIN stocks s ON s.id = q.stock_id WHERE q.resolved_at IS NULL ORDER BY q.id"
+                )
+            ).all()
+        stats = StatementStats()
+        for row in pending:
+            items = [
+                FinancialItem(
+                    symbol=row.symbol,
+                    period_end=row.period_end,
+                    statement=row.statement,
+                    item_code=i["item_code"],
+                    value=Decimal(i["value"]),
+                    basis=i["basis"],
+                )
+                for i in row.payload
+            ]
+            with ctx.engine.begin() as conn:
+                stats.add(
+                    store_statements(
+                        conn,
+                        row.stock_id,
+                        items,
+                        row.source,
+                        row.raw_object_id,
+                        official=row.source in ("twse", "tpex"),
+                        revenue_context=month_revenue_context(conn, row.stock_id),
+                    )
+                )
+        ctx.add_rows(stats.written)
+        return JobOutcome(message=f"重新檢查 {len(pending)} 份：{stats}")
