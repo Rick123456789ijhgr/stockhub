@@ -4,6 +4,10 @@ import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { ChevronRight } from "lucide-react";
+
+import { DISCLOSURE_CHEVRON } from "@/components/disclosure";
+import { ShowMoreList } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { QuarantinedStatement } from "@/lib/fundamentals-status";
@@ -30,16 +34,29 @@ const SHOWN_ITEMS = [
   "TotalEquity",
 ];
 
+/** Few-word form of `REASON` for the collapsed row. */
+const REASON_SHORT: Record<string, string> = {
+  ytd_as_quarter: "疑似累計數",
+  unbalanced: "資產 ≠ 負債 + 權益",
+  liabilities_inconsistent: "負債對不上",
+  non_positive_assets: "資產非正數",
+  negative_revenue: "營收為負",
+};
+const SHOWN = 20;
+
 export function FinancialsQuarantineList({ rows }: { rows: QuarantinedStatement[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">沒有待確認的財報。</p>;
   }
   return (
-    <ul className="space-y-3">
-      {rows.map((row) => (
+    <ShowMoreList
+      className="divide-y"
+      initial={SHOWN}
+      step={SHOWN}
+      items={rows.map((row) => (
         <Item key={row.id} row={row} />
       ))}
-    </ul>
+    />
   );
 }
 
@@ -58,34 +75,42 @@ function Item({ row }: { row: QuarantinedStatement }) {
   });
   const items = row.items.filter((i) => SHOWN_ITEMS.includes(i.itemCode));
   return (
-    <li className="space-y-2 rounded-lg border p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Link href={`/stocks/${row.symbol}`} className="font-medium hover:underline">
-          {row.symbol} {row.name}
-        </Link>
-        <span className="tabular-nums">{row.periodEnd}</span>
-        <span>{STATEMENT[row.statement]}</span>
-        <Badge variant="outline">{row.source}</Badge>
-      </div>
-      <ul className="list-disc pl-5 text-muted-foreground">
-        {row.reasons.map((r) => (
-          <li key={r}>{REASON[r] ?? r}</li>
-        ))}
-      </ul>
-      {items.length > 0 ? (
-        <p className="text-xs text-muted-foreground tabular-nums">
-          {items.map((i) => `${i.itemCode} ${Number(i.value).toLocaleString("zh-TW")}`).join("　")}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate("reject")}>
-          捨棄
-        </Button>
-        <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate("accept")}>
-          仍然採用
-        </Button>
-        {resolve.isError ? <span className="text-xs text-destructive">送出失敗</span> : null}
-      </div>
+    <li className="py-1.5 text-sm">
+      <details>
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className={DISCLOSURE_CHEVRON} aria-hidden />
+          <Link href={`/stocks/${row.symbol}`} className="font-medium hover:underline">
+            {row.symbol} {row.name}
+          </Link>
+          <span className="tabular-nums">{row.periodEnd}</span>
+          <span>{STATEMENT[row.statement]}</span>
+          <Badge variant="outline">{row.source}</Badge>
+          <span className="text-xs text-muted-foreground">
+            {row.reasons.map((r) => REASON_SHORT[r] ?? r).join("、")}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            {resolve.isError ? <span className="text-xs text-destructive">送出失敗</span> : null}
+            <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate("reject")}>
+              捨棄
+            </Button>
+            <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate("accept")}>
+              仍然採用
+            </Button>
+          </div>
+        </summary>
+        <div className="space-y-1 pt-1 pl-7 text-xs text-muted-foreground">
+          <ul className="list-disc pl-4">
+            {row.reasons.map((r) => (
+              <li key={r}>{REASON[r] ?? r}</li>
+            ))}
+          </ul>
+          {items.length > 0 ? (
+            <p className="tabular-nums">
+              {items.map((i) => `${i.itemCode} ${Number(i.value).toLocaleString("zh-TW")}`).join("　")}
+            </p>
+          ) : null}
+        </div>
+      </details>
     </li>
   );
 }

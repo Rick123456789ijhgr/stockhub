@@ -111,6 +111,15 @@ export async function listQuarantinedStatements(
   }));
 }
 
+export async function countQuarantinedStatements(db: Kysely<DB>): Promise<number> {
+  const row = await db
+    .selectFrom("financials_quarantine")
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .where("resolved_at", "is", null)
+    .executeTakeFirstOrThrow();
+  return Number(row.n);
+}
+
 export type QuarantineDecision = "accept" | "reject";
 
 /**

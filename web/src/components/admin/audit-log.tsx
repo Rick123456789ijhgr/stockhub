@@ -1,3 +1,4 @@
+import { ShowMoreList } from "@/components/show-more";
 import { formatTaipeiDateTime } from "@/lib/format";
 import type { AuditEntry } from "@/lib/audit";
 
@@ -19,31 +20,36 @@ const ACTION_LABEL: Record<string, string> = {
   "financials.quarantine_reject": "捨棄隔離的財報",
 };
 
-/** Newest-first audit entries; the detail JSON is collapsed per row. */
+const SHOWN = 20;
+
+/** Newest-first audit entries, one line each; a row opens to its detail JSON. */
 export function AuditLogList({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) {
     return <p className="text-sm text-muted-foreground">還沒有任何手動操作紀錄。</p>;
   }
   return (
-    <ul className="divide-y text-sm">
-      {entries.map((e) => (
-        <li key={e.id} className="py-2">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatTaipeiDateTime(e.at)}
-            </span>
-            <span className="font-medium">{ACTION_LABEL[e.action] ?? e.action}</span>
-            {e.target ? <span className="font-mono text-xs">{e.target}</span> : null}
-            <span className="text-xs text-muted-foreground">{e.actor}</span>
-          </div>
-          <details className="mt-1">
-            <summary className="cursor-pointer text-xs text-muted-foreground">內容</summary>
+    <ShowMoreList
+      className="divide-y text-sm"
+      initial={SHOWN}
+      step={SHOWN}
+      items={entries.map((e) => (
+        <li key={e.id} className="py-1.5">
+          <details className="group/audit">
+            <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3 gap-y-0.5 [&::-webkit-details-marker]:hidden">
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {formatTaipeiDateTime(e.at)}
+              </span>
+              <span className="font-medium">{ACTION_LABEL[e.action] ?? e.action}</span>
+              {e.target ? <span className="font-mono text-xs">{e.target}</span> : null}
+              <span className="text-xs text-muted-foreground">{e.actor}</span>
+              <span className="ml-auto text-xs text-muted-foreground group-open/audit:hidden">內容</span>
+            </summary>
             <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
               {JSON.stringify(e.detail, null, 2)}
             </pre>
           </details>
         </li>
       ))}
-    </ul>
+    />
   );
 }
