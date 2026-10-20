@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // The floating "N" badge covers the sidebar; build errors still show in the overlay.
+  devIndicators: false,
   partialPrefetching: true,
   poweredByHeader: false,
   turbopack: {

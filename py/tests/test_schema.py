@@ -125,17 +125,20 @@ def test_financials_revision_default_and_natural_key(pg: psycopg.Connection) -> 
     stock_id = _insert_stock(pg)
     sql = (
         "INSERT INTO financials (stock_id, period_end, period_type, statement, item_code, "
-        "value, source, revision) VALUES (%s, '2026-06-30', 'Q', 'IS', 'Revenue', 1, 'test', %s)"
+        "value, basis, source, revision) "
+        "VALUES (%s, '2026-06-30', 'Q', 'IS', 'Revenue', 1, 'ytd', %s, %s)"
     )
     pg.execute(
         "INSERT INTO financials (stock_id, period_end, period_type, statement, item_code, "
-        "value, source) VALUES (%s, '2026-06-30', 'Q', 'IS', 'Revenue', 1, 'test')",
+        "value, basis, source) VALUES (%s, '2026-06-30', 'Q', 'IS', 'Revenue', 1, 'ytd', 'twse')",
         (stock_id,),
     )
     row = pg.execute("SELECT revision, publish_date FROM financials").fetchone()
     assert row == (0, None)
-    _expect(pg, errors.UniqueViolation, sql, (stock_id, 0))
-    pg.execute(sql, (stock_id, 1))  # a restatement is a new revision
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, "twse", 0))
+    pg.execute(sql, (stock_id, "twse", 1))  # a changed value is a new revision
+    pg.execute(sql, (stock_id, "finmind", 0))  # each source keeps its own rows
+    _expect(pg, errors.CheckViolation, sql.replace("'ytd'", "'annual'"), (stock_id, "x", 0))
 
 
 def test_raw_objects_deduplicated_by_sha256(pg: psycopg.Connection) -> None:
@@ -292,3 +295,84 @@ def test_dividend_receipts_need_an_amount(pg: psycopg.Connection) -> None:
     pg.execute(sql, (stock_id, Decimal("4320"), None))
     _expect(pg, errors.UniqueViolation, sql, (stock_id, Decimal("1"), None))
     _expect(pg, errors.CheckViolation, sql.replace("07-01", "08-01"), (stock_id, None, None))
+
+
+def test_general_item_map_is_seeded(pg: psycopg.Connection) -> None:
+    rows: dict[str, str] = dict(
+        pg.execute(
+            "SELECT item_code, statement FROM financial_item_map WHERE industry_type = 'general'"
+        ).fetchall()
+    )
+    assert rows["Revenue"] == "IS"
+    assert rows["EquityParent"] == "BS"
+    assert rows["OperatingCashFlow"] == "CF"
+
+
+def test_financials_quarantine_resolution_pairs(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO financials_quarantine (stock_id, period_end, statement, source, payload, "
+        "reasons, resolved_at, resolution) VALUES (%s, '2026-06-30', 'IS', %s, '[]', %s, %s, %s)"
+    )
+    pg.execute(sql, (stock_id, "finmind", ["ytd_as_quarter"], None, None))
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, "finmind", ["x"], None, None))
+    _expect(pg, errors.CheckViolation, sql, (stock_id, "twse", [], None, None))
+    _expect(pg, errors.CheckViolation, sql, (stock_id, "twse", ["x"], None, "accepted"))
+
+
+def test_monthly_revenue_growth_view(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    for month, revenue in [
+        ("2025-01-01", 100),
+        ("2025-02-01", 100),
+        ("2026-01-01", 110),
+        ("2026-02-01", 132),
+    ]:
+        pg.execute(
+            "INSERT INTO monthly_revenue (stock_id, revenue_month, revenue, source) "
+            "VALUES (%s, %s, %s, 'test')",
+            (stock_id, month, revenue),
+        )
+    row = pg.execute(
+        "SELECT mom, yoy, ytd_revenue, ytd_yoy FROM monthly_revenue_growth "
+        "WHERE stock_id = %s AND revenue_month = '2026-02-01'",
+        (stock_id,),
+    ).fetchone()
+    assert row is not None
+    mom, yoy, ytd, ytd_yoy = row
+    assert round(mom, 6) == Decimal("0.2")
+    assert round(yoy, 6) == Decimal("0.32")
+    assert ytd == 242
+    assert round(ytd_yoy, 6) == Decimal("0.21")
+
+    # No December 2025, so January 2026 has no month-over-month figure.
+    row = pg.execute(
+        "SELECT prev_month_revenue, mom, last_year_revenue FROM monthly_revenue_growth "
+        "WHERE stock_id = %s AND revenue_month = '2026-01-01'",
+        (stock_id,),
+    ).fetchone()
+    assert row == (None, None, 100)
+
+
+def test_monthly_revenue_growth_filters_by_index(pg: psycopg.Connection) -> None:
+    # The stock_id filter must reach monthly_revenue (D-095); a full scan per lookup made
+    # the peer table take seconds.
+    pg.execute("SET LOCAL enable_seqscan = off")
+    plan = "\n".join(
+        r[0]
+        for r in pg.execute(
+            "EXPLAIN SELECT yoy FROM monthly_revenue_growth WHERE stock_id = 1"
+        ).fetchall()
+    )
+    assert "monthly_revenue_pkey" in plan
+
+
+def test_financials_official_period_index(pg: psycopg.Connection) -> None:
+    pg.execute("SET LOCAL enable_seqscan = off")
+    plan = "\n".join(
+        r[0]
+        for r in pg.execute(
+            "EXPLAIN SELECT max(period_end) FROM financials WHERE source IN ('twse', 'tpex')"
+        ).fetchall()
+    )
+    assert "financials_official_period_idx" in plan

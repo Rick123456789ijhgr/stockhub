@@ -69,7 +69,7 @@ export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {
       }}
     >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           費率（%）
           <input
             inputMode="decimal"
@@ -79,7 +79,7 @@ export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {
             className={field}
           />
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           折扣（折，10 = 無）
           <input
             inputMode="decimal"
@@ -88,7 +88,7 @@ export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {
             className={field}
           />
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           最低收費（元）
           <input
             inputMode="numeric"
@@ -97,7 +97,7 @@ export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {
             className={field}
           />
         </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           零股最低收費（元）
           <input
             inputMode="numeric"
@@ -124,7 +124,7 @@ export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {
             ))}
           </div>
         </fieldset>
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           尾數處理
           <select
             value={rounding}

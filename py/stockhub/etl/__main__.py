@@ -1,4 +1,5 @@
-"""CLI: python -m stockhub.etl list | notify-test | run <job> [--date YYYY-MM-DD] [--param k=v ...]
+"""CLI: python -m stockhub.etl list | notify-test | drain-requests
+                         | run <job> [--date YYYY-MM-DD] [--param k=v ...]
 
 Exit codes: 0 succeeded/skipped, 1 failed, 2 usage/config error, 3 already running.
 """
@@ -15,6 +16,7 @@ from stockhub.common.db import get_engine
 from stockhub.common.notifier import build_notifier
 from stockhub.common.rawstore import build_rawstore
 from stockhub.common.settings import ConfigError, Settings, get_settings
+from stockhub.etl.job_requests import drain
 from stockhub.etl.jobs.base import (
     JobAlreadyRunningError,
     UnknownJobError,
@@ -44,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="list available jobs")
     sub.add_parser("notify-test", help="send a test message through the configured notifier")
+    sub.add_parser("drain-requests", help="run the jobs queued from the website (job_requests)")
     run = sub.add_parser("run", help="run a job and record it in job_runs")
     run.add_argument("job")
     run.add_argument("--date", type=_date, help="Taipei trading date (default: today)")
@@ -73,11 +76,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "notify-test":
         return notify_test(settings)
 
+    engine = get_engine()
+    rawstore = build_rawstore(engine, settings)
+    notifier = build_notifier(settings)
+    router = ProviderRouter(ProviderRegistry.from_settings(settings), rawstore)
+
+    if args.command == "drain-requests":
+        ran = drain(
+            engine,
+            lambda job, params: run_job(
+                job,
+                params,
+                "manual",
+                engine=engine,
+                rawstore=rawstore,
+                notifier=notifier,
+                router=router,
+            ),
+        )
+        print(f"drain-requests: ran {ran} request(s)")
+        return 0
+
     params = dict(args.param)
     if args.date:
         params["date"] = args.date
-    engine = get_engine()
-    rawstore = build_rawstore(engine, settings)
     try:
         result = run_job(
             args.job,
@@ -85,8 +107,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.trigger,
             engine=engine,
             rawstore=rawstore,
-            notifier=build_notifier(settings),
-            router=ProviderRouter(ProviderRegistry.from_settings(settings), rawstore),
+            notifier=notifier,
+            router=router,
         )
     except UnknownJobError as exc:
         print(exc, file=sys.stderr)

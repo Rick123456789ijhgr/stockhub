@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
+import { InfoNote } from "@/components/disclosure";
 import { DividendList } from "@/components/portfolio/dividend-list";
 import { HoldingsTable, Pnl, RealizedList, UpcomingList } from "@/components/portfolio/holdings";
 import { PortfolioSummary } from "@/components/portfolio/summary";
@@ -56,14 +57,14 @@ async function PortfolioContent({
   const missing = open.filter((p) => !marks[p.stock]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {live ? <SessionRefresh /> : null}
       <PortfolioSummary totals={view.totals} />
 
       {ledger.issues.length > 0 ? (
-        <Card className="border-destructive/50">
+        <Card size="sm" className="border-destructive/50">
           <CardHeader>
-            <CardTitle className="text-base text-destructive">有賣出超過當時的持股</CardTitle>
+            <CardTitle className="text-sm text-destructive">有賣出超過當時的持股</CardTitle>
             <CardDescription>
               這些交易沒有計入損益。通常是減資、分割的比例和實際不同，或漏記了買進；請修改交易。
             </CardDescription>
@@ -81,9 +82,9 @@ async function PortfolioContent({
         </Card>
       ) : null}
 
-      <Card>
+      <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-base">持股</CardTitle>
+          <CardTitle className="text-sm">持股</CardTitle>
           <CardDescription>
             未實現損益已扣除預估的賣出手續費與證交稅。今日損益含今天的買賣（以成交價計）。
             {missing.length > 0
@@ -96,14 +97,14 @@ async function PortfolioContent({
         </CardContent>
       </Card>
 
-      <Card id="transactions" className="scroll-mt-4">
+      <Card size="sm" id="transactions" className="scroll-mt-4">
         <CardHeader>
-          <CardTitle className="text-base">交易紀錄</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-sm">交易紀錄</CardTitle>
+          <InfoNote>
             數量以股計。手續費依 <Link href="/admin" className="underline underline-offset-2">設定</Link>
             自動帶入（{describeFeeSettings(view.fees)}）；證交稅股票 0.3%、ETF 0.1%、債券 ETF
             免徵、當沖減半，都可以手動修改。新增、修改、刪除都會寫入稽核紀錄。
-          </CardDescription>
+          </InfoNote>
         </CardHeader>
         <CardContent>
           <TransactionsPanel
@@ -115,9 +116,9 @@ async function PortfolioContent({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-base">即將除權息（預估）</CardTitle>
+          <CardTitle className="text-sm">即將除權息（預估）</CardTitle>
           <CardDescription>
             交易所的除權除息預告表（每天開盤前與收盤後更新），以目前持股推算；ETF
             常在除息前幾天才公告金額。
@@ -128,13 +129,13 @@ async function PortfolioContent({
         </CardContent>
       </Card>
 
-      <Card id="dividends" className="scroll-mt-4">
+      <Card size="sm" id="dividends" className="scroll-mt-4">
         <CardHeader>
-          <CardTitle className="text-base">配息與股數變動</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-sm">配息與股數變動</CardTitle>
+          <InfoNote>
             依除權息日前一交易日的持股，乘上交易所公布的每股現金股利、配股率或減資、分割比例推算（標示「估算」）。
             實際入帳會扣匯費與二代健保補充保費；收到入帳通知後可以輸入實收，損益改用實收數字。
-          </CardDescription>
+          </InfoNote>
         </CardHeader>
         <CardContent>
           <DividendList
@@ -146,9 +147,9 @@ async function PortfolioContent({
         </CardContent>
       </Card>
 
-      <Card id="realized" className="scroll-mt-4">
+      <Card size="sm" id="realized" className="scroll-mt-4">
         <CardHeader>
-          <CardTitle className="text-base">已實現損益</CardTitle>
+          <CardTitle className="text-sm">已實現損益</CardTitle>
           <CardDescription>賣出收入扣除手續費、證交稅與平均成本。</CardDescription>
         </CardHeader>
         <CardContent>
@@ -158,9 +159,9 @@ async function PortfolioContent({
       </Card>
 
       {closed.length > 0 ? (
-        <Card>
+        <Card size="sm">
           <CardHeader>
-            <CardTitle className="text-base">已出清</CardTitle>
+            <CardTitle className="text-sm">已出清</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y text-sm">

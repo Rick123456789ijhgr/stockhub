@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -76,6 +76,7 @@ etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 ETL := $(PY) python -m stockhub.etl run
 
 etl-daily: ## Update calendar, stock master, delistings and the day's prices (date=YYYY-MM-DD)
+	-$(PY) python -m stockhub.etl drain-requests
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
 	$(ETL) sync_delistings
@@ -85,6 +86,10 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	$(ETL) daily_prices $(if $(date),--date $(date))
 	$(ETL) compute_adj_factors
 	$(ETL) check_holding_alerts
+	-$(ETL) sync_company_profiles
+	-$(ETL) sync_monthly_revenue
+	-$(ETL) sync_financials
+	-$(ETL) compute_fundamentals
 
 etl-corporate-actions: ## Ex-rights/dividends, reductions, splits for [start, end] (default past 30 days)
 	$(ETL) sync_corporate_actions $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
@@ -97,6 +102,23 @@ etl-etf-delistings: ## Delisted ETFs + their bars from stored daily tables (no n
 
 etl-adjust: ## Recompute adj_factor (e.g. after confirming price gaps on /admin)
 	$(ETL) compute_adj_factors
+
+etl-fundamentals: ## Statement + monthly revenue history since 2013 from FinMind (~17 h; resumable; symbols=2330,2317 datasets=IS,BS refetch=true)
+	$(ETL) sync_company_profiles
+	$(ETL) backfill_fundamentals $(if $(symbols),--param symbols=$(symbols)) $(if $(datasets),--param datasets=$(datasets)) $(if $(refetch),--param refetch=$(refetch))
+	$(ETL) compute_fundamentals
+
+etl-financials: ## Latest filed quarter and revenue month (official), then FinMind for new filers
+	$(ETL) sync_company_profiles
+	$(ETL) sync_monthly_revenue
+	$(ETL) sync_financials $(if $(max_requests),--param max_requests=$(max_requests))
+	$(ETL) compute_fundamentals
+
+etl-requests: ## Run the jobs queued from the website (the site starts this itself locally)
+	$(PY) python -m stockhub.etl drain-requests
+
+etl-compute-fundamentals: ## Rebuild derived fundamentals and signals (all=true for every company)
+	$(ETL) compute_fundamentals $(if $(all),--param all=$(all)) $(if $(symbols),--param symbols=$(symbols))
 
 etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); resumable
 	$(ETL) backfill_prices $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))

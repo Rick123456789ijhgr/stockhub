@@ -20,12 +20,13 @@ from sqlalchemy import Connection, Engine, text
 from stockhub.common.db import make_engine
 from stockhub.common.settings import PROJECT_ROOT
 
-# Every table the app writes to; trading_calendar keeps its migration seed.
+# Every table the app writes to; trading_calendar and financial_item_map keep their seeds.
 MUTABLE_TABLES = (
-    "stocks, prices_daily, corporate_actions, financial_item_map, financials, monthly_revenue, "
+    "stocks, prices_daily, corporate_actions, financials, monthly_revenue, "
     "raw_objects, job_runs, settings, audit_log, watchlist, portfolio_transactions, quotes_latest, "
     "prices_daily_quarantine, corporate_actions_quarantine, corporate_action_previews, "
-    "dividend_receipts, alerts"
+    "dividend_receipts, alerts, financials_quarantine, financial_fetch_state, "
+    "fundamentals_quarterly, fundamental_signals, job_requests"
 )
 
 

@@ -193,10 +193,21 @@ export interface DividendReceipts {
   updated_at: Generated<Timestamp>;
 }
 
+export interface FinancialFetchState {
+  dataset: string;
+  fetched_at: Timestamp;
+  /**
+   * Latest period in that response (quarter end, or first day of the revenue month); NULL when the source had nothing.
+   */
+  last_period: string | null;
+  source: string;
+  stock_id: Int8;
+}
+
 export interface FinancialItemMap {
   industry_type: string;
   /**
-   * True when reported year-to-date (IS, CF); single-quarter values are derived in the compute layer.
+   * True when the filing reports the item year-to-date (IS, CF); single quarters are derived in the compute layer.
    */
   is_cumulative: boolean;
   item_code: string;
@@ -209,18 +220,22 @@ export interface FinancialItemMap {
 }
 
 export interface Financials {
+  /**
+   * quarter = that quarter alone; ytd = fiscal year-to-date as filed (Q4 = full year); instant = balance at period_end.
+   */
+  basis: string;
   fetched_at: Generated<Timestamp>;
   id: Generated<Int8>;
   item_code: string;
   period_end: string;
   period_type: string;
   /**
-   * Date the figure became public; NULL when unknown (backtests fall back to the statutory deadline).
+   * Date the figure became public (first seen in an official snapshot); NULL when unknown, in which case the statutory deadline applies.
    */
   publish_date: string | null;
   raw_object_id: Int8 | null;
   /**
-   * 0 = original filing; restatements get increasing numbers.
+   * 0 = first value seen from this source; a later different value from the same source is stored as the next revision.
    */
   revision: Generated<number>;
   source: string;
@@ -230,6 +245,160 @@ export interface Financials {
    * Reported value in TWD; per-share and ratio items in their natural unit.
    */
   value: Numeric;
+}
+
+export interface FinancialsQuarantine {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  /**
+   * The parsed items as received: [{item_code, value, basis, publish_date}] with values as strings.
+   */
+  payload: Json;
+  period_end: string;
+  raw_object_id: Int8 | null;
+  /**
+   * Failed checks, e.g. unbalanced, ytd_as_quarter, negative_revenue.
+   */
+  reasons: string[];
+  /**
+   * accepted = written to financials by the user; rejected = discarded; superseded = a later fetch passed.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  statement: string;
+  stock_id: Int8;
+}
+
+export interface FundamentalSignals {
+  /**
+   * Rule id, e.g. gross_margin_yoy, turn_loss, revenue_record (see engine/fundamentals.py).
+   */
+  code: string;
+  computed_at: Generated<Timestamp>;
+  detail: Generated<Json>;
+  /**
+   * up = improvement, down = deterioration, neutral = informational.
+   */
+  direction: string;
+  /**
+   * Quarter end, or the first day of the revenue month for monthly rules.
+   */
+  period_end: string;
+  stock_id: Int8;
+  title: string;
+}
+
+export interface FundamentalsQuarterly {
+  accounts_receivable: Numeric | null;
+  /**
+   * First date the quarter may be used (publish_date if known, else the statutory deadline); valuation and backtests align on it.
+   */
+  available_date: string;
+  /**
+   * Equity attributable to owners of the parent per common share (official 每股參考淨值 when published).
+   */
+  bvps: Numeric | null;
+  /**
+   * Single-quarter cash paid for property, plant and equipment (positive = spent).
+   */
+  capital_expenditure: Numeric | null;
+  computed_at: Generated<Timestamp>;
+  current_assets: Numeric | null;
+  current_liabilities: Numeric | null;
+  current_ratio: Numeric | null;
+  debt_ratio: Numeric | null;
+  /**
+   * TTM revenue / average total assets.
+   */
+  dupont_asset_turnover: Numeric | null;
+  /**
+   * Average total assets / average parent equity.
+   */
+  dupont_equity_multiplier: Numeric | null;
+  /**
+   * TTM net income to parent / TTM revenue.
+   */
+  dupont_net_margin: Numeric | null;
+  eps: Numeric | null;
+  eps_ttm: Numeric | null;
+  eps_yoy: Numeric | null;
+  equity_parent: Numeric | null;
+  /**
+   * Operating cash flow minus capital expenditure, single quarter.
+   */
+  free_cash_flow: Numeric | null;
+  free_cash_flow_ttm: Numeric | null;
+  /**
+   * Ratios are fractions (0.53 = 53%); margins are single-quarter.
+   */
+  gross_margin: Numeric | null;
+  gross_profit: Numeric | null;
+  inventories: Numeric | null;
+  net_income: Numeric | null;
+  net_income_parent: Numeric | null;
+  net_income_parent_ttm: Numeric | null;
+  net_margin: Numeric | null;
+  operating_cash_flow: Numeric | null;
+  operating_cash_flow_ttm: Numeric | null;
+  operating_income: Numeric | null;
+  operating_margin: Numeric | null;
+  period_end: string;
+  pretax_income: Numeric | null;
+  publish_date: string | null;
+  /**
+   * Single-quarter amounts in TWD (revenue .. free_cash_flow); EPS in TWD per share.
+   */
+  revenue: Numeric | null;
+  /**
+   * Sum of the last four single quarters (NULL unless all four exist).
+   */
+  revenue_ttm: Numeric | null;
+  /**
+   * Single-quarter growth against the same quarter a year earlier (fraction).
+   */
+  revenue_yoy: Numeric | null;
+  roa_ttm: Numeric | null;
+  /**
+   * TTM net income to parent / average parent equity (period_end and four quarters earlier); equals the product of the three DuPont factors.
+   */
+  roe_ttm: Numeric | null;
+  /**
+   * Common shares at period_end (common stock / par value).
+   */
+  shares: Numeric | null;
+  /**
+   * Which source each statement came from, e.g. {"IS": "twse", "BS": "finmind", "CF": "finmind"}.
+   */
+  sources: Generated<Json>;
+  stock_id: Int8;
+  /**
+   * Balance at period_end in TWD.
+   */
+  total_assets: Numeric | null;
+  total_liabilities: Numeric | null;
+}
+
+export interface JobRequests {
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  /**
+   * Only jobs the site may request; params are validated by the site and again by the job.
+   */
+  job_name: string;
+  /**
+   * Outcome summary or error shown on the site.
+   */
+  message: string | null;
+  params: Generated<Json>;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  /**
+   * The job_runs row of the execution.
+   */
+  run_id: Int8 | null;
+  started_at: Timestamp | null;
+  status: Generated<string>;
 }
 
 export interface JobRuns {
@@ -265,6 +434,19 @@ export interface MonthlyRevenue {
   revenue_month: string;
   source: string;
   stock_id: Int8;
+}
+
+export interface MonthlyRevenueGrowth {
+  last_year_revenue: Numeric | null;
+  mom: Numeric | null;
+  prev_month_revenue: Numeric | null;
+  publish_date: string | null;
+  revenue: Numeric | null;
+  revenue_month: string | null;
+  stock_id: Int8 | null;
+  yoy: Numeric | null;
+  ytd_revenue: Numeric | null;
+  ytd_yoy: Numeric | null;
 }
 
 export interface PortfolioTransactions {
@@ -445,7 +627,14 @@ export interface Stocks {
    * Industry name as listed on the exchange ISIN page (e.g. 半導體業); industry_code is filled once an official code mapping is imported.
    */
   industry: string | null;
+  /**
+   * Exchange industry code from the company profile (e.g. 24 = 半導體業); stocks.industry holds the name.
+   */
   industry_code: string | null;
+  /**
+   * Issued common shares per the latest company profile.
+   */
+  issued_shares: Int8 | null;
   /**
    * Listing date; with symbol forms the natural key because symbols can be reused after delisting.
    */
@@ -459,6 +648,10 @@ export interface Stocks {
    */
   market: string;
   name: string;
+  /**
+   * Par value per common share in TWD (company profile; usually 10). Shares = common stock / par value.
+   */
+  par_value: Numeric | null;
   symbol: string;
   type: string;
   updated_at: Generated<Timestamp>;
@@ -494,10 +687,16 @@ export interface DB {
   corporate_actions: CorporateActions;
   corporate_actions_quarantine: CorporateActionsQuarantine;
   dividend_receipts: DividendReceipts;
+  financial_fetch_state: FinancialFetchState;
   financial_item_map: FinancialItemMap;
   financials: Financials;
+  financials_quarantine: FinancialsQuarantine;
+  fundamental_signals: FundamentalSignals;
+  fundamentals_quarterly: FundamentalsQuarterly;
+  job_requests: JobRequests;
   job_runs: JobRuns;
   monthly_revenue: MonthlyRevenue;
+  monthly_revenue_growth: MonthlyRevenueGrowth;
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
   prices_daily_coverage: PricesDailyCoverage;

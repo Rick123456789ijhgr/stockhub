@@ -1,6 +1,6 @@
 ﻿# StockHub 本機啟動與關閉：私有 Postgres（port 5433）+ Next.js 開發伺服器（port 3000）。
-# 用法：stockhub.bat [start|stop|restart|status]；不帶參數顯示選單（可直接雙擊）。
-# 網站跑在最小化的「StockHub web」視窗，關掉該視窗等於關閉網站。
+# 用法：stockhub.bat [start|stop|restart|status]；不帶參數（直接雙擊）等於 start。
+# 網站在背景執行（沒有視窗），輸出寫到 .local\logs\web-YYYYMMDD.log；用 stop 關閉。
 # 排程任務（scripts/register-tasks.ps1）會自行啟動資料庫，所以關閉後排程照常執行；
 # 但不要在排程正在跑（08:55～13:35 報價、18:00 每日）時關閉，會讓該次任務失敗。
 param([ValidateSet("start", "stop", "restart", "status", "")][string]$Command = "")
@@ -11,6 +11,7 @@ $bash = "C:\Program Files\Git\bin\bash.exe"
 $port = 3000
 $url = "http://localhost:$port"
 $pidFile = Join-Path $root ".local\web.pid"
+$logDir = Join-Path $root ".local\logs"
 
 function Invoke-LocalPg([string]$action) {
   # local-pg.sh 需要 Git Bash；輸出在 bash 內處理，避免 PowerShell 5.1 把 stderr 當成錯誤。
@@ -56,10 +57,12 @@ function Start-Web {
     Write-Host "網站已在執行：$url"
     return $true
   }
-  Write-Host "啟動網站（最小化視窗「StockHub web」）..."
-  # 伺服器異常結束時 pause 讓視窗停住，才看得到錯誤訊息。
-  $proc = Start-Process cmd.exe -ArgumentList "/c title StockHub web & pnpm dev || pause" `
-    -WorkingDirectory (Join-Path $root "web") -WindowStyle Minimized -PassThru
+  New-Item -ItemType Directory -Force $logDir | Out-Null
+  $log = Join-Path $logDir ("web-{0}.log" -f (Get-Date -Format "yyyyMMdd"))
+  Write-Host "啟動網站（背景執行，記錄在 $log）..."
+  # 不開視窗：Next.js 會把主控台標題改成 next-server，留著視窗只會多一個工作列項目。
+  $proc = Start-Process cmd.exe -ArgumentList "/c pnpm dev >> `"$log`" 2>&1" `
+    -WorkingDirectory (Join-Path $root "web") -WindowStyle Hidden -PassThru
   New-Item -ItemType Directory -Force (Split-Path $pidFile) | Out-Null
   Set-Content $pidFile "$($proc.Id),$($proc.StartTime.Ticks)"
   $deadline = (Get-Date).AddSeconds(90)
@@ -68,7 +71,8 @@ function Start-Web {
     if ($proc.HasExited) { break }
     Start-Sleep -Seconds 1
   }
-  Write-Host "網站沒有在 90 秒內啟動，請看「StockHub web」視窗的錯誤訊息" -ForegroundColor Red
+  Write-Host "網站沒有在 90 秒內啟動，記錄的最後幾行：" -ForegroundColor Red
+  if (Test-Path $log) { Get-Content $log -Tail 20 | Out-Host }
   return $false
 }
 
@@ -108,35 +112,24 @@ function Show-Status {
 
 function Invoke-Action([string]$name) {
   switch ($name) {
-    "start" {
-      if ((Start-Db) -and (Start-Web)) { Start-Process $url }
-    }
-    "stop" { Stop-Web; Stop-Db }
+    "start" { return ((Start-Db) -and (Start-Web) -and (Open-Site)) }
+    "stop" { Stop-Web; Stop-Db; return $true }
     "restart" {
       Stop-Web
-      if ((Start-Db) -and (Start-Web)) { Start-Process $url }
+      return ((Start-Db) -and (Start-Web) -and (Open-Site))
     }
-    "status" { Show-Status }
+    "status" { Show-Status; return $true }
   }
 }
 
-if ($Command) {
-  Invoke-Action $Command
-  exit 0
-}
+function Open-Site { Start-Process $url; return $true }
 
-while ($true) {
-  Write-Host ""
-  Show-Status
-  Write-Host ""
-  Write-Host "  1 啟動   2 關閉   3 重新啟動網站   4 重新整理狀態   0 離開"
-  $choice = Read-Host "請選擇"
-  switch ($choice) {
-    "1" { Invoke-Action "start" }
-    "2" { Invoke-Action "stop" }
-    "3" { Invoke-Action "restart" }
-    "4" { }
-    "0" { exit 0 }
-    default { Write-Host "請輸入 0～4" }
-  }
+if (-not $Command) { $Command = "start" }
+$ok = Invoke-Action $Command
+# 直接雙擊時視窗會自己關；失敗就停住，才看得到錯誤訊息。
+if (-not $ok) {
+  Read-Host "按 Enter 關閉"
+  exit 1
 }
+if ($Command -ne "status") { Start-Sleep -Seconds 2 }
+exit 0

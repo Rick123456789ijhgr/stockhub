@@ -187,17 +187,17 @@ function ReceiptForm({
         save.mutate();
       }}
     >
-      <label className="grid gap-1 text-xs text-muted-foreground">
+      <label className="grid content-start gap-1 text-xs text-muted-foreground">
         實收現金（元）
         <input inputMode="decimal" value={cash} onChange={(e) => setCash(e.target.value)} className={input} />
       </label>
       {d.estStockShares > 0 ? (
-        <label className="grid gap-1 text-xs text-muted-foreground">
+        <label className="grid content-start gap-1 text-xs text-muted-foreground">
           實收股數
           <input inputMode="numeric" value={shares} onChange={(e) => setShares(e.target.value)} className={input} />
         </label>
       ) : null}
-      <label className="grid gap-1 text-xs text-muted-foreground">
+      <label className="grid content-start gap-1 text-xs text-muted-foreground">
         入帳日
         <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={input} />
       </label>
