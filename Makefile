@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -90,6 +90,13 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	-$(ETL) sync_monthly_revenue
 	-$(ETL) sync_financials
 	-$(ETL) compute_fundamentals
+
+etl-chips: ## Chips: fill missing institutional/margin/foreign-holding tables of the last 10 trading days (date= re-fetches one day), TDCC week
+	$(ETL) sync_chips $(if $(date),--param date=$(date))
+	-$(ETL) sync_shareholding_distribution
+
+etl-chips-history: ## Chip history since 2012-05-02 (~11 h; resumable; start= end= datasets=margin,...)
+	$(ETL) backfill_chips $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end)) $(if $(datasets),--param datasets=$(datasets))
 
 etl-corporate-actions: ## Ex-rights/dividends, reductions, splits for [start, end] (default past 30 days)
 	$(ETL) sync_corporate_actions $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
