@@ -66,7 +66,12 @@ make etl-backfill                     # 回填過去一年的日線（約 25 分
 make etl-history                      # 完整歷史：下市清單 + 2004-02-11 起的日線 + 除權息 + 還原因子（約 7～8 小時，可續跑）
 make etl-quotes                       # 盤中：自選股與持股每 30 秒更新到 13:35（symbols=2330,0050 可另外指定）
 make etl-quotes symbols=2330 once=1   # 只抓一次
+make etl-fundamentals                 # 財報與月營收歷史（2013 年起，FinMind；約 17 小時，可續跑）
+make etl-fundamentals symbols=2330    # 只抓某幾檔（refetch=true 重抓已抓過的）
+make etl-financials                   # 最新一季財報與月營收（官方 OpenAPI），再向 FinMind 補新申報的公司
 ```
+
+財報歷史來自 FinMind（公開資訊觀測站的 robots.txt 禁止爬取）：先到 finmindtrade.com 註冊免費帳號，把 token 填進 `.env` 的 `FINMIND_TOKEN`。免費帳號每小時 600 次，程式自己限制在 500 次以內，並在接近上限時暫停。品質檢查沒過的財報會進隔離區，在 `/admin` 確認（見 `docs/DECISIONS.md` D-086）。
 
 上櫃日線官方資料從 2007-07-02 起才有；還原價無法解釋的跳空（例如櫃買的面額變更）會列在 `corporate_actions_quarantine`，見 `docs/DECISIONS.md` D-053。
 
@@ -79,18 +84,18 @@ make web-dev          # http://localhost:3000
 ```
 
 - `/stocks`：搜尋股票與 ETF（搜尋時也會列出已下市公司）
-- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價、近 120 日表格
-- `/status`：每次任務的紀錄與資料最新日期
+- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價；基本面（月營收、獲利率、EPS、現金流、ROE 與杜邦、變化提示、單季財報）；估值（本益比、股價淨值比、殖利率的歷史百分位、河流圖、同業比較）；近 120 日表格
+- `/status`：任務紀錄、日線涵蓋、財報回填進度；「日線更新到今天」與缺漏日的「重新抓取」按鈕
+- 網站上的手動更新按鈕會把任務排入 `job_requests`。`.env` 設 `JOB_RUNNER=local` 時網站會立刻在背景執行（`scripts/scheduled.sh etl-requests`，log 在 `.local/logs/etl-requests-*.log`）；其他環境（例如 Vercel）會在下一次 `make etl-daily` 開頭執行。
 
 ### 7. 每天自動更新（選用，Windows 工作排程器）
 
-平日 18:00 更新當天資料（先確保本機資料庫在跑）：
-
 ```powershell
-schtasks /create /tn "StockHub daily" /sc weekly /d MON,TUE,WED,THU,FRI /st 18:00 /tr "\"C:\Program Files\Git\bin\bash.exe\" -lc 'cd /d/stockhub-handoff && make db-local-up && make etl-daily >> .local/etl-daily.log 2>&1'"
+powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1          # 註冊
+powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # 移除
 ```
 
-刪除：`schtasks /delete /tn "StockHub daily"`。非交易日任務會自動略過（`skipped`）。
+會建立三個工作（目前使用者，不需系統管理員）：平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
 
 ## 常用指令
 
@@ -106,6 +111,9 @@ schtasks /create /tn "StockHub daily" /sc weekly /d MON,TUE,WED,THU,FRI /st 18:0
 | `make py-test` / `py-fmt` | Python 檢查／自動修正格式 |
 | `make etl-daily` / `etl-backfill` / `etl-history` | 每日更新／回填日線／完整歷史 |
 | `make etl-quotes` | 盤中報價輪詢 |
+| `make etl-fundamentals` / `etl-financials` | 財報與月營收歷史／最新一季與月營收 |
+| `make etl-compute-fundamentals` | 重算基本面與變化提示（`all=true` 全部重算） |
+| `make etl-requests` | 執行網站排入的任務 |
 | `make etl-list` / `etl-heartbeat` | ETL CLI |
 | `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
 
@@ -128,7 +136,10 @@ ETL CLI 的結束碼：0 成功或略過、1 任務失敗、2 用法或設定錯
 | `RAWSTORE_GCS_BUCKET` | py | gcs 時 | bucket 名稱，用 ADC 驗證 |
 | `NOTIFIER` | py | | `console`（預設）或 `email` |
 | `ALERT_EMAIL_TO`、`SMTP_*` | py | email 時 | 告警收件人與 SMTP 設定 |
-| `PROVIDERS_PRICE` / `_FINANCIAL` / `_QUOTE` | py | | 各資料類型的主來源與備援順序，逗號分隔 |
+| `PROVIDERS_*` | py | | 各資料類型的主來源與備援順序，逗號分隔（見 `.env.example`） |
+| `FINMIND_TOKEN` | py | 財報 | FinMind token；沒有時每小時只能 300 次 |
+| `FINMIND_REQUESTS_PER_HOUR` | py | | 自己的每小時上限，預設 500 |
+| `JOB_RUNNER` | web | | `local`：網站自己執行排入的任務（只在本機開發有效） |
 | `SERVICE_AUTH_SECRET` | web、FastAPI | M7 | 服務間驗證，預留 |
 | `APP_ENV`、`LOG_LEVEL` | py | | `development` / `production`；log 等級 |
 
@@ -207,4 +218,4 @@ GitHub Actions（`.github/workflows/`）：
 
 ## 授權與資料來源
 
-僅供個人研究使用。各資料源的使用條款與額度，在正式串接前（M1 起）逐一確認並記錄在 `docs/DECISIONS.md`；爬取一律限速，優先使用官方 OpenAPI。
+僅供個人研究使用。各資料源的使用條款與額度，在正式串接前（M1 起）逐一確認並記錄在 `docs/DECISIONS.md`；爬取一律限速，優先使用官方 OpenAPI。財報歷史用 FinMind（公開資訊觀測站 robots.txt 禁止爬取，所以不抓），每天的最新一季、月營收與公司基本資料用證交所與櫃買中心 OpenAPI。
