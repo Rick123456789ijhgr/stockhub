@@ -39,7 +39,7 @@ function detail(h: ScheduleHealth): string {
 export function ScheduleHealthCard({ items }: { items: ScheduleHealth[] }) {
   const problems = items.filter((h) => STATE[h.state].variant === "destructive").length;
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-base">排程</CardTitle>
         <CardDescription>

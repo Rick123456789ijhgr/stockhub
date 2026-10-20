@@ -34,7 +34,7 @@ export function FundamentalsStatusCard({ status, now }: { status: FundamentalsSt
     { label: "已計算基本面", value: `${formatInteger(status.computed)} 家` },
   ];
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-base">財報與月營收</CardTitle>
         <CardDescription>

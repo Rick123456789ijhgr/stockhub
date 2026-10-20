@@ -122,11 +122,11 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       ) : null}
 
-      <div className="mb-4 grid items-start gap-3 lg:grid-cols-2">
-        <section aria-label="排程">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <section aria-label="排程" className="min-w-0">
           <ScheduleHealthCard items={schedules} />
         </section>
-        <section aria-label="財報與月營收">
+        <section aria-label="財報與月營收" className="min-w-0">
           <FundamentalsStatusCard status={fundamentals} now={now} />
         </section>
       </div>
