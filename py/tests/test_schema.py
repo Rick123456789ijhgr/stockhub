@@ -344,3 +344,35 @@ def test_monthly_revenue_growth_view(pg: psycopg.Connection) -> None:
     assert round(yoy, 6) == Decimal("0.32")
     assert ytd == 242
     assert round(ytd_yoy, 6) == Decimal("0.21")
+
+    # No December 2025, so January 2026 has no month-over-month figure.
+    row = pg.execute(
+        "SELECT prev_month_revenue, mom, last_year_revenue FROM monthly_revenue_growth "
+        "WHERE stock_id = %s AND revenue_month = '2026-01-01'",
+        (stock_id,),
+    ).fetchone()
+    assert row == (None, None, 100)
+
+
+def test_monthly_revenue_growth_filters_by_index(pg: psycopg.Connection) -> None:
+    # The stock_id filter must reach monthly_revenue (D-095); a full scan per lookup made
+    # the peer table take seconds.
+    pg.execute("SET LOCAL enable_seqscan = off")
+    plan = "\n".join(
+        r[0]
+        for r in pg.execute(
+            "EXPLAIN SELECT yoy FROM monthly_revenue_growth WHERE stock_id = 1"
+        ).fetchall()
+    )
+    assert "monthly_revenue_pkey" in plan
+
+
+def test_financials_official_period_index(pg: psycopg.Connection) -> None:
+    pg.execute("SET LOCAL enable_seqscan = off")
+    plan = "\n".join(
+        r[0]
+        for r in pg.execute(
+            "EXPLAIN SELECT max(period_end) FROM financials WHERE source IN ('twse', 'tpex')"
+        ).fetchall()
+    )
+    assert "financials_official_period_idx" in plan

@@ -58,7 +58,7 @@ make etl-fundamentals         # 財報與月營收歷史（2013 起，FinMind；
 make etl-financials           # 最新一季財報與月營收（官方 OpenAPI），再向 FinMind 補新申報的公司（etl-daily 也會跑）
 make etl-compute-fundamentals # 重算 fundamentals_quarterly 與 fundamental_signals（all=true 全部）
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
-stockhub.bat                  # 雙擊開選單；或 start|stop|restart|status：本機資料庫 + 網站（邏輯在 scripts/stockhub.ps1）
+stockhub.bat                  # 雙擊＝啟動資料庫與網站（背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status（邏輯在 scripts/stockhub.ps1）
 scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
