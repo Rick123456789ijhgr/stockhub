@@ -13,8 +13,9 @@ import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any, ClassVar, Literal, Protocol
 
 from sqlalchemy import Connection, text
@@ -22,6 +23,16 @@ from sqlalchemy import Connection, text
 from stockhub.common.db import upsert
 from stockhub.common.timeutil import TAIPEI, taipei_today, utcnow
 from stockhub.common.trading_calendar import trading_days_between
+from stockhub.engine.chips import (
+    LONG_WINDOW,
+    SHORT_WINDOW,
+    InstitutionalDay,
+    MarginDay,
+    change,
+    summarize_holders,
+    summarize_institutional,
+    summarize_margin,
+)
 from stockhub.etl.jobs.base import Job, JobContext, JobError, JobOutcome, register_job
 from stockhub.etl.jobs.market_data import MARKETS, stock_ids_on
 from stockhub.etl.providers.base import (
@@ -589,3 +600,158 @@ class SyncShareholdingDistributionJob(Job):
             record_coverage(conn, "distribution", "all", week, len(fetched.items), fetched.provider)
         ctx.add_rows(stats.written)
         return JobOutcome(message=f"集保 {week}：{stats}")
+
+
+# ----------------------------------------------------------------------------- summary
+
+
+RECENT = timedelta(days=60)
+"""Summary windows only use dates this close to the newest one (a running backfill adds
+old dates that must not join the window)."""
+
+
+def _latest_dates(conn: Connection, dataset: str, market: str, count: int) -> list[date]:
+    """The latest `count` dates the dataset was published for the market, oldest first."""
+    rows = list(
+        conn.execute(
+            text(
+                "SELECT trade_date FROM chip_coverage WHERE dataset = :dataset "
+                "AND market = :market AND rows > 0 ORDER BY trade_date DESC LIMIT :n"
+            ),
+            {"dataset": dataset, "market": market, "n": count},
+        ).scalars()
+    )
+    return sorted(d for d in rows if d >= rows[0] - RECENT)
+
+
+def build_chip_summaries(conn: Connection) -> list[dict[str, Any]]:
+    """chip_summary rows for every stock with chip data in the latest windows."""
+    markets: dict[int, str] = {
+        r.id: r.market for r in conn.execute(text("SELECT id, market FROM stocks"))
+    }
+    inst_dates: dict[str, list[date]] = {
+        m: _latest_dates(conn, "institutional", m, LONG_WINDOW) for m in MARKETS
+    }
+    margin_dates: dict[str, list[date]] = {
+        m: _latest_dates(conn, "margin", m, SHORT_WINDOW + 1) for m in MARKETS
+    }
+    holding_dates: dict[str, list[date]] = {
+        m: _latest_dates(conn, "foreign_holdings", m, LONG_WINDOW + 1) for m in MARKETS
+    }
+    weeks = _latest_dates(conn, "distribution", "all", 2)
+
+    def union(dates: dict[str, list[date]]) -> list[date]:
+        return sorted({d for days in dates.values() for d in days})
+
+    inst: dict[int, dict[date, Any]] = defaultdict(dict)
+    volume: dict[int, dict[date, int]] = defaultdict(dict)
+    if days_ := union(inst_dates):
+        for r in conn.execute(
+            text(
+                "SELECT stock_id, trade_date, foreign_net, trust_net, dealer_net, total_net "
+                "FROM institutional_trades_daily WHERE trade_date = ANY(:d)"
+            ),
+            {"d": days_},
+        ):
+            inst[r.stock_id][r.trade_date] = r
+        for r in conn.execute(
+            text(
+                "SELECT stock_id, trade_date, volume FROM prices_daily WHERE trade_date = ANY(:d)"
+            ),
+            {"d": days_},
+        ):
+            volume[r.stock_id][r.trade_date] = r.volume
+    margin: dict[int, list[MarginDay]] = defaultdict(list)
+    if days_ := union(margin_dates):
+        for r in conn.execute(
+            text(
+                "SELECT stock_id, margin_balance, margin_limit, short_balance FROM margin_daily "
+                "WHERE trade_date = ANY(:d) ORDER BY trade_date"
+            ),
+            {"d": days_},
+        ):
+            margin[r.stock_id].append(MarginDay(r.margin_balance, r.margin_limit, r.short_balance))
+    holding: dict[int, dict[date, Decimal]] = defaultdict(dict)
+    if days_ := union(holding_dates):
+        for r in conn.execute(
+            text(
+                "SELECT stock_id, trade_date, foreign_ratio FROM foreign_holdings_daily "
+                "WHERE trade_date = ANY(:d)"
+            ),
+            {"d": days_},
+        ):
+            holding[r.stock_id][r.trade_date] = r.foreign_ratio
+    tdcc: dict[int, dict[date, dict[int, int]]] = defaultdict(lambda: defaultdict(dict))
+    if weeks:
+        for r in conn.execute(
+            text(
+                "SELECT stock_id, week_date, level, shares FROM shareholding_distribution "
+                "WHERE week_date = ANY(:w)"
+            ),
+            {"w": weeks},
+        ):
+            tdcc[r.stock_id][r.week_date][r.level] = r.shares
+
+    out = []
+    for stock_id in sorted(set(inst) | set(margin) | set(holding) | set(tdcc)):
+        market = markets.get(stock_id)
+        if market is None:
+            continue
+        dates = inst_dates.get(market) or []
+        if not dates:
+            continue
+        # Absent from a published table = no institutional trade that day (0, not missing).
+        days = []
+        for d in dates:
+            row = inst[stock_id].get(d)
+            days.append(
+                InstitutionalDay(
+                    foreign_net=row.foreign_net if row else 0,
+                    trust_net=row.trust_net if row else 0,
+                    dealer_net=row.dealer_net if row else 0,
+                    total_net=row.total_net if row else 0,
+                    volume=volume[stock_id].get(d),
+                )
+            )
+        flows = summarize_institutional(days)
+        margins = summarize_margin(margin.get(stock_id, []))
+        ratios = [holding[stock_id].get(d) for d in holding_dates.get(market) or []]
+        holders = summarize_holders([tdcc[stock_id][w] for w in weeks if tdcc[stock_id].get(w)])
+        out.append(
+            {
+                "stock_id": stock_id,
+                "trade_date": dates[-1],
+                **asdict(flows),
+                "margin_utilization": margins.margin_utilization if margins else None,
+                "short_margin_ratio": margins.short_margin_ratio if margins else None,
+                "margin_change_5d": margins.margin_change_5d if margins else None,
+                "short_change_5d": margins.short_change_5d if margins else None,
+                "foreign_ratio": ratios[-1] if ratios else None,
+                "foreign_ratio_change_20d": change(ratios, LONG_WINDOW),
+                "big_holder_week": max((w for w in weeks if tdcc[stock_id].get(w)), default=None),
+                "big_holder_ratio": holders.big_holder_ratio if holders else None,
+                "big_holder_change_1w": holders.big_holder_change_1w if holders else None,
+                "whale_ratio": holders.whale_ratio if holders else None,
+                "whale_change_1w": holders.whale_change_1w if holders else None,
+            }
+        )
+    return out
+
+
+@register_job
+class ComputeChipSummaryJob(Job):
+    name: ClassVar[str] = "compute_chip_summary"
+    description: ClassVar[str] = (
+        "Rebuild chip_summary (streaks, 5/20-day sums, margin ratios, big holders) from the "
+        "latest chip tables"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        with ctx.engine.begin() as conn:
+            rows = build_chip_summaries(conn)
+            conn.execute(text("DELETE FROM chip_summary"))
+            written = _upsert_chunks(conn, "chip_summary", rows, ["stock_id"])
+        ctx.add_rows(written)
+        latest = max((r["trade_date"] for r in rows), default=None)
+        return JobOutcome(message=f"籌碼摘要 {written} 檔（最新 {latest}）")

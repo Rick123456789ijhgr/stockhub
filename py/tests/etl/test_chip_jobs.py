@@ -207,3 +207,34 @@ def test_distribution_stored_once_per_week(run: Any, clean_db: Engine) -> None:
     assert str(whales["2330"]) == "0.845600"
     assert run("sync_shareholding_distribution").status == "skipped"
     assert run("sync_shareholding_distribution", force=True).rows_written == 0
+
+
+def test_compute_chip_summary(run: Any, clean_db: Engine) -> None:
+    run("sync_chips", date=DAY.isoformat())
+    run("sync_shareholding_distribution")
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO prices_daily (stock_id, trade_date, close, volume, turnover, source) "
+                "SELECT id, :d, 1000, 44743000, 1, 'test' FROM stocks WHERE symbol = '2330'"
+            ),
+            {"d": DAY},
+        )
+    result = run("compute_chip_summary")
+    assert result.status == "succeeded", result.error
+    assert result.message == "籌碼摘要 5 檔（最新 2026-10-16）"
+    row = _rows(
+        clean_db,
+        "SELECT c.* FROM chip_summary c JOIN stocks s ON s.id = c.stock_id WHERE s.symbol = '2330'",
+    )[0]
+    assert row.trade_date == DAY
+    assert (row.foreign_streak, row.trust_streak, row.dealer_streak) == (-1, 1, -1)
+    assert row.foreign_net_5d == row.foreign_net_20d == -22_046_142
+    assert float(row.total_volume_ratio_5d) == pytest.approx(-22_371_830 / 44_743_000)
+    assert float(row.margin_utilization) == pytest.approx(34_110_000 / 6_483_092_000)
+    assert float(row.short_margin_ratio) == pytest.approx(9_000 / 34_110_000)
+    assert row.margin_change_5d is None  # one margin day so far
+    assert float(row.foreign_ratio) == pytest.approx(0.6874)
+    assert row.big_holder_week == DAY
+    assert float(row.whale_ratio) == pytest.approx(21_928_634_563 / 25_932_370_067)
+    assert row.whale_change_1w is None
