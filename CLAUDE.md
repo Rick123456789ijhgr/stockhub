@@ -103,4 +103,5 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 - 財報的「可用日」是 `available_date`（已知公布日，否則法定截止日，`common/filings.py`）；估值、篩選、回測都用它對齊，不要直接用 `period_end`。
 - 估值公式：`py/stockhub/engine/valuation.py` 與 `web/src/lib/valuation.ts` 逐式對應，改任一邊都要同步另一邊，並用 `py/scripts/gen_valuation_fixture.py` 重產 `testdata/valuation.json`。
 - 網站觸發 Python 任務一律排入 `job_requests`（`POST /api/jobs`，可排的任務在 `lib/job-request-input.ts` 與資料表 CHECK 兩處列舉，新增時兩邊都改），不要在 route handler 直接執行任務。
+- 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁）；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
