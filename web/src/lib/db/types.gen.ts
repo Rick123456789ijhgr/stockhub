@@ -845,6 +845,15 @@ export interface Settings {
   value: Json;
 }
 
+export interface ShareholdingConcentration {
+  big_holder_ratio: Numeric | null;
+  big_holders: number | null;
+  holders: number | null;
+  stock_id: Int8 | null;
+  week_date: string | null;
+  whale_ratio: Numeric | null;
+}
+
 export interface ShareholdingDistribution {
   fetched_at: Generated<Timestamp>;
   holders: number;
@@ -968,6 +977,7 @@ export interface DB {
   quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
   settings: Settings;
+  shareholding_concentration: ShareholdingConcentration;
   shareholding_distribution: ShareholdingDistribution;
   stocks: Stocks;
   trading_calendar: TradingCalendar;

@@ -484,3 +484,27 @@ def test_m4_alert_kind_and_job_request(pg: psycopg.Connection) -> None:
     pg.execute(
         "INSERT INTO job_requests (job_name, requested_by) VALUES ('sync_chips', 'me@example.com')"
     )
+
+
+def test_shareholding_concentration_matches_engine(pg: psycopg.Connection) -> None:
+    from stockhub.engine.chips import BIG_HOLDER_LEVELS, WHALE_LEVEL, holder_ratio
+
+    stock_id = _insert_stock(pg)
+    week = {1: (900, 1_000), 11: (10, 3_000), 12: (5, 2_500), 15: (2, 40_000), 16: (1, 7)}
+    week[17] = (918, 46_507)
+    for level, (holders, shares) in week.items():
+        pg.execute(
+            "INSERT INTO shareholding_distribution (stock_id, week_date, level, holders, shares, "
+            "ratio, source) VALUES (%s, '2026-10-16', %s, %s, %s, 0, 'test')",
+            (stock_id, level, holders, shares),
+        )
+    row = pg.execute(
+        "SELECT big_holder_ratio, whale_ratio, big_holders, holders "
+        "FROM shareholding_concentration WHERE stock_id = %s",
+        (stock_id,),
+    ).fetchone()
+    assert row is not None
+    shares = {level: s for level, (_, s) in week.items()}
+    assert float(row[0]) == pytest.approx(holder_ratio(shares, BIG_HOLDER_LEVELS))
+    assert float(row[1]) == pytest.approx(holder_ratio(shares, [WHALE_LEVEL]))
+    assert (row[2], row[3]) == (7, 918)
