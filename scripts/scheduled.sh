@@ -15,9 +15,20 @@ export PATH="$HOME/.local/bin:$PATH" UV_LINK_MODE=copy PYTHONIOENCODING=utf-8
 {
   echo "=== $(date '+%F %T') make $TARGET $*"
   cd "$ROOT" || exit 1
-  # Docker-free setup: the private cluster does not start with Windows.
+  # Docker-free setup: the private cluster does not start with Windows. Start it through its
+  # own task ("StockHub database", no time limit): started from here it would belong to this
+  # task, keep it "running" (so the next run is skipped) and die at this task's time limit.
   if [[ -d .local/pgdata ]] && ! scripts/local-pg.sh status >/dev/null 2>&1; then
-    scripts/local-pg.sh start
+    if schtasks.exe //Run //TN '\StockHub\StockHub database' >/dev/null 2>&1; then
+      for _ in $(seq 60); do
+        scripts/local-pg.sh status >/dev/null 2>&1 && break
+        sleep 1
+      done
+    fi
+    if ! scripts/local-pg.sh status >/dev/null 2>&1; then
+      echo "database task unavailable; starting postgres from this task"
+      scripts/local-pg.sh start
+    fi
   fi
   make "$TARGET" "$@"
   status=$?
