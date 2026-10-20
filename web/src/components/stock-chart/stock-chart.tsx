@@ -278,7 +278,7 @@ export function StockChart({ symbol }: { symbol: string }) {
   const change = adjustedChangePercent(bars, index);
 
   return (
-    <section aria-labelledby="chart-title" className="mb-6">
+    <section aria-labelledby="chart-title">
       <h2 id="chart-title" className="sr-only">
         K 線圖
       </h2>

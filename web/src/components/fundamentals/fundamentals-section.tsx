@@ -2,6 +2,7 @@ import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 import type { Kysely } from "kysely";
 
 import { type ChartSeries, TimeChart } from "@/components/charts/time-chart";
+import { Disclosure } from "@/components/disclosure";
 import { JobButton } from "@/components/jobs/job-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,8 +45,8 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
   if (stock.type === "etf") return null;
   if (stock.industry && FINANCIAL_INDUSTRIES.has(stock.industry)) {
     return (
-      <section aria-labelledby="fundamentals" className="mt-6">
-        <h2 id="fundamentals" className="mb-2 text-base font-semibold">
+      <section aria-labelledby="fundamentals">
+        <h2 id="fundamentals" className="sr-only">
           基本面
         </h2>
         <Card>
@@ -73,8 +74,8 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
   const withIncome = quarters.filter((q) => q.revenue !== null || q.eps !== null);
   if (withIncome.length === 0 && revenue.length === 0) {
     return (
-      <section aria-labelledby="fundamentals" className="mt-6">
-        <h2 id="fundamentals" className="mb-2 text-base font-semibold">
+      <section aria-labelledby="fundamentals">
+        <h2 id="fundamentals" className="sr-only">
           基本面
         </h2>
         <Card>
@@ -90,9 +91,9 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
   const latest = withIncome.at(-1);
 
   return (
-    <section aria-labelledby="fundamentals" className="mt-6 space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="fundamentals" className="text-base font-semibold">
+    <section aria-labelledby="fundamentals" className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-end gap-2">
+        <h2 id="fundamentals" className="sr-only">
           基本面
         </h2>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -101,7 +102,7 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         {revenue.length > 0 ? <RevenueCard rows={revenue} /> : null}
         {recent.length > 0 ? (
           <Card size="sm">
@@ -182,7 +183,7 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
   const recent = rows.slice(-36);
   const latest = rows.at(-1);
   return (
-    <Card size="sm">
+    <Card size="sm" className="lg:col-span-2">
       <CardHeader>
         <CardTitle className="text-sm">月營收</CardTitle>
         {latest ? (
@@ -193,64 +194,67 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
-        <TimeChart
-          label="月營收"
-          format="hundredMillion"
-          period="month"
-          series={[
-            {
-              name: "營收",
-              kind: "histogram",
-              color: "--series-1",
-              data: recent.map((r) => ({ time: r.month, value: r.revenue })),
-            },
-          ]}
-        />
-        <TimeChart
-          label="月營收年增率"
-          format="percent"
-          period="month"
-          height={140}
-          series={[
-            {
-              name: "年增率",
-              kind: "line",
-              color: "--series-1",
-              data: recent.map((r) => ({ time: r.month, value: r.yoy })),
-            },
-          ]}
-        />
-        <div className="overflow-x-auto rounded-lg border">
-          <Table className="min-w-[28rem] text-xs">
-            <TableHeader>
-              <TableRow>
-                <TableHead>月份</TableHead>
-                <TableHead className="text-right">營收</TableHead>
-                <TableHead className="text-right">月增</TableHead>
-                <TableHead className="text-right">年增</TableHead>
-                <TableHead className="text-right">累計年增</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows
-                .slice(-6)
-                .reverse()
-                .map((r) => (
-                  <TableRow key={r.month}>
-                    <TableCell className="tabular-nums">{periodLabel(r.month, "month")}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatValue(r.revenue, "hundredMillion")}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatValue(r.mom, "percent")}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatValue(r.yoy, "percent")}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatValue(r.ytdYoy, "percent")}
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <TimeChart
+            label="月營收"
+            format="hundredMillion"
+            period="month"
+            series={[
+              {
+                name: "營收",
+                kind: "histogram",
+                color: "--series-1",
+                data: recent.map((r) => ({ time: r.month, value: r.revenue })),
+              },
+            ]}
+          />
+          <TimeChart
+            label="月營收年增率"
+            format="percent"
+            period="month"
+            series={[
+              {
+                name: "年增率",
+                kind: "line",
+                color: "--series-1",
+                data: recent.map((r) => ({ time: r.month, value: r.yoy })),
+              },
+            ]}
+          />
         </div>
+        <Disclosure summary="近 6 個月明細">
+          <div className="overflow-x-auto rounded-lg border">
+            <Table className="min-w-[28rem] text-xs">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>月份</TableHead>
+                  <TableHead className="text-right">營收</TableHead>
+                  <TableHead className="text-right">月增</TableHead>
+                  <TableHead className="text-right">年增</TableHead>
+                  <TableHead className="text-right">累計年增</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows
+                  .slice(-6)
+                  .reverse()
+                  .map((r) => (
+                    <TableRow key={r.month}>
+                      <TableCell className="tabular-nums">{periodLabel(r.month, "month")}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatValue(r.revenue, "hundredMillion")}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatValue(r.mom, "percent")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatValue(r.yoy, "percent")}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatValue(r.ytdYoy, "percent")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Disclosure>
       </CardContent>
     </Card>
   );
@@ -274,36 +278,38 @@ function DupontCard({ rows }: { rows: QuarterRow[] }) {
             line("ROA", "--series-2", rows, (q) => q.roaTtm),
           ]}
         />
-        <div className="overflow-x-auto rounded-lg border">
-          <Table className="min-w-[28rem] text-xs">
-            <TableHeader>
-              <TableRow>
-                <TableHead>季別</TableHead>
-                <TableHead className="text-right">ROE</TableHead>
-                <TableHead className="text-right">淨利率</TableHead>
-                <TableHead className="text-right">資產週轉率</TableHead>
-                <TableHead className="text-right">權益乘數</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tail.map((q) => (
-                <TableRow key={q.periodEnd}>
-                  <TableCell className="tabular-nums">{periodLabel(q.periodEnd, "quarter")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatValue(q.roeTtm, "percent")}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatValue(q.dupontNetMargin, "percent")}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {q.dupontAssetTurnover === null ? "—" : `${q.dupontAssetTurnover.toFixed(2)} 次`}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {q.dupontEquityMultiplier === null ? "—" : `${q.dupontEquityMultiplier.toFixed(2)} 倍`}
-                  </TableCell>
+        <Disclosure summary="杜邦拆解（近四季）">
+          <div className="overflow-x-auto rounded-lg border">
+            <Table className="min-w-[28rem] text-xs">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>季別</TableHead>
+                  <TableHead className="text-right">ROE</TableHead>
+                  <TableHead className="text-right">淨利率</TableHead>
+                  <TableHead className="text-right">資產週轉率</TableHead>
+                  <TableHead className="text-right">權益乘數</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {tail.map((q) => (
+                  <TableRow key={q.periodEnd}>
+                    <TableCell className="tabular-nums">{periodLabel(q.periodEnd, "quarter")}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatValue(q.roeTtm, "percent")}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatValue(q.dupontNetMargin, "percent")}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {q.dupontAssetTurnover === null ? "—" : `${q.dupontAssetTurnover.toFixed(2)} 次`}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {q.dupontEquityMultiplier === null ? "—" : `${q.dupontEquityMultiplier.toFixed(2)} 倍`}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Disclosure>
       </CardContent>
     </Card>
   );
@@ -317,7 +323,7 @@ const DIRECTION = {
 
 function SignalsCard({ rows }: { rows: SignalRow[] }) {
   return (
-    <Card size="sm">
+    <Card size="sm" className="lg:col-span-2">
       <CardHeader>
         <CardTitle className="text-sm">重大變化提示</CardTitle>
         <CardDescription>規則式判斷（毛利率年變動 ≥ 3 個百分點、營收年增減 ≥ 30%、轉盈轉虧等），僅供參考。</CardDescription>
@@ -326,11 +332,11 @@ function SignalsCard({ rows }: { rows: SignalRow[] }) {
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">近期沒有觸發的規則。</p>
         ) : (
-          <ul className="space-y-1.5 text-sm">
+          <ul className="gap-x-6 space-y-1.5 text-sm sm:columns-2">
             {rows.map((s) => {
               const { icon: Icon, label } = DIRECTION[s.direction];
               return (
-                <li key={`${s.code}-${s.periodEnd}`} className="flex items-start gap-2">
+                <li key={`${s.code}-${s.periodEnd}`} className="flex break-inside-avoid items-start gap-2">
                   <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span>
                     <span className="sr-only">{label}：</span>

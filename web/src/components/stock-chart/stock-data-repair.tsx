@@ -39,7 +39,7 @@ export async function StockDataRepair({
   if (missing.length === 0 && repairs.length === 0) return null;
 
   return (
-    <section aria-labelledby="repair" className="mb-4 rounded-lg border p-3 text-sm">
+    <section aria-labelledby="repair" className="rounded-lg border p-3 text-sm">
       {hasPendingRequest(repairs) ? <AutoRefresh seconds={5} /> : null}
       <h2 id="repair" className="mb-1 flex items-center gap-1.5 font-medium">
         <TriangleAlert className="size-4" aria-hidden />
