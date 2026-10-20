@@ -35,7 +35,7 @@ export interface Alerts {
   detail: Generated<Json>;
   id: Generated<Int8>;
   /**
-   * holding_move = a holding moved beyond its volatility threshold (PLAN.md section 5); M6 adds news, institutional flows, macro.
+   * holding_move = a holding moved beyond its volatility threshold; institutional_flow = an institutional group traded a large share of a holding's volume (PLAN.md section 5); M6 adds news and macro.
    */
   kind: string;
   /**
@@ -61,6 +61,103 @@ export interface AuditLog {
   detail: Generated<Json>;
   id: Generated<Int8>;
   target: string | null;
+}
+
+export interface ChipCoverage {
+  dataset: string;
+  fetched_at: Generated<Timestamp>;
+  /**
+   * all for TDCC, which publishes both markets in one file.
+   */
+  market: string;
+  /**
+   * Rows the source published (stored or quarantined); 0 = published empty for a past trading day.
+   */
+  rows: number;
+  source: string;
+  /**
+   * Trading day (TDCC: its data date).
+   */
+  trade_date: string;
+}
+
+export interface ChipQuarantine {
+  created_at: Generated<Timestamp>;
+  dataset: string;
+  id: Generated<Int8>;
+  /**
+   * The parsed row as received (model_dump, numbers as JSON).
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  /**
+   * Failed checks, e.g. total_mismatch, margin_balance_mismatch, ratio_out_of_range.
+   */
+  reasons: string[];
+  /**
+   * accepted = written to its table by the user; rejected = discarded; superseded = a later fetch passed.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  source: string;
+  stock_id: Int8;
+  trade_date: string;
+}
+
+export interface ChipSummary {
+  big_holder_change_1w: Numeric | null;
+  /**
+   * TDCC share of holders with 400 lots or more (levels 12-15), fraction.
+   */
+  big_holder_ratio: Numeric | null;
+  big_holder_week: string | null;
+  computed_at: Generated<Timestamp>;
+  dealer_net_20d: Int8;
+  dealer_net_5d: Int8;
+  dealer_streak: number;
+  foreign_net_20d: Int8;
+  /**
+   * Sum of net shares over the last 5 trading days with data.
+   */
+  foreign_net_5d: Int8;
+  foreign_ratio: Numeric | null;
+  /**
+   * Change of foreign_ratio over the last 20 holding days (fraction points).
+   */
+  foreign_ratio_change_20d: Numeric | null;
+  /**
+   * Consecutive trading days of net buying (> 0) or selling (< 0, negative count) up to trade_date; 0 when the last day was flat.
+   */
+  foreign_streak: number;
+  margin_change_5d: Int8 | null;
+  /**
+   * Margin balance / margin limit on the latest margin day (fraction).
+   */
+  margin_utilization: Numeric | null;
+  short_change_5d: Int8 | null;
+  /**
+   * Short balance / margin balance (券資比, fraction).
+   */
+  short_margin_ratio: Numeric | null;
+  stock_id: Int8;
+  total_net_20d: Int8;
+  total_net_5d: Int8;
+  /**
+   * 5-day institutional net shares / 5-day traded volume (fraction).
+   */
+  total_volume_ratio_5d: Numeric | null;
+  /**
+   * Latest trading day with institutional data for the stock.
+   */
+  trade_date: string;
+  trust_net_20d: Int8;
+  trust_net_5d: Int8;
+  trust_streak: number;
+  whale_change_1w: Numeric | null;
+  /**
+   * TDCC share of holders with more than 1000 lots (level 15), fraction.
+   */
+  whale_ratio: Numeric | null;
 }
 
 export interface CorporateActionPreviews {
@@ -270,6 +367,23 @@ export interface FinancialsQuarantine {
   stock_id: Int8;
 }
 
+export interface ForeignHoldingsDaily {
+  fetched_at: Generated<Timestamp>;
+  /**
+   * Held / issued as published, as a fraction (0.7234 = 72.34%).
+   */
+  foreign_ratio: Numeric;
+  foreign_shares: Int8;
+  issued_shares: Int8;
+  /**
+   * Legal investment ceiling as a fraction (usually 1).
+   */
+  limit_ratio: Numeric | null;
+  source: string;
+  stock_id: Int8;
+  trade_date: string;
+}
+
 export interface FundamentalSignals {
   /**
    * Rule id, e.g. gross_margin_yoy, turn_loss, revenue_record (see engine/fundamentals.py).
@@ -379,6 +493,49 @@ export interface FundamentalsQuarterly {
   total_liabilities: Numeric | null;
 }
 
+export interface InstitutionalTradesDaily {
+  /**
+   * Securities dealers (自營商): own account plus hedging.
+   */
+  dealer_buy: Int8;
+  /**
+   * Dealers hedging warrants and other products (自營商避險); NULL before the 2014-12-01 split.
+   */
+  dealer_hedge_net: Int8 | null;
+  dealer_net: Int8;
+  /**
+   * Dealers trading for their own account (自營商自行買賣); NULL before the 2014-12-01 split.
+   */
+  dealer_self_net: Int8 | null;
+  dealer_sell: Int8;
+  fetched_at: Generated<Timestamp>;
+  /**
+   * Foreign and mainland investors excluding foreign dealers (外陸資，不含外資自營商); before 2017-12-18 TWSE did not split out foreign dealers.
+   */
+  foreign_buy: Int8;
+  foreign_dealer_buy: Int8 | null;
+  /**
+   * Foreign dealers (外資自營商); NULL when the source did not publish them separately. Already counted in dealer_* by the exchanges, so not part of total_net.
+   */
+  foreign_dealer_net: Int8 | null;
+  foreign_dealer_sell: Int8 | null;
+  foreign_net: Int8;
+  foreign_sell: Int8;
+  source: string;
+  stock_id: Int8;
+  /**
+   * The exchange's 三大法人買賣超 = foreign_net + trust_net + dealer_net.
+   */
+  total_net: Int8;
+  trade_date: string;
+  trust_buy: Int8;
+  /**
+   * Domestic investment trusts (投信).
+   */
+  trust_net: Int8;
+  trust_sell: Int8;
+}
+
 export interface JobRequests {
   finished_at: Timestamp | null;
   id: Generated<Int8>;
@@ -418,6 +575,82 @@ export interface JobRuns {
   started_at: Generated<Timestamp>;
   status: Generated<string>;
   trigger: string;
+}
+
+export interface MarginDaily {
+  fetched_at: Generated<Timestamp>;
+  /**
+   * Outstanding margin purchases after the day: previous + buy - sell - redeem.
+   */
+  margin_balance: Int8;
+  margin_buy: Int8;
+  /**
+   * Margin quota for the next trading day (次一營業日限額 / 資限額); utilization = balance / limit.
+   */
+  margin_limit: Int8 | null;
+  /**
+   * Margin loans repaid in cash (現金償還).
+   */
+  margin_redeem: Int8;
+  margin_sell: Int8;
+  /**
+   * Exchange flags for the next day (O 停止融資, X 停止融券, @ 融資分配, % 融券分配, ! 停止買賣), as published.
+   */
+  note: string | null;
+  /**
+   * Day-trade offsets of margin against short (資券互抵).
+   */
+  offset_shares: Generated<Int8>;
+  /**
+   * Outstanding short sales after the day: previous + sell - cover - redeem.
+   */
+  short_balance: Int8;
+  /**
+   * Short positions bought back (融券買進).
+   */
+  short_cover: Int8;
+  short_limit: Int8 | null;
+  /**
+   * Short positions returned with stock (現券償還).
+   */
+  short_redeem: Int8;
+  /**
+   * Short sales opened (融券賣出).
+   */
+  short_sell: Int8;
+  source: string;
+  stock_id: Int8;
+  trade_date: string;
+}
+
+export interface MarketInstitutionalDaily {
+  buy_amount: Numeric;
+  fetched_at: Generated<Timestamp>;
+  /**
+   * foreign excludes foreign dealers; dealer is self + hedge (also stored alone before the 2014-12 split); total is the exchange's sum, which leaves foreign_dealer out.
+   */
+  investor: string;
+  market: string;
+  net_amount: Numeric;
+  sell_amount: Numeric;
+  source: string;
+  trade_date: string;
+}
+
+export interface MarketMarginDaily {
+  fetched_at: Generated<Timestamp>;
+  /**
+   * Outstanding margin purchases in shares.
+   */
+  margin_balance: Int8;
+  /**
+   * Outstanding margin loans in TWD (融資金額, published in thousands).
+   */
+  margin_balance_amount: Numeric | null;
+  market: string;
+  short_balance: Int8;
+  source: string;
+  trade_date: string;
 }
 
 export interface MonthlyRevenue {
@@ -612,6 +845,29 @@ export interface Settings {
   value: Json;
 }
 
+export interface ShareholdingDistribution {
+  fetched_at: Generated<Timestamp>;
+  holders: number;
+  /**
+   * TDCC bracket: 1 = 1-999 shares, 2 = 1-5 lots, ..., 11 = 200-400 lots, 12 = 400-600, 13 = 600-800, 14 = 800-1000, 15 = over 1000 lots, 16 = adjustment (差異數調整), 17 = total.
+   */
+  level: number;
+  /**
+   * Share of TDCC custody as a fraction (published as a percentage).
+   */
+  ratio: Numeric;
+  /**
+   * Shares in the bracket; the level-16 adjustment can be negative.
+   */
+  shares: Int8;
+  source: string;
+  stock_id: Int8;
+  /**
+   * TDCC data date (資料日期), normally the Friday of the week.
+   */
+  week_date: string;
+}
+
 export interface Stocks {
   created_at: Generated<Timestamp>;
   /**
@@ -683,6 +939,9 @@ export interface Watchlist {
 export interface DB {
   alerts: Alerts;
   audit_log: AuditLog;
+  chip_coverage: ChipCoverage;
+  chip_quarantine: ChipQuarantine;
+  chip_summary: ChipSummary;
   corporate_action_previews: CorporateActionPreviews;
   corporate_actions: CorporateActions;
   corporate_actions_quarantine: CorporateActionsQuarantine;
@@ -691,10 +950,15 @@ export interface DB {
   financial_item_map: FinancialItemMap;
   financials: Financials;
   financials_quarantine: FinancialsQuarantine;
+  foreign_holdings_daily: ForeignHoldingsDaily;
   fundamental_signals: FundamentalSignals;
   fundamentals_quarterly: FundamentalsQuarterly;
+  institutional_trades_daily: InstitutionalTradesDaily;
   job_requests: JobRequests;
   job_runs: JobRuns;
+  margin_daily: MarginDaily;
+  market_institutional_daily: MarketInstitutionalDaily;
+  market_margin_daily: MarketMarginDaily;
   monthly_revenue: MonthlyRevenue;
   monthly_revenue_growth: MonthlyRevenueGrowth;
   portfolio_transactions: PortfolioTransactions;
@@ -704,6 +968,7 @@ export interface DB {
   quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
   settings: Settings;
+  shareholding_distribution: ShareholdingDistribution;
   stocks: Stocks;
   trading_calendar: TradingCalendar;
   watchlist: Watchlist;
