@@ -75,7 +75,7 @@ etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 # Optional overrides: make etl-daily date=2026-10-16 / make etl-backfill start=2025-10-17 end=2026-10-16
 ETL := $(PY) python -m stockhub.etl run
 
-etl-daily: ## Update calendar, stock master, delistings and the day's prices (date=YYYY-MM-DD)
+etl-daily: ## Update calendar, stock master, delistings, the day's prices, fundamentals and chips (date=YYYY-MM-DD)
 	-$(PY) python -m stockhub.etl drain-requests
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
@@ -90,10 +90,16 @@ etl-daily: ## Update calendar, stock master, delistings and the day's prices (da
 	-$(ETL) sync_monthly_revenue
 	-$(ETL) sync_financials
 	-$(ETL) compute_fundamentals
+	-$(ETL) sync_chips
+	-$(ETL) sync_shareholding_distribution
+	-$(ETL) compute_chip_summary
+	-$(ETL) check_institutional_alerts
 
 etl-chips: ## Chips: fill missing institutional/margin/foreign-holding tables of the last 10 trading days (date= re-fetches one day), TDCC week
 	$(ETL) sync_chips $(if $(date),--param date=$(date))
 	-$(ETL) sync_shareholding_distribution
+	$(ETL) compute_chip_summary
+	-$(ETL) check_institutional_alerts
 
 etl-chips-history: ## Chip history since 2012-05-02 (~11 h; resumable; start= end= datasets=margin,...)
 	$(ETL) backfill_chips $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end)) $(if $(datasets),--param datasets=$(datasets))
