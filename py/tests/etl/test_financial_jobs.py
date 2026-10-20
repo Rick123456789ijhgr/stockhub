@@ -323,3 +323,56 @@ def test_check_statement(
     expected: list[str],
 ) -> None:
     assert check_statement(statement, basis, values, context) == expected
+
+
+def test_compute_fundamentals_derives_the_quarantined_quarter_from_official_ytd(
+    clean_db: Engine, router: ProviderRouter, stocks: dict[str, int]
+) -> None:
+    _run(clean_db, router, "backfill_fundamentals", {"symbols": "2330"})
+    first = _run(clean_db, router, "compute_fundamentals")
+    tsmc = stocks["2330"]
+
+    def q2() -> Any:
+        with clean_db.connect() as conn:
+            return conn.execute(
+                text(
+                    "SELECT revenue, sources, available_date FROM fundamentals_quarterly "
+                    "WHERE stock_id = :s AND period_end = '2026-06-30'"
+                ),
+                {"s": tsmc},
+            ).one()
+
+    assert q2().revenue is None  # FinMind's 2026Q2 income statement is quarantined
+    assert "1 家" in (first.message or "")
+    assert _run(clean_db, router, "compute_fundamentals").message.startswith("0 家")  # type: ignore[union-attr]
+
+    _run(clean_db, router, "sync_financials")  # official 2026 H1 year-to-date
+    _run(clean_db, router, "compute_fundamentals")
+    row = q2()
+    # H1 (official) minus Q1 (FinMind) = the sum of April..June revenue, 1,270.4 billion.
+    assert round(row.revenue / Decimal(10**9), 1) == Decimal("1270.4")
+    assert row.sources["IS"] == "twse"
+    assert row.available_date == date(2026, 8, 14)  # first seen after the deadline
+    with clean_db.connect() as conn:
+        signals = (
+            conn.execute(
+                text("SELECT code FROM fundamental_signals WHERE stock_id = :s"), {"s": tsmc}
+            )
+            .scalars()
+            .all()
+        )
+    assert "revenue_yoy" in signals  # 2026Q2 vs 2025Q2: +36%
+
+
+def test_sync_financials_leaves_unfetched_companies_to_a_running_backfill(
+    clean_db: Engine, router: ProviderRouter, handler: Handler, stocks: dict[str, int]
+) -> None:
+    with clean_db.begin() as conn:
+        conn.execute(
+            text(
+                'INSERT INTO job_runs (job_name, params, "trigger") '
+                "VALUES ('backfill_fundamentals', '{}', 'manual')"
+            )
+        )
+    _run(clean_db, router, "sync_financials")
+    assert handler.finmind == []

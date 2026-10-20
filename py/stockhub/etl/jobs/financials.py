@@ -29,6 +29,7 @@ from stockhub.common.db import get_table, upsert
 from stockhub.common.filings import first_seen_publish_date, quarter_deadline, revenue_deadline
 from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.etl.jobs.base import Job, JobContext, JobError, JobOutcome, register_job
+from stockhub.etl.jobs.fundamentals import compute_company
 from stockhub.etl.jobs.market_data import MARKETS, stock_ids_on
 from stockhub.etl.providers.base import (
     AllProvidersFailedError,
@@ -484,8 +485,15 @@ QUARANTINE_RETRY_AFTER = timedelta(days=3)
 
 def refresh_targets(conn: Connection, source: str, limit: int) -> list[Company]:
     """Companies whose latest official quarter FinMind has not delivered yet, plus those with
-    a pending FinMind quarantine (FinMind may fix its numbers), held or watched first."""
+    a pending FinMind quarantine (FinMind may fix its numbers), held or watched first.
+    While backfill_fundamentals runs, companies it has not reached yet are left to it."""
     now = utcnow()
+    backfilling = conn.execute(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM job_runs WHERE job_name = 'backfill_fundamentals' "
+            "AND status = 'running')"
+        )
+    ).scalar_one()
     rows = conn.execute(
         text(
             "WITH official AS ("
@@ -504,12 +512,14 @@ def refresh_targets(conn: Connection, source: str, limit: int) -> list[Company]:
             "LEFT JOIN pending q ON q.stock_id = s.id "
             "WHERE s.delisted_date IS NULL AND s.type = 'stock' AND ("
             "  (o.period IS NOT NULL AND (st.last_period IS NULL OR st.last_period < o.period) "
+            "   AND NOT (:backfilling AND st.stock_id IS NULL) "
             "   AND (st.fetched_at IS NULL OR st.fetched_at < :refresh)) "
             "  OR (q.stock_id IS NOT NULL AND (st.fetched_at IS NULL OR st.fetched_at < :retry))) "
             "ORDER BY mine DESC, s.symbol LIMIT :limit"
         ),
         {
             "src": source,
+            "backfilling": backfilling,
             "refresh": now - REFRESH_AFTER,
             "retry": now - QUARANTINE_RETRY_AFTER,
             "limit": limit,
@@ -615,4 +625,6 @@ class RefreshStockFundamentalsJob(Job):
         ctx.rows_written = stats.statements.written + stats.revenue_rows
         if stats.failures:
             raise JobError("；".join(stats.failures))
-        return JobOutcome(message=f"{symbol}：{stats}")
+        with ctx.engine.begin() as conn:
+            quarters, signals = compute_company(conn, companies[0].id)
+        return JobOutcome(message=f"{symbol}：{stats}；重算 {quarters} 季、{signals} 則提示")
