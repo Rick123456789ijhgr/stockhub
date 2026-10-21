@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history etl-markets etl-markets-history \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -75,7 +75,7 @@ etl-heartbeat: ## Run the heartbeat job against DATABASE_URL
 # Optional overrides: make etl-daily date=2026-10-16 / make etl-backfill start=2025-10-17 end=2026-10-16
 ETL := $(PY) python -m stockhub.etl run
 
-etl-daily: ## Update calendar, stock master, delistings, the day's prices, fundamentals and chips (date=YYYY-MM-DD)
+etl-daily: ## Update calendar, stock master, delistings, the day's prices, fundamentals, chips and TW indices (date=YYYY-MM-DD)
 	-$(PY) python -m stockhub.etl drain-requests
 	$(ETL) sync_calendar
 	$(ETL) sync_stocks
@@ -94,6 +94,15 @@ etl-daily: ## Update calendar, stock master, delistings, the day's prices, funda
 	-$(ETL) sync_shareholding_distribution
 	-$(ETL) compute_chip_summary
 	-$(ETL) check_institutional_alerts
+	-$(ETL) sync_markets --param series=TAIEX,TPEX
+
+etl-markets: ## Market series (TW/international indices, FX, rates, commodities), NDC + US macro, macro alerts (07:30 schedule)
+	-$(ETL) sync_markets
+	-$(ETL) sync_macro
+	$(ETL) check_macro_alerts
+
+etl-markets-history: ## Market series history since 2004 (~30 min, TWSE/TPEx month by month; resumable; series=SPX,... start= end=)
+	$(ETL) backfill_markets $(if $(series),--param series=$(series)) $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
 
 etl-chips: ## Chips: fill missing institutional/margin/foreign-holding tables of the last 10 trading days (date= re-fetches one day), TDCC week
 	$(ETL) sync_chips $(if $(date),--param date=$(date))

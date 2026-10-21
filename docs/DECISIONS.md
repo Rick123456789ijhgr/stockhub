@@ -635,3 +635,46 @@
 ### D-103 排程與執行
 - 新增「StockHub chips」平日 21:30（`make etl-chips`，上限 1 小時），`register-tasks.ps1` 已更新。註冊時只單獨加這個工作，沒有重跑整份腳本：腳本會先移除再建立「StockHub database」，而它正在執行兩個回填用的 Postgres。
 - 籌碼歷史用一次性工作「StockHub chips backfill (one-off)」執行（2026-10-21 01:46 開始），中斷後重跑 `make etl-chips-history` 會從檢查點與 `chip_coverage` 接續。完成後刪除這個工作。
+
+## M5 總經、國際市場、熱力圖與題材（2026-10-21）
+
+### D-104 不用 FinMind、資料源實測
+- 財報回填正在用 FinMind 每小時額度，M5 全部改用官方或免金鑰來源：證交所 `TAIEX/MI_5MINS_HIST`（加權指數，按月 OHLC，1999 起）、櫃買 `indexInfo/inx`（櫃買指數，按月 OHLC，2004 起；新的 `inxh` 與 OpenAPI `tpex_index` 只有近期）、Yahoo `v8/finance/chart`、FRED `fredgraph.csv`、國發會 data.gov.tw 資料集 6099（景氣指標及燈號 ZIP）。
+- 證交所 `MI_INDEX?type=IND` 的類股指數只有收盤、2004 年回空表；熱力圖改用自己以市值加權算的產業報酬（D-108），所以不抓類股指數。
+- 央行政策利率、主計總處 CPI／GDP、PMI 找不到穩定的機器可讀官方來源（data.gov.tw 搜尋 API 不開放、央行網站為頁面），列為範圍外；之後有來源再加 provider。Fed 的利率決策改用 FRED `DFEDTARU`（目標上限，2008-12-16 起）。
+
+### D-105 一個序列一張長表，provider 宣告自己服務哪些序列
+- `market_series`（目錄：類別、單位、頻率、時區、是否有 OHLC、品質門檻、回填起點、排序）＋ `market_series_values`（序列、日期、開高低收或單一數值、標籤）。每個 provider 以 `series_symbols` 宣告「我們的代碼 → 它的代號」；`PROVIDERS_MARKET_SERIES=twse,tpex,yahoo,fred` 的順序就是主來源與備援，同一序列只存成功的那一份（`source` 欄記錄是誰）。
+- 一次只服務一個月的來源（`series_monthly`，兩家交易所）：router 只把同月份的請求交給它們，任務把長區間切成月；這樣回填加權指數時仍用官方來源，跨月請求才會落到 Yahoo。
+- Yahoo 不裝 `yfinance` 套件，自己寫 adapter（只用既有的 httpx）。浮點數取到小數 4 位；依 `exchangeTimezoneName` 換成交易所當地日期（規則 2）；仍在交易中的當天那根 K 棒丟掉，不當收盤。
+- 國發會 ZIP 的網址每月換，fetch 先讀 data.gov.tw 的資料集描述再下載；CSV 以表頭找（檔名編碼不一）。修正值直接覆蓋，原始檔留在 RawStore。燈號存公布的「紅燈…藍燈」字樣，不從分數推（門檻歷年調整過）。
+- 涵蓋不另建表：`market_series_status` 檢視表靠主鍵索引取每個序列的首末日期，資料量小（約 12 萬列）。
+
+### D-106 FRED 改用 httpx 的 User-Agent
+- FRED 的防火牆會讓不認得的 User-Agent 逾時（我們的「StockHub/0.1 …」、「Mozilla/5.0 (compatible; StockHub…)」都不行），`python-httpx/x.y` 和 curl 可以。FRED provider 改送 `python-httpx/<版本> (StockHub; personal non-commercial research)`，仍在後面標明身分；其他來源不變。
+
+### D-107 品質檢查與隔離
+- 每筆值檢查：開高低收一致、該為正的序列（原油期貨 2020-04-20 結算為負，利率不檢查）不得 ≤ 0、和前一筆相比超過門檻（指數 15～25%、匯率 10%、黃金 15%，VIX、原油、利率不檢查）就進 `market_series_quarantine`，`/admin` 審核，之後抓到乾淨的值自動 superseded。`sync_markets` 會從最早的待審日期重抓，資料源更正了就自動取代。
+- 期貨與匯率在 Yahoo 的收盤（結算價／定盤）常落在當天高低區間外（實測黃金 393 筆、美元兌台幣 724 筆），這兩類目錄本來就標 `has_ohlc = false`，改成只存收盤值。剩下的兩筆是 Yahoo 真正的錯值（美元兌台幣 1.8015、3.67），留在隔離區。
+- 一個序列失敗不影響其他序列：任務照存其他序列，最後才以失敗結束，觸發通知；下次執行從最後一筆往前 10 天補。
+
+### D-108 熱力圖
+- 只用收盤資料（全市場盤中報價不在範圍內）。方塊大小＝收盤價 × `stocks.issued_shares`；顏色＝期間（1／5／20 個交易日）的還原漲跌；只含普通股，不含 ETF（沒有發行股數）。
+- 群組漲跌＝成分股以期初市值加權的買進持有報酬（Σ 期末市值 ÷ Σ 期初市值 − 1），不是簡單平均。
+- 分歧色階：`--price-up/--price-down` 兩臂各三階，以 `color-mix` 混入中性的 `--muted`（中點為灰，不寫死顏色，跟著漲跌配色與深色模式切換）。門檻隨 √天數放大（1 日：0.25%／1%／2.5%），20 日圖才不會整片飽和。另附表格版（可排序的群組清單）與圖例。
+- Squarified treemap 自己寫成純函式並附單元測試，不加 d3 依賴；點群組標題放大，點個股進個股頁，滑鼠停留顯示提示框。
+
+### D-109 題材與事件行事曆
+- 題材預設為空，由使用者在 `/admin`「題材與事件」建立；成分股有起訖日，「移出」記錄最後一天（保留歷史給 M7 回測），「刪除」只用在加錯。同一檔同一題材的期間不得重疊（網站檢查）。一檔股票可在多個題材。
+- 事件行事曆 `macro_events`：遷移預先放入聯準會網站公布的 2026 年 FOMC 會議（決策日）；國發會有新月份時 `sync_macro` 自動記一筆；央行理監事會等其他事件手動新增。全部寫稽核紀錄（`theme.*`、`macro_event.*`）。
+
+### D-110 總經警示
+- 景氣燈號變色（`business_signal`）與 Fed 目標利率變動（`policy_rate`）寫進 `alerts` 並經 `Notifier` 送出。這兩種不屬於任何股票：`alerts.stock_id` 改為可空（CHECK 限定只有這兩種可空），唯一鍵改成 `NULLS NOT DISTINCT`，冷卻照舊是一種一天一則。
+- 只對 3 天內寫入的觀察值發警示，第一次回填歷史時不會把多年前的變色全部發出。首頁警示清單改用 left join，總經警示連到 `/market?tab=macro`。
+
+### D-111 排程
+- 新增「StockHub markets」平日 07:30（`make etl-markets`：`sync_markets`、`sync_macro`、`check_macro_alerts`，上限 1 小時），美股收盤後、台股開盤前；週一早上補上週五的美股。加權與櫃買指數另在 18:00 的 `etl-daily` 抓（`sync_markets series=TAIEX,TPEX`，失敗不影響其他步驟）。和 D-103 一樣只單獨註冊這個工作。
+- 市場歷史：Yahoo／FRED 的 13 個序列已回填（2004 起，約 7.3 萬列，1 分鐘內）；加權與櫃買指數按月共約 550 個請求，等籌碼回填結束再跑（`make etl-markets-history series=TAIEX,TPEX`），避免和它同時打證交所、櫃買超過限速。
+
+### D-112 籌碼回填遇到櫃買的異常回應
+- 籌碼歷史回填 #76 在 2017-07-10 失敗：櫃買外資持股回了證交所格式的「很抱歉，沒有符合條件的資料!」（櫃買正常的「無資料」會帶日期與空表），事後重查同一天有資料。改成在 fetch 階段把這種回應當暫時性錯誤重試；回填從檢查點續跑（任務 #84）。

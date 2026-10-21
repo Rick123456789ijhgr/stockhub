@@ -96,3 +96,44 @@ export async function listMacroEvents(db: Kysely<DB>, from: string, limit = 100)
     source: r.source as MacroEvent["source"],
   }));
 }
+
+export type MarketsStatus = {
+  series: {
+    code: string;
+    name: string;
+    frequency: string;
+    firstDate: string | null;
+    lastDate: string | null;
+    observations: number;
+  }[];
+  quarantinePending: number;
+};
+
+/** Per series coverage (market_series_status) and pending quarantine, for /status. */
+export async function getMarketsStatus(db: Kysely<DB>): Promise<MarketsStatus> {
+  const [rows, pending] = await Promise.all([
+    db
+      .selectFrom("market_series_status as v")
+      .innerJoin("market_series as s", "s.code", "v.code")
+      .select(["v.code", "v.name", "v.frequency", "v.first_date", "v.last_date", "v.observations"])
+      .where("v.enabled", "=", true)
+      .orderBy("s.sort_order")
+      .execute(),
+    db
+      .selectFrom("market_series_quarantine")
+      .select((eb) => eb.fn.countAll<string>().as("n"))
+      .where("resolved_at", "is", null)
+      .executeTakeFirst(),
+  ]);
+  return {
+    series: rows.map((r) => ({
+      code: String(r.code),
+      name: String(r.name),
+      frequency: String(r.frequency),
+      firstDate: r.first_date === null ? null : String(r.first_date),
+      lastDate: r.last_date === null ? null : String(r.last_date),
+      observations: Number(r.observations ?? 0),
+    })),
+    quarantinePending: Number(pending?.n ?? 0),
+  };
+}

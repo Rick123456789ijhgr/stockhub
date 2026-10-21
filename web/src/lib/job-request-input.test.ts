@@ -39,8 +39,12 @@ describe("parseJobRequest", () => {
       job: "sync_chips",
       params: {},
     });
+    for (const job of ["sync_markets", "sync_macro"]) {
+      expect(parseJobRequest({ job, params: { series: "SPX" } }, TODAY)).toEqual({ job, params: {} });
+    }
     expect(parseJobRequest({ job: "backfill_fundamentals" }, TODAY)).toBeNull();
     expect(parseJobRequest({ job: "backfill_chips" }, TODAY)).toBeNull();
+    expect(parseJobRequest({ job: "backfill_markets" }, TODAY)).toBeNull();
     expect(parseJobRequest(null, TODAY)).toBeNull();
     expect(parseJobRequest("daily_prices", TODAY)).toBeNull();
   });

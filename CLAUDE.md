@@ -3,7 +3,7 @@
 個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選器與回測。單人使用，全端專案。
 
 - 完整規劃摘要：`docs/PLAN.md`
-- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）
+- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）、`docs/M5.md`（總經、國際市場、熱力圖、題材）
 - 與規劃有偏離時，記錄在 `docs/DECISIONS.md`（日期、原因、取捨），不要默默改。
 
 ## 技術棧
@@ -59,9 +59,11 @@ make etl-financials           # 最新一季財報與月營收（官方 OpenAPI�
 make etl-compute-fundamentals # 重算 fundamentals_quarterly 與 fundamental_signals（all=true 全部）
 make etl-chips                # 籌碼：補近 10 個交易日缺的表、集保本週、摘要、法人警示（date= 重抓某天；21:30 排程）
 make etl-chips-history        # 籌碼歷史（2012-05-02 起，約 11 小時，可續跑）
+make etl-markets              # 市場與總經：指數、匯率、商品、美債、國發會、美國總經、總經警示（07:30 排程）
+make etl-markets-history      # 市場序列歷史（2004 起；series=SPX,TAIEX start= end=，可續跑）
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
 stockhub.bat                  # 雙擊＝啟動資料庫與網站（背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status（邏輯在 scripts/stockhub.ps1）
-scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日、21:30 籌碼、登入時啟動資料庫）；記錄在 .local/logs
+scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -109,3 +111,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 - 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁）；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
 - 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。
+- 市場與總經：每條線是 `market_series` 的一個序列，值在 `market_series_values`（國際市場存交易所當地日期，月資料存月初）；provider 以 `series_symbols` 宣告服務哪些序列，`PROVIDERS_MARKET_SERIES` 的順序就是主來源與備援，一次只服務一個月的來源設 `series_monthly`。新增序列＝遷移加一列目錄＋在 provider 的 `series_symbols` 加代號。寫入一律經 `jobs/markets.py` 的 `store_observations`（品質檢查、隔離、取代隔離）；沒有 `has_ohlc` 的序列只存收盤值。涵蓋讀 `market_series_status` 檢視表。Yahoo 是非官方來源，只經 `YahooProvider`。
+- 熱力圖：只用收盤資料，市值＝收盤價 × `issued_shares`，漲跌用還原價（`adjustedChange`），群組報酬以期初市值加權；計算在 `web/src/lib/heatmap-data.ts`（純函式），版面在 `lib/treemap.ts`；顏色只用 `heatColor`（`--price-up/down` 混入 `--muted`），不要另寫色碼。
+- 題材：`themes` + `stock_themes`（起訖日，移出時設 `valid_to` 保留歷史，期間不得重疊），讀「某天的成分股」一律用 `valid_from <= d AND (valid_to IS NULL OR valid_to >= d)`；網站的寫入都經 `lib/themes.ts`（寫稽核紀錄）。
+- 總經警示（`business_signal`、`policy_rate`）沒有股票：`alerts.stock_id` 為 NULL，讀警示要用 left join。
