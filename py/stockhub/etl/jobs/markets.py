@@ -44,6 +44,7 @@ MONTHLY_LOOKBACK = timedelta(days=400)
 ALERT_FRESH = timedelta(days=3)
 """Macro alerts only fire for observations written this recently (not for old history)."""
 VALUE_COLUMNS = ("open", "high", "low", "value", "label", "source")
+NO_OHLC = {"open": None, "high": None, "low": None}
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class SeriesMeta:
     code: str
     name: str
     frequency: str
+    has_ohlc: bool
     positive: bool
     max_daily_move: Decimal | None
     history_start: date
@@ -60,7 +62,7 @@ def load_series(conn: Connection, codes: Sequence[str] | None = None) -> list[Se
     """Enabled catalog rows in display order (all enabled ones when codes is None)."""
     rows = conn.execute(
         text(
-            "SELECT code, name, frequency, positive, max_daily_move, history_start "
+            "SELECT code, name, frequency, has_ohlc, positive, max_daily_move, history_start "
             "FROM market_series WHERE enabled ORDER BY sort_order"
         )
     ).all()
@@ -156,8 +158,15 @@ def store_observations(
     raw_object_id: int | None,
 ) -> StoreStats:
     """Check and upsert one series' observations; failures go to market_series_quarantine
-    and pending quarantine rows of dates that now have a clean value are superseded."""
-    by_date = {o.obs_date: o for o in items if o.code == meta.code}
+    and pending quarantine rows of dates that now have a clean value are superseded.
+
+    Series without has_ohlc keep only the value: for futures and FX, Yahoo's close is the
+    settlement or a fixing outside the session its high and low cover (D-107)."""
+    by_date = {
+        o.obs_date: o if meta.has_ohlc else o.model_copy(update=NO_OHLC)
+        for o in items
+        if o.code == meta.code
+    }
     stats = StoreStats(received=len(by_date))
     if not by_date:
         return stats

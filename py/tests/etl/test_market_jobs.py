@@ -84,6 +84,18 @@ def test_sync_markets_catches_up_and_is_idempotent(run: Any, clean_db: Engine) -
     assert again.rows_written == 0
 
 
+def test_series_without_ohlc_keep_only_the_value(run: Any, clean_db: Engine) -> None:
+    with clean_db.begin() as conn:
+        conn.execute(text("UPDATE market_series SET has_ohlc = false WHERE code = 'SPX'"))
+    try:
+        run("sync_markets", series="SPX")
+        rows = _rows(clean_db, "SELECT count(*) FROM market_series_values WHERE open IS NOT NULL")
+        assert rows == [(0,)]
+    finally:
+        with clean_db.begin() as conn:
+            conn.execute(text("UPDATE market_series SET has_ohlc = true WHERE code = 'SPX'"))
+
+
 def test_a_failed_series_fails_the_job_but_keeps_the_others(run: Any, clean_db: Engine) -> None:
     result = run("sync_markets", series="SPX,SOX")
     assert result.status == "failed"
