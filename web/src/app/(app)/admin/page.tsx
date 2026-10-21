@@ -5,7 +5,10 @@ import { AuditLogList } from "@/components/admin/audit-log";
 import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
 import { ChipsQuarantineList } from "@/components/admin/chips-quarantine-review";
 import { FinancialsQuarantineList } from "@/components/admin/financials-quarantine-review";
+import { MacroEventEditor } from "@/components/admin/macro-event-editor";
 import { PriceGapList } from "@/components/admin/price-gap-review";
+import { SeriesQuarantineList } from "@/components/admin/series-quarantine-review";
+import { ThemeEditor } from "@/components/admin/theme-editor";
 import { AppearanceSettings } from "@/components/appearance-controls";
 import { PageHeader } from "@/components/coming-soon";
 import { Disclosure, InfoNote } from "@/components/disclosure";
@@ -21,17 +24,20 @@ import { formatInteger } from "@/lib/format";
 import { countQuarantinedChips, listQuarantinedChips } from "@/lib/chips-quarantine";
 import { countQuarantinedStatements, listQuarantinedStatements } from "@/lib/fundamentals-status";
 import { countPendingGaps, listPendingGaps } from "@/lib/price-gaps";
+import { taipeiToday } from "@/lib/market-hours";
+import { listMacroEvents, shiftDate } from "@/lib/markets";
+import { countQuarantinedObservations, listQuarantinedObservations } from "@/lib/series-quarantine";
 import { getFeeSettings } from "@/lib/settings";
+import { listThemes } from "@/lib/themes";
 
 export const metadata: Metadata = { title: "設定" };
 
 const PLANNED = [
-  { name: "題材編輯", milestone: "M5" },
   { name: "警示規則", milestone: "M6" },
   { name: "排程管理", milestone: "之後" },
 ];
 
-type Tab = "general" | "review" | "audit";
+type Tab = "general" | "themes" | "review" | "audit";
 
 export default function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
@@ -47,15 +53,17 @@ export default function AdminPage({ searchParams }: PageProps<"/admin">) {
 async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin">["searchParams"] }) {
   await requireUser();
   const db = getDb();
-  const [query, gapCount, quarantineCount, chipCount] = await Promise.all([
+  const [query, gapCount, quarantineCount, chipCount, seriesCount] = await Promise.all([
     searchParams,
     countPendingGaps(db),
     countQuarantinedStatements(db),
     countQuarantinedChips(db),
+    countQuarantinedObservations(db),
   ]);
   const tabs: PageTab<Tab>[] = [
     { key: "general", label: "一般" },
-    { key: "review", label: "待確認", badge: gapCount + quarantineCount + chipCount },
+    { key: "themes", label: "題材與事件" },
+    { key: "review", label: "待確認", badge: gapCount + quarantineCount + chipCount + seriesCount },
     { key: "audit", label: "稽核紀錄" },
   ];
   const tab = activeTab(tabs, query.tab);
@@ -64,6 +72,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
     <div className="space-y-4">
       <PageTabs tabs={tabs} active={tab} basePath="/admin" />
       {tab === "general" ? <General /> : null}
+      {tab === "themes" ? <ThemesAndEvents /> : null}
       {tab === "review" ? (
         <Card size="sm">
           <CardContent className="divide-y">
@@ -116,6 +125,22 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                 </Suspense>
               </div>
             </Disclosure>
+            <Disclosure
+              className="pt-2"
+              defaultOpen={gapCount === 0 && quarantineCount === 0 && chipCount === 0 && seriesCount > 0}
+              summary="市場與總經"
+              meta={`${formatInteger(seriesCount)} 筆`}
+            >
+              <div className="space-y-1 pl-5">
+                <InfoNote>
+                  指數、匯率、商品或利率的數值不合理（開收盤不在高低區間、非正數、或和前一筆相比變動過大），沒有寫入正式資料。Yahoo
+                  偶爾會給出錯的單日數值（例如美元兌台幣 1.8），通常選「捨棄」；確定是真實的大幅變動才選「仍然採用」。
+                </InfoNote>
+                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+                  <SeriesQuarantine />
+                </Suspense>
+              </div>
+            </Disclosure>
           </CardContent>
         </Card>
       ) : null}
@@ -133,6 +158,53 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
       ) : null}
     </div>
   );
+}
+
+function ThemesAndEvents() {
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">題材</CardTitle>
+          <CardDescription>
+            用在熱力圖的題材分組與個股頁；成分股有起訖日，移出時保留歷史，回測（M7）才不會偷看未來。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <Themes />
+          </Suspense>
+        </CardContent>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">總經事件行事曆</CardTitle>
+          <CardDescription>顯示在「市場 → 總經」；景氣燈號發布由每日任務自動記錄。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <Events />
+          </Suspense>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function Themes() {
+  await requireUser();
+  return <ThemeEditor themes={await listThemes(getDb())} today={taipeiToday()} />;
+}
+
+async function Events() {
+  await requireUser();
+  const today = taipeiToday();
+  return <MacroEventEditor events={await listMacroEvents(getDb(), shiftDate(today, -180))} today={today} />;
+}
+
+async function SeriesQuarantine() {
+  await requireUser();
+  return <SeriesQuarantineList rows={await listQuarantinedObservations(getDb(), SHOWN)} />;
 }
 
 function General() {

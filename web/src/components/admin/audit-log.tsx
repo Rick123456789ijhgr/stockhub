@@ -20,6 +20,16 @@ const ACTION_LABEL: Record<string, string> = {
   "financials.quarantine_reject": "捨棄隔離的財報",
   "chips.quarantine_accept": "採用隔離的籌碼資料",
   "chips.quarantine_reject": "捨棄隔離的籌碼資料",
+  "markets.quarantine_accept": "採用隔離的市場資料",
+  "markets.quarantine_reject": "捨棄隔離的市場資料",
+  "theme.create": "新增題材",
+  "theme.update": "修改題材",
+  "theme.delete": "刪除題材",
+  "theme.add_stock": "題材加入成分股",
+  "theme.end_stock": "題材移出成分股",
+  "theme.remove_stock": "刪除題材成分股紀錄",
+  "macro_event.create": "新增總經事件",
+  "macro_event.delete": "刪除總經事件",
 };
 
 const SHOWN = 20;
