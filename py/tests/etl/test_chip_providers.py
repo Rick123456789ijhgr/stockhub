@@ -15,6 +15,7 @@ from stockhub.etl.providers.base import (
     MarginBalance,
     PermanentProviderError,
     RawResponse,
+    TransientProviderError,
 )
 from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.tdcc import TdccProvider
@@ -311,3 +312,10 @@ def test_tdcc_rejects_unknown_header() -> None:
     _, _, tdcc = _providers()
     with pytest.raises(ValueError, match="header"):
         tdcc.parse_shareholding_distribution(RawResponse("d", "a,b,c\n1,2,3\n", {}))
+
+
+def test_tpex_bare_no_data_notice_is_retried() -> None:
+    notice = '{"stat":"很抱歉，沒有符合條件的資料!"}'.encode()
+    client = make_client(httpx.MockTransport(lambda _: httpx.Response(200, content=notice)))
+    with pytest.raises(TransientProviderError):
+        TpexProvider(client).fetch_foreign_holdings(date(2017, 7, 10), "tpex")
