@@ -7,7 +7,8 @@ import type { DB } from "@/lib/db";
 export type AlertItem = {
   id: string;
   kind: string;
-  symbol: string;
+  /** NULL for macro alerts (business_signal, policy_rate). */
+  symbol: string | null;
   tradeDate: string;
   severity: string;
   title: string;
@@ -20,7 +21,7 @@ export type AlertItem = {
 export async function listRecentAlerts(db: Kysely<DB>, limit = 10): Promise<AlertItem[]> {
   const rows = await db
     .selectFrom("alerts as a")
-    .innerJoin("stocks as s", "s.id", "a.stock_id")
+    .leftJoin("stocks as s", "s.id", "a.stock_id")
     .select([
       sql<string>`a.id::text`.as("id"),
       "a.kind",

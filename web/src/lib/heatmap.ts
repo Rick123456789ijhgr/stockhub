@@ -103,29 +103,20 @@ export async function loadHeatmap(
   return { date, baseDate, groups: themeGroups(stocks, memberships) };
 }
 
-/** Themes and industries a stock belongs to today (for the stock page). */
-export async function stockGroups(
+/** Themes a stock belongs to today (for the stock page). */
+export async function stockThemes(
   db: Kysely<DB>,
   stockId: number,
   today: string,
-): Promise<{
-  industry: string | null;
-  themes: { id: number; name: string }[];
-}> {
-  const [stock, themes] = await Promise.all([
-    db.selectFrom("stocks").select("industry").where("id", "=", String(stockId)).executeTakeFirst(),
-    db
-      .selectFrom("stock_themes as st")
-      .innerJoin("themes as t", "t.id", "st.theme_id")
-      .select(["t.id", "t.name"])
-      .where("st.stock_id", "=", String(stockId))
-      .where("st.valid_from", "<=", today)
-      .where((eb) => eb.or([eb("st.valid_to", "is", null), eb("st.valid_to", ">=", today)]))
-      .orderBy("t.name")
-      .execute(),
-  ]);
-  return {
-    industry: stock?.industry ?? null,
-    themes: themes.map((t) => ({ id: Number(t.id), name: t.name })),
-  };
+): Promise<{ id: number; name: string }[]> {
+  const rows = await db
+    .selectFrom("stock_themes as st")
+    .innerJoin("themes as t", "t.id", "st.theme_id")
+    .select(["t.id", "t.name"])
+    .where("st.stock_id", "=", String(stockId))
+    .where("st.valid_from", "<=", today)
+    .where((eb) => eb.or([eb("st.valid_to", "is", null), eb("st.valid_to", ">=", today)]))
+    .orderBy("t.name")
+    .execute();
+  return rows.map((t) => ({ id: Number(t.id), name: t.name }));
 }
