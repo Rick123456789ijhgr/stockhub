@@ -28,7 +28,7 @@ export function ChipsStatusCard({ status, now }: { status: ChipsStatus; now: Dat
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="text-base">籌碼</CardTitle>
+        <CardTitle className="text-sm">籌碼</CardTitle>
         <CardDescription>
           證交所、櫃買中心每日公告（18:00 與 21:30 各抓一次，融資融券晚上才公布），集保每週一次。
         </CardDescription>

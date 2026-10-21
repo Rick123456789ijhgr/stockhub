@@ -126,10 +126,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       ) : null}
 
-      <div className="mb-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <section aria-label="排程" className="min-w-0">
-          <ScheduleHealthCard items={schedules} />
-        </section>
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <section aria-label="財報與月營收" className="min-w-0">
           <FundamentalsStatusCard status={fundamentals} now={now} />
         </section>
@@ -138,38 +135,43 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
       </div>
 
-      <section aria-labelledby="repair" className="mb-4">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle id="repair" className="text-sm">
-              手動更新與補抓
-            </CardTitle>
-            <CardDescription>
-              {runnerEnabled()
-                ? "按下後立即在本機執行，進度顯示在下方。"
-                : "這個環境不能直接執行任務：會先排入佇列，在下一次排程（平日 18:00）開頭執行。"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <JobButton
-                label="日線更新到今天"
-                variant="default"
-                requests={[{ job: "catch_up_prices" }]}
-              />
-              {problems.length > 0 ? (
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <section aria-label="排程" className="min-w-0">
+          <ScheduleHealthCard items={schedules} />
+        </section>
+        <section aria-labelledby="repair" className="min-w-0">
+          <Card size="sm" className="h-full">
+            <CardHeader>
+              <CardTitle id="repair" className="text-sm">
+                手動更新與補抓
+              </CardTitle>
+              <CardDescription>
+                {runnerEnabled()
+                  ? "按下後立即在本機執行，進度顯示在下方。"
+                  : "這個環境不能直接執行任務：會先排入佇列，在下一次排程（平日 18:00）開頭執行。"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
                 <JobButton
-                  label={`重新抓取全部缺漏日（${Math.min(problems.length, 30)} 天）`}
-                  requests={problems
-                    .slice(-30)
-                    .map((d) => ({ job: "daily_prices" as const, params: { date: d.date } }))}
+                  label="日線更新到今天"
+                  variant="default"
+                  requests={[{ job: "catch_up_prices" }]}
                 />
-              ) : null}
-            </div>
-            <JobRequestList rows={requests} />
-          </CardContent>
-        </Card>
-      </section>
+                {problems.length > 0 ? (
+                  <JobButton
+                    label={`重新抓取全部缺漏日（${Math.min(problems.length, 30)} 天）`}
+                    requests={problems
+                      .slice(-30)
+                      .map((d) => ({ job: "daily_prices" as const, params: { date: d.date } }))}
+                  />
+                ) : null}
+              </div>
+              <JobRequestList rows={requests} />
+            </CardContent>
+          </Card>
+        </section>
+      </div>
 
       <section aria-labelledby="coverage" className="mb-4">
         <Card size="sm">

@@ -41,7 +41,7 @@ export function ScheduleHealthCard({ items }: { items: ScheduleHealth[] }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="text-base">排程</CardTitle>
+        <CardTitle className="text-sm">排程</CardTitle>
         <CardDescription>
           {problems > 0
             ? `${problems} 個排程需要處理。`
