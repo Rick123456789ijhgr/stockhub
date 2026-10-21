@@ -83,7 +83,11 @@ export function industryGroups(stocks: readonly HeatmapStock[]): HeatmapGroup[] 
 /** Stocks grouped by theme (a stock may sit in several), largest group first. */
 export function themeGroups(
   stocks: readonly HeatmapStock[],
-  memberships: readonly { themeId: number; themeName: string; stockId: number }[],
+  memberships: readonly {
+    themeId: number;
+    themeName: string;
+    stockId: number;
+  }[],
 ): HeatmapGroup[] {
   const byId = new Map(stocks.map((s) => [s.id, s]));
   const by = new Map<number, { name: string; members: HeatmapStock[] }>();

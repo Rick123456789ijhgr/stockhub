@@ -1,10 +1,5 @@
 /** Copy for placeholder pages, kept in one place so later milestones can delete entries. */
 export const PLACEHOLDERS = {
-  market: {
-    title: "市場",
-    milestone: "M1 / M5",
-    features: ["大盤與國際市場", "產業與題材熱力圖", "總經儀表板與事件行事曆"],
-  },
   screener: {
     title: "篩選器",
     milestone: "M7",

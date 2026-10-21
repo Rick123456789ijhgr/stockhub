@@ -16,7 +16,14 @@ const stock = (
   marketCap: number,
   change: number | null,
   industry: string | null = "半導體業",
-): HeatmapStock => ({ id, symbol: String(id), name: `S${id}`, industry, marketCap, change });
+): HeatmapStock => ({
+  id,
+  symbol: String(id),
+  name: `S${id}`,
+  industry,
+  marketCap,
+  change,
+});
 
 describe("adjustedChange", () => {
   it("compares closes on one share basis", () => {

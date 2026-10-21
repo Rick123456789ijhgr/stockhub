@@ -61,21 +61,19 @@ async function loadStocks(db: Kysely<DB>, date: string, baseDate: string | null)
     WHERE s.type = 'stock' AND s.delisted_date IS NULL AND p.close IS NOT NULL
       AND s.issued_shares > 0
   `.execute(db);
-  return rows.rows.map(
-    (r): HeatmapStock => ({
-      id: Number(r.id),
-      symbol: r.symbol,
-      name: r.name,
-      industry: r.industry,
-      marketCap: Number(r.close) * Number(r.issued_shares),
-      change: adjustedChange(
-        Number(r.close),
-        Number(r.adj_factor),
-        r.base_close === null ? null : Number(r.base_close),
-        r.base_factor === null ? null : Number(r.base_factor),
-      ),
-    }),
-  );
+  return rows.rows.map((r): HeatmapStock => ({
+    id: Number(r.id),
+    symbol: r.symbol,
+    name: r.name,
+    industry: r.industry,
+    marketCap: Number(r.close) * Number(r.issued_shares),
+    change: adjustedChange(
+      Number(r.close),
+      Number(r.adj_factor),
+      r.base_close === null ? null : Number(r.base_close),
+      r.base_factor === null ? null : Number(r.base_factor),
+    ),
+  }));
 }
 
 export async function loadHeatmap(
@@ -110,7 +108,10 @@ export async function stockGroups(
   db: Kysely<DB>,
   stockId: number,
   today: string,
-): Promise<{ industry: string | null; themes: { id: number; name: string }[] }> {
+): Promise<{
+  industry: string | null;
+  themes: { id: number; name: string }[];
+}> {
   const [stock, themes] = await Promise.all([
     db.selectFrom("stocks").select("industry").where("id", "=", String(stockId)).executeTakeFirst(),
     db

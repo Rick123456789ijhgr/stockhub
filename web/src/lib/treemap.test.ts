@@ -22,7 +22,12 @@ describe("squarify", () => {
   });
 
   it("keeps tiles close to square (the paper's example stays under 3:1)", () => {
-    const tiles = squarify([6, 6, 4, 3, 2, 2, 1], (v) => v, { x: 0, y: 0, w: 6, h: 4 });
+    const tiles = squarify([6, 6, 4, 3, 2, 2, 1], (v) => v, {
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 4,
+    });
     for (const t of tiles) expect(Math.max(t.w / t.h, t.h / t.w)).toBeLessThan(3);
   });
 
