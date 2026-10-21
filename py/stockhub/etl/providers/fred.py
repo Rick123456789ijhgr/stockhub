@@ -4,6 +4,10 @@ graph/fredgraph.csv?id=&cosd=&coed= returns `observation_date,<ID>` rows; missin
 blank or '.'. Primary for US rates and monthly macro data, fallback for the indices, oil and
 USD/TWD that Yahoo serves (D-105). FRED dates are the source's own: US trading days for
 markets, the first day of the month for monthly data. One request per second.
+
+FRED's firewall stalls requests whose User-Agent it does not recognise (our usual
+"StockHub/0.1 ..." times out), so this adapter leads with the HTTP library's own token and
+still names us after it (D-106).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from stockhub.etl.providers.http import get_bytes, make_client
 from stockhub.etl.providers.registry import register_provider
 
 CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+USER_AGENT = f"python-httpx/{httpx.__version__} (StockHub; personal non-commercial research)"
 
 
 @register_provider
@@ -47,7 +52,10 @@ class FredProvider(MarketSeriesProvider):
     }
 
     def __init__(self, client: httpx.Client | None = None) -> None:
-        self.client = client or make_client()
+        if client is None:
+            client = make_client()
+            client.headers["User-Agent"] = USER_AGENT
+        self.client = client
 
     def fetch_market_series(self, code: str, start: date, end: date) -> RawResponse:
         symbol = self.series_symbols.get(code)

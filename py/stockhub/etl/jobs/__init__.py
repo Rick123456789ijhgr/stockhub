@@ -10,6 +10,7 @@ from stockhub.etl.jobs import (
     fundamentals,
     heartbeat,
     market_data,
+    markets,
     previews,
     quotes,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "fundamentals",
     "heartbeat",
     "market_data",
+    "markets",
     "previews",
     "quotes",
     "register_job",
