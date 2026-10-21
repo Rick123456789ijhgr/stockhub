@@ -14,6 +14,11 @@ const CLASS: Record<Direction, string> = {
   flat: "text-flat",
 };
 
+/** Up/down/flat text color for a signed difference (semantic tokens, rule 10). */
+export function directionClass(value: number): string {
+  return CLASS[direction(value)];
+}
+
 const SYMBOL: Record<Direction, string> = { up: "▲", down: "▼", flat: "" };
 
 /**

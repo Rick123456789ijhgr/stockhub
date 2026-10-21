@@ -9,6 +9,8 @@ Endpoints (robots.txt allows them; we stay at one request per 3 s):
   2011), par-value changes and ETF splits, each with the exchange's reference price
 - OpenAPI opendata/t187ap0x  latest financial statements, monthly revenue and company
   profiles of listed companies (see mops_openapi)
+- T86 / MI_MARGN / MI_QFIIS / BFI82U  chips: institutional trades, margin, foreign holdings,
+  market-wide institutional value (see twse_chips)
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ from stockhub.etl.providers.http import (
 )
 from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
+from stockhub.etl.providers.twse_chips import TwseChipsMixin
 
 MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 HOLIDAY_URL = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
@@ -91,6 +94,7 @@ class TwseProvider(
     DividendDetailProvider,
     ExRightsPreviewProvider,
     MopsOpenApiMixin,
+    TwseChipsMixin,
 ):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0

@@ -18,6 +18,8 @@ const ACTION_LABEL: Record<string, string> = {
   "jobs.request": "排入資料任務",
   "financials.quarantine_accept": "採用隔離的財報",
   "financials.quarantine_reject": "捨棄隔離的財報",
+  "chips.quarantine_accept": "採用隔離的籌碼資料",
+  "chips.quarantine_reject": "捨棄隔離的籌碼資料",
 };
 
 const SHOWN = 20;

@@ -36,7 +36,7 @@ export function FundamentalsStatusCard({ status, now }: { status: FundamentalsSt
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="text-base">財報與月營收</CardTitle>
+        <CardTitle className="text-sm">財報與月營收</CardTitle>
         <CardDescription>
           歷史來自 FinMind（每小時最多 500 次請求）；每天傍晚用證交所與櫃買的 OpenAPI 更新最新一季與月營收。
         </CardDescription>

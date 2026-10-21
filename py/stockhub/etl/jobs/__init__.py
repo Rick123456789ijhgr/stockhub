@@ -2,6 +2,7 @@
 
 from stockhub.etl.jobs import (
     alerts,
+    chips,
     corporate_actions,
     etf_delistings,
     financials,
@@ -30,6 +31,7 @@ __all__ = [
     "JobOutcome",
     "JobRunResult",
     "alerts",
+    "chips",
     "corporate_actions",
     "etf_delistings",
     "financials",

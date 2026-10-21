@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { AuditLogList } from "@/components/admin/audit-log";
 import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
+import { ChipsQuarantineList } from "@/components/admin/chips-quarantine-review";
 import { FinancialsQuarantineList } from "@/components/admin/financials-quarantine-review";
 import { PriceGapList } from "@/components/admin/price-gap-review";
 import { AppearanceSettings } from "@/components/appearance-controls";
@@ -17,6 +18,7 @@ import { listAuditLog } from "@/lib/audit";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatInteger } from "@/lib/format";
+import { countQuarantinedChips, listQuarantinedChips } from "@/lib/chips-quarantine";
 import { countQuarantinedStatements, listQuarantinedStatements } from "@/lib/fundamentals-status";
 import { countPendingGaps, listPendingGaps } from "@/lib/price-gaps";
 import { getFeeSettings } from "@/lib/settings";
@@ -45,14 +47,15 @@ export default function AdminPage({ searchParams }: PageProps<"/admin">) {
 async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin">["searchParams"] }) {
   await requireUser();
   const db = getDb();
-  const [query, gapCount, quarantineCount] = await Promise.all([
+  const [query, gapCount, quarantineCount, chipCount] = await Promise.all([
     searchParams,
     countPendingGaps(db),
     countQuarantinedStatements(db),
+    countQuarantinedChips(db),
   ]);
   const tabs: PageTab<Tab>[] = [
     { key: "general", label: "一般" },
-    { key: "review", label: "待確認", badge: gapCount + quarantineCount },
+    { key: "review", label: "待確認", badge: gapCount + quarantineCount + chipCount },
     { key: "audit", label: "稽核紀錄" },
   ];
   const tab = activeTab(tabs, query.tab);
@@ -94,6 +97,22 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                 </InfoNote>
                 <Suspense fallback={<Skeleton className="h-32 w-full" />}>
                   <FinancialsQuarantine total={quarantineCount} />
+                </Suspense>
+              </div>
+            </Disclosure>
+            <Disclosure
+              className="pt-2"
+              defaultOpen={gapCount === 0 && quarantineCount === 0 && chipCount > 0}
+              summary="籌碼"
+              meta={`${formatInteger(chipCount)} 筆`}
+            >
+              <div className="space-y-1 pl-5">
+                <InfoNote>
+                  三大法人加總、融資融券餘額連續性、外資持股比或集保級距加總對不上的資料，沒有寫入正式資料。通常選「捨棄」：交易所更正後，用「籌碼更新到今天」或{" "}
+                  <code>make etl-chips date=YYYY-MM-DD</code> 重抓，通過檢查就會自動取代。
+                </InfoNote>
+                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+                  <ChipsQuarantine total={chipCount} />
                 </Suspense>
               </div>
             </Disclosure>
@@ -192,6 +211,21 @@ async function PriceGaps({ total }: { total: number }) {
         </p>
       ) : null}
       <PriceGapList gaps={gaps} />
+    </div>
+  );
+}
+
+async function ChipsQuarantine({ total }: { total: number }) {
+  await requireUser();
+  const rows = await listQuarantinedChips(getDb(), SHOWN);
+  return (
+    <div className="space-y-1">
+      {total > SHOWN ? (
+        <p className="text-xs text-muted-foreground">
+          共 {formatInteger(total)} 筆，載入最新的 {SHOWN} 筆；處理後重新整理可載入其餘。
+        </p>
+      ) : null}
+      <ChipsQuarantineList rows={rows} />
     </div>
   );
 }

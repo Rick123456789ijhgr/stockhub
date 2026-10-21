@@ -11,6 +11,7 @@ from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.mis import TwseMisProvider
 from stockhub.etl.providers.registry import ProviderRegistry
 from stockhub.etl.providers.router import ProviderRouter, RateLimiter, RetryPolicy
+from stockhub.etl.providers.tdcc import TdccProvider
 from stockhub.etl.providers.tpex import TpexProvider
 from stockhub.etl.providers.twse import TwseProvider
 
@@ -71,6 +72,10 @@ def official_handler(request: httpx.Request) -> httpx.Response:
         name = f"twse_twt49u_detail_{params['STK_NO']}_{params['T1']}.json"
         if not (FIXTURES / name).exists():
             return httpx.Response(200, json={"stat": "無相關資料"})
+    elif path.rsplit("/", 1)[-1] in CHIP_FIXTURES:
+        return chip_response(request)
+    elif path.endswith("/getOD.ashx"):
+        name = "tdcc_1_5.csv"
     elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
         # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
         year = params["startDate"][:4]
@@ -94,6 +99,39 @@ ACTION_FIXTURES = {
 }
 
 
+CHIP_FIXTURES: dict[str, dict[str, str]] = {
+    "T86": {
+        "20261016": "twse_t86_20261016.json",
+        "20120502": "twse_t86_20120502.json",
+        "20150601": "twse_t86_20150601.json",
+    },
+    "MI_MARGN": {"20261016": "twse_mi_margn_20261016.json"},
+    "MI_QFIIS": {
+        "20261016": "twse_mi_qfiis_20261016.json",
+        "20120502": "twse_mi_qfiis_20120502.json",
+    },
+    "BFI82U": {"20261016": "twse_bfi82u_20261016.json", "20120502": "twse_bfi82u_20120502.json"},
+    "dailyTrade": {"20261016": "tpex_insti_20261016.json", "20150601": "tpex_insti_20150601.json"},
+    "balance": {"20261016": "tpex_margin_20261016.json"},
+    "qfii": {"20261016": "tpex_qfii_20261016.json"},
+    "summary": {"20261016": "tpex_summary_20261016.json"},
+}
+"""Chip tables by endpoint and date; any other date answers like a holiday."""
+
+
+def chip_response(request: httpx.Request) -> httpx.Response:
+    endpoint = request.url.path.rsplit("/", 1)[-1]
+    params = request.url.params
+    day = (params.get("date") or params.get("dayDate") or "").replace("/", "")
+    name = CHIP_FIXTURES[endpoint].get(day)
+    if name is not None:
+        return httpx.Response(200, content=fixture(name))
+    if "tpex" in request.url.host:
+        # TPEx echoes the date with empty tables.
+        return httpx.Response(200, json={"stat": "ok", "date": day, "tables": [{"data": []}]})
+    return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!", "total": 0})
+
+
 def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRouter:  # type: ignore[no-untyped-def]
     client = make_client(httpx.MockTransport(handler))
     twse, tpex = TwseProvider(client), TpexProvider(client)
@@ -107,6 +145,11 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "dividend_details": [twse],
             "ex_rights_previews": [twse, tpex],
             "quote": [TwseMisProvider(client)],
+            "institutional_trades": [twse, tpex],
+            "margin": [twse, tpex],
+            "foreign_holdings": [twse, tpex],
+            "market_institutional": [twse, tpex],
+            "shareholding_distribution": [TdccProvider(client)],
         }
     )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)

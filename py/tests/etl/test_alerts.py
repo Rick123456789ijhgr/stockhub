@@ -10,7 +10,7 @@ from sqlalchemy import Connection, text
 
 from stockhub.common.notifier import ConsoleNotifier
 from stockhub.common.portfolio_store import holdings
-from stockhub.etl.jobs.alerts import check_holding_moves, todays_move
+from stockhub.etl.jobs.alerts import check_holding_moves, check_institutional_flows, todays_move
 from stockhub.etl.jobs.quotes import polled_stocks
 
 TODAY = date(2026, 10, 19)
@@ -124,3 +124,44 @@ def test_the_close_wins_over_the_last_snapshot(sa_conn: Connection) -> None:
     assert (move.source, move.price) == ("daily", 95.0)
     assert move.change == pytest.approx(95.0 / 100.5 - 1)
     assert check_holding_moves(sa_conn, ConsoleNotifier(io.StringIO()), TODAY) == 1
+
+
+def _institutional(conn: Connection, stock_id: int, foreign: int, trust: int) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO institutional_trades_daily (stock_id, trade_date, foreign_buy, "
+            "foreign_sell, foreign_net, trust_buy, trust_sell, trust_net, dealer_buy, "
+            "dealer_sell, dealer_net, total_net, source) VALUES (:id, :d, 0, 0, :f, 0, 0, :t, "
+            "0, 0, 0, :total, 'test')"
+        ),
+        {"id": stock_id, "d": TODAY, "f": foreign, "t": trust, "total": foreign + trust},
+    )
+    conn.execute(
+        text(
+            "UPDATE prices_daily SET volume = 1000000, turnover = 100000000 "
+            "WHERE stock_id = :id AND trade_date = :d"
+        ),
+        {"id": stock_id, "d": TODAY},
+    )
+
+
+def test_institutional_flow_alerts(sa_conn: Connection) -> None:
+    held, quiet, other = (_stock(sa_conn, s) for s in ("9901", "9902", "9903"))
+    for stock_id in (held, quiet, other):
+        _bars(sa_conn, stock_id, [100.0, 101.0], TODAY)
+    _buy(sa_conn, held, 1000)
+    _buy(sa_conn, quiet, 1000)
+    _institutional(sa_conn, held, -150_000, 120_000)  # both groups past 10% on their own
+    _institutional(sa_conn, quiet, 99_000, 50_000)  # 14.9% together, neither alone
+    _institutional(sa_conn, other, 500_000, 0)  # not held
+    out = io.StringIO()
+    notifier = ConsoleNotifier(stream=out)
+    assert check_institutional_flows(sa_conn, notifier, TODAY) == 1
+    alert = sa_conn.execute(text("SELECT kind, title, detail, notified_at FROM alerts")).one()
+    assert alert.kind == "institutional_flow"
+    assert alert.title == "9901 9901 外資賣超 150 張（15%）、投信買超 120 張（12%）"
+    assert [f["group"] for f in alert.detail["flows"]] == ["foreign", "trust"]
+    assert alert.notified_at is not None
+    assert "[法人警示]" in out.getvalue()
+    # One alert per stock and day.
+    assert check_institutional_flows(sa_conn, notifier, TODAY) == 0

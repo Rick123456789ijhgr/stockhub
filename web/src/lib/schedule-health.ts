@@ -53,6 +53,15 @@ export const SCHEDULES: readonly Schedule[] = [
     graceMinutes: 30,
     maxMinutes: 180,
   },
+  {
+    key: "chips",
+    label: "籌碼（晚間）",
+    command: "make etl-chips",
+    time: "21:30",
+    jobs: ["sync_chips", "compute_chip_summary"],
+    graceMinutes: 30,
+    maxMinutes: 60,
+  },
 ];
 
 export type ScheduleState = "ok" | "running" | "pending" | "failed" | "missed" | "incomplete";

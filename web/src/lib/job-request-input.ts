@@ -8,6 +8,7 @@ export const REQUESTABLE_JOBS = [
   "catch_up_prices",
   "refetch_stock_prices",
   "refresh_stock_fundamentals",
+  "sync_chips",
 ] as const;
 
 export type RequestableJob = (typeof REQUESTABLE_JOBS)[number];
@@ -19,6 +20,7 @@ export const JOB_LABEL: Record<RequestableJob, string> = {
   catch_up_prices: "日線更新到今天",
   refetch_stock_prices: "補抓個股缺漏日線",
   refresh_stock_fundamentals: "重新抓取財報與月營收",
+  sync_chips: "籌碼更新到今天",
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -50,7 +52,8 @@ export function parseJobRequest(body: unknown, today: string): JobRequestInput |
       return { job: "daily_prices", params: { date } };
     }
     case "catch_up_prices":
-      return { job: "catch_up_prices", params: {} };
+    case "sync_chips":
+      return { job: job as RequestableJob, params: {} };
     case "refetch_stock_prices":
     case "refresh_stock_fundamentals": {
       const symbol = typeof raw.symbol === "string" ? raw.symbol.trim().toUpperCase() : "";

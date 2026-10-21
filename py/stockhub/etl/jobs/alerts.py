@@ -1,8 +1,10 @@
-"""Holding alerts: a held stock moving beyond its volatility threshold (PLAN.md section 5).
+"""Holding alerts (PLAN.md section 5): a held stock moving beyond its volatility threshold,
+and institutional investors trading a large share of a holding's volume.
 
 `check_holding_moves` runs after every intraday poll (poll_quotes) and once after the daily
 close (check_holding_alerts in make etl-daily). It only judges today's move; one alert per
-stock and day, so the 30-second polls do not repeat it.
+stock and day, so the 30-second polls do not repeat it. `check_institutional_flows` runs
+after the chip tables are fetched (check_institutional_alerts).
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import ClassVar
 
 from sqlalchemy import Connection, text
@@ -19,6 +21,7 @@ from stockhub.common.notifier import Notifier
 from stockhub.common.portfolio_store import holdings
 from stockhub.common.timeutil import taipei_today, utcnow
 from stockhub.engine.alerts import WINDOW, move_threshold
+from stockhub.engine.chips import FLOW_SHARE, institutional_flows
 from stockhub.etl.jobs.base import Job, JobContext, JobOutcome, register_job
 
 log = logging.getLogger(__name__)
@@ -147,3 +150,108 @@ class CheckHoldingAlertsJob(Job):
             raised = check_holding_moves(conn, ctx.notifier, today)
         ctx.add_rows(raised)
         return JobOutcome(message=f"{today}：新增 {raised} 則持股警示")
+
+
+# ----------------------------------------------------------------------------- institutional
+
+GROUP_LABEL = {"foreign": "外資", "trust": "投信", "dealer": "自營商"}
+STALE_AFTER = timedelta(days=4)
+"""Institutional data older than this (a long holiday at most) is not alerted on any more."""
+
+
+def latest_institutional_day(conn: Connection) -> date | None:
+    day: date | None = conn.execute(
+        text(
+            "SELECT max(trade_date) FROM chip_coverage WHERE dataset = 'institutional' AND rows > 0"
+        )
+    ).scalar_one()
+    return day
+
+
+def check_institutional_flows(conn: Connection, notifier: Notifier, day: date) -> int:
+    """Alert on each holding where an institutional group's net trade on `day` reached
+    FLOW_SHARE of the volume (groups judged separately, one alert per stock and day)."""
+    raised = 0
+    for stock_id, shares in holdings(conn, day).items():
+        row = conn.execute(
+            text(
+                "SELECT s.symbol, s.name, t.foreign_net, t.trust_net, t.dealer_net, "
+                "p.volume, p.turnover FROM institutional_trades_daily t "
+                "JOIN stocks s ON s.id = t.stock_id "
+                "JOIN prices_daily p ON p.stock_id = t.stock_id AND p.trade_date = t.trade_date "
+                "WHERE t.stock_id = :id AND t.trade_date = :day"
+            ),
+            {"id": stock_id, "day": day},
+        ).first()
+        if row is None:
+            continue
+        flows = institutional_flows(
+            {"foreign": row.foreign_net, "trust": row.trust_net, "dealer": row.dealer_net},
+            row.volume,
+            row.turnover,
+        )
+        if not flows:
+            continue
+        parts = [
+            f"{GROUP_LABEL[f.group]}{'買超' if f.net > 0 else '賣超'} {abs(f.net) / 1000:,.0f} 張"
+            f"（{abs(f.share) * 100:.0f}%）"
+            for f in flows
+        ]
+        title = f"{row.symbol} {row.name} {'、'.join(parts)}"
+        detail = {
+            "flows": [{"group": f.group, "net": f.net, "share": f.share} for f in flows],
+            "volume": row.volume,
+            "turnover": float(row.turnover),
+            "threshold": FLOW_SHARE,
+            "shares": shares,
+        }
+        alert = conn.execute(
+            text(
+                "INSERT INTO alerts (kind, stock_id, trade_date, severity, title, detail) "
+                "VALUES ('institutional_flow', :stock_id, :day, 'warning', :title, "
+                "CAST(:detail AS jsonb)) "
+                "ON CONFLICT ON CONSTRAINT alerts_once_per_day DO NOTHING RETURNING id"
+            ),
+            {"stock_id": stock_id, "day": day, "title": title, "detail": json.dumps(detail)},
+        ).first()
+        if alert is None:
+            continue
+        raised += 1
+        body = (
+            f"{day} 持股 {shares:,} 股。三大法人單日買賣超占成交量（{row.volume / 1000:,.0f} 張）"
+            f"達 {FLOW_SHARE * 100:.0f}% 以上：{'、'.join(parts)}。"
+            f"成交金額 {float(row.turnover) / 1e8:,.1f} 億。"
+        )
+        try:
+            notifier.send(f"[法人警示] {title}", body, "warning")
+        except Exception:  # a broken notifier must not lose the recorded alert
+            log.exception("could not send alert %s", alert.id)
+            continue
+        conn.execute(
+            text("UPDATE alerts SET notified_at = :now WHERE id = :id"),
+            {"now": utcnow(), "id": alert.id},
+        )
+    return raised
+
+
+@register_job
+class CheckInstitutionalAlertsJob(Job):
+    name: ClassVar[str] = "check_institutional_alerts"
+    description: ClassVar[str] = (
+        "Alert on holdings where foreign, trust or dealer net trades reached 10% of the "
+        "volume on the latest institutional day (--param date= for another day)"
+    )
+    uses_date: ClassVar[bool] = False
+
+    def run(self, ctx: JobContext) -> JobOutcome:
+        with ctx.engine.begin() as conn:
+            latest = latest_institutional_day(conn)
+            if ctx.params.get("date"):
+                day = date.fromisoformat(str(ctx.params["date"]))
+            elif latest is None or taipei_today() - latest > STALE_AFTER:
+                return JobOutcome("skipped", f"沒有近期的三大法人資料（最新 {latest}）")
+            else:
+                day = latest
+            raised = check_institutional_flows(conn, ctx.notifier, day)
+        ctx.add_rows(raised)
+        return JobOutcome(message=f"{day}：新增 {raised} 則法人警示")

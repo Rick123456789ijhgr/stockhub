@@ -3,7 +3,7 @@
 個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選器與回測。單人使用，全端專案。
 
 - 完整規劃摘要：`docs/PLAN.md`
-- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）
+- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）
 - 與規劃有偏離時，記錄在 `docs/DECISIONS.md`（日期、原因、取捨），不要默默改。
 
 ## 技術棧
@@ -57,9 +57,11 @@ make notify-test              # 經 NOTIFIER 寄一則測試通知（設定 SMTP
 make etl-fundamentals         # 財報與月營收歷史（2013 起，FinMind；約 17 小時，可續跑；symbols= refetch=true）
 make etl-financials           # 最新一季財報與月營收（官方 OpenAPI），再向 FinMind 補新申報的公司（etl-daily 也會跑）
 make etl-compute-fundamentals # 重算 fundamentals_quarterly 與 fundamental_signals（all=true 全部）
+make etl-chips                # 籌碼：補近 10 個交易日缺的表、集保本週、摘要、法人警示（date= 重抓某天；21:30 排程）
+make etl-chips-history        # 籌碼歷史（2012-05-02 起，約 11 小時，可續跑）
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
 stockhub.bat                  # 雙擊＝啟動資料庫與網站（背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status（邏輯在 scripts/stockhub.ps1）
-scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日、登入時啟動資料庫）；記錄在 .local/logs
+scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:00 每日、21:30 籌碼、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -76,6 +78,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 10. **台股配色**：紅漲綠跌，設計 token 可切換，不寫死顏色。
 11. **前端與 Python 的指標公式必須一致**：用共用的標準測試資料驗證（M1 起）。
 12. **爬取要守規矩**：優先官方 OpenAPI，限速，遵守 robots 與使用條款。
+13. **一律以中文回答**：與使用者的所有對話、計畫、進度回報與總結都用繁體中文；程式碼、識別名稱與指令照原樣，程式碼註解沿用周圍既有的語言。
 
 ## 工作方式
 
@@ -105,3 +108,4 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 08:55 報價、18:
 - 網站觸發 Python 任務一律排入 `job_requests`（`POST /api/jobs`，可排的任務在 `lib/job-request-input.ts` 與資料表 CHECK 兩處列舉，新增時兩邊都改），不要在 route handler 直接執行任務。
 - 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁）；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
+- 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。

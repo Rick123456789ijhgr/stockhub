@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     providers_corporate_actions: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_dividend_details: CommaList = Field(default_factory=lambda: ["twse"])
     providers_ex_rights_previews: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_institutional_trades: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_margin: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_foreign_holdings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_market_institutional: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
+    providers_shareholding_distribution: CommaList = Field(default_factory=lambda: ["tdcc"])
 
     @field_validator(
         "alert_email_to",
@@ -83,6 +88,11 @@ class Settings(BaseSettings):
         "providers_monthly_revenue",
         "providers_monthly_revenue_snapshot",
         "providers_company_profiles",
+        "providers_institutional_trades",
+        "providers_margin",
+        "providers_foreign_holdings",
+        "providers_market_institutional",
+        "providers_shareholding_distribution",
         mode="before",
     )
     @classmethod

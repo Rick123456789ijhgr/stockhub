@@ -376,3 +376,135 @@ def test_financials_official_period_index(pg: psycopg.Connection) -> None:
         ).fetchall()
     )
     assert "financials_official_period_idx" in plan
+
+
+CHIP_TABLES = {
+    "institutional_trades_daily",
+    "margin_daily",
+    "foreign_holdings_daily",
+    "shareholding_distribution",
+    "market_institutional_daily",
+    "market_margin_daily",
+    "chip_coverage",
+    "chip_quarantine",
+    "chip_summary",
+}
+
+
+def test_chip_tables_and_columns_are_commented(pg: psycopg.Connection) -> None:
+    rows = pg.execute(
+        "SELECT c.relname, obj_description(c.oid, 'pg_class') FROM pg_class c "
+        "WHERE c.relname = ANY(%s)",
+        (list(CHIP_TABLES),),
+    ).fetchall()
+    assert {name for name, comment in rows if comment} == CHIP_TABLES
+
+
+def test_institutional_trades_key_and_checks(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO institutional_trades_daily (stock_id, trade_date, foreign_buy, "
+        "foreign_sell, foreign_net, trust_buy, trust_sell, trust_net, dealer_buy, dealer_sell, "
+        "dealer_net, total_net, source) VALUES (%s, '2026-10-16', %s, 0, %s, 0, 0, 0, 0, 0, 0, "
+        "%s, 'twse')"
+    )
+    pg.execute(sql, (stock_id, 1000, 1000, 1000))
+    row = pg.execute(
+        "SELECT foreign_dealer_net, dealer_self_net FROM institutional_trades_daily"
+    ).fetchone()
+    assert row == (None, None)  # unsplit history stays NULL, not 0
+    _expect(pg, errors.UniqueViolation, sql, (stock_id, 1000, 1000, 1000))
+    _expect(pg, errors.CheckViolation, sql.replace("10-16", "10-15"), (stock_id, -1, -1, -1))
+
+
+def test_margin_and_holdings_checks(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    margin = (
+        "INSERT INTO margin_daily (stock_id, trade_date, margin_buy, margin_sell, margin_redeem, "
+        "margin_balance, short_sell, short_cover, short_redeem, short_balance, source) "
+        "VALUES (%s, '2026-10-16', 0, 0, 0, %s, 0, 0, 0, 0, 'twse')"
+    )
+    pg.execute(margin, (stock_id, 5000))
+    assert pg.execute("SELECT offset_shares FROM margin_daily").fetchone() == (0,)
+    _expect(pg, errors.CheckViolation, margin.replace("10-16", "10-15"), (stock_id, -1))
+    holdings = (
+        "INSERT INTO foreign_holdings_daily (stock_id, trade_date, issued_shares, "
+        "foreign_shares, foreign_ratio, source) VALUES (%s, '2026-10-16', 100, 70, %s, 'twse')"
+    )
+    pg.execute(holdings, (stock_id, Decimal("0.7")))
+    _expect(pg, errors.CheckViolation, holdings.replace("10-16", "10-15"), (stock_id, Decimal(70)))
+
+
+def test_distribution_levels_and_market_tables(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO shareholding_distribution (stock_id, week_date, level, holders, shares, "
+        "ratio, source) VALUES (%s, '2026-10-16', %s, 0, %s, 0, 'tdcc')"
+    )
+    pg.execute(sql, (stock_id, 16, -5))  # the adjustment bracket may be negative
+    _expect(pg, errors.CheckViolation, sql, (stock_id, 18, 0))
+    market = (
+        "INSERT INTO market_institutional_daily (market, trade_date, investor, buy_amount, "
+        "sell_amount, net_amount, source) VALUES ('twse', '2026-10-16', %s, 1, 2, -1, 'twse')"
+    )
+    pg.execute(market, ("foreign",))
+    _expect(pg, errors.CheckViolation, market, ("retail",))
+
+
+def test_chip_coverage_and_quarantine(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    cover = (
+        "INSERT INTO chip_coverage (dataset, market, trade_date, rows, source) "
+        "VALUES (%s, %s, '2026-10-16', 0, 'twse')"
+    )
+    pg.execute(cover, ("margin", "twse"))
+    _expect(pg, errors.UniqueViolation, cover, ("margin", "twse"))
+    _expect(pg, errors.CheckViolation, cover, ("prices", "twse"))
+    quarantine = (
+        "INSERT INTO chip_quarantine (dataset, stock_id, trade_date, source, payload, reasons, "
+        "resolved_at, resolution) VALUES ('margin', %s, '2026-10-16', 'twse', '{}', %s, %s, %s)"
+    )
+    pg.execute(quarantine, (stock_id, ["margin_balance_mismatch"], None, None))
+    _expect(pg, errors.UniqueViolation, quarantine, (stock_id, ["x"], None, None))
+    _expect(
+        pg,
+        errors.CheckViolation,
+        quarantine.replace("'margin'", "'institutional'"),
+        (stock_id, ["x"], None, "accepted"),
+    )
+
+
+def test_m4_alert_kind_and_job_request(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    pg.execute(
+        "INSERT INTO alerts (kind, stock_id, trade_date, severity, title) "
+        "VALUES ('institutional_flow', %s, '2026-10-16', 'warning', 't')",
+        (stock_id,),
+    )
+    pg.execute(
+        "INSERT INTO job_requests (job_name, requested_by) VALUES ('sync_chips', 'me@example.com')"
+    )
+
+
+def test_shareholding_concentration_matches_engine(pg: psycopg.Connection) -> None:
+    from stockhub.engine.chips import BIG_HOLDER_LEVELS, WHALE_LEVEL, holder_ratio
+
+    stock_id = _insert_stock(pg)
+    week = {1: (900, 1_000), 11: (10, 3_000), 12: (5, 2_500), 15: (2, 40_000), 16: (1, 7)}
+    week[17] = (918, 46_507)
+    for level, (holders, shares) in week.items():
+        pg.execute(
+            "INSERT INTO shareholding_distribution (stock_id, week_date, level, holders, shares, "
+            "ratio, source) VALUES (%s, '2026-10-16', %s, %s, %s, 0, 'test')",
+            (stock_id, level, holders, shares),
+        )
+    row = pg.execute(
+        "SELECT big_holder_ratio, whale_ratio, big_holders, holders "
+        "FROM shareholding_concentration WHERE stock_id = %s",
+        (stock_id,),
+    ).fetchone()
+    assert row is not None
+    by_level = {level: s for level, (_, s) in week.items()}
+    assert float(row[0]) == pytest.approx(holder_ratio(by_level, BIG_HOLDER_LEVELS))
+    assert float(row[1]) == pytest.approx(holder_ratio(by_level, [WHALE_LEVEL]))
+    assert (row[2], row[3]) == (7, 918)
