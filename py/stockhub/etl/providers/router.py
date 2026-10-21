@@ -44,11 +44,13 @@ from stockhub.etl.providers.base import (
     ForeignHoldingProvider,
     InstitutionalTrade,
     InstitutionalTradeProvider,
+    MacroReleaseProvider,
     MarginProvider,
     MarginTable,
     Market,
     MarketInstitutional,
     MarketInstitutionalProvider,
+    MarketSeriesProvider,
     MonthlyRevenue,
     MonthlyRevenueProvider,
     MonthlyRevenueSnapshotProvider,
@@ -61,6 +63,7 @@ from stockhub.etl.providers.base import (
     RawResponse,
     Security,
     SecurityListProvider,
+    SeriesObservation,
     ShareholdingDistributionProvider,
     Statement,
 )
@@ -353,6 +356,41 @@ class ProviderRouter:
             ShareholdingDistributionProvider,
             lambda p: p.fetch_shareholding_distribution(),
             lambda p, raw: p.parse_shareholding_distribution(raw),
+        )
+
+    # ------------------------------------------------------------------ markets and macro
+
+    def series_providers(self, code: str) -> list[MarketSeriesProvider]:
+        """Configured sources of a series in fallback order (empty when none serves it)."""
+        try:
+            providers = self.registry.providers_for("market_series")
+        except ConfigError:
+            return []
+        return [
+            p for p in providers if isinstance(p, MarketSeriesProvider) and code in p.series_symbols
+        ]
+
+    def series_monthly(self, code: str) -> bool:
+        """Whether a source of the series answers one month per request, so a range should be
+        requested month by month to give it the chance."""
+        return any(p.series_monthly for p in self.series_providers(code))
+
+    def market_series(self, code: str, start: date, end: date) -> Fetched[SeriesObservation]:
+        same_month = (start.year, start.month) == (end.year, end.month)
+        return self._call(
+            "market_series",
+            MarketSeriesProvider,
+            lambda p: p.fetch_market_series(code, start, end),
+            lambda p, raw: p.parse_market_series(raw),
+            accepts=lambda p: code in p.series_symbols and (same_month or not p.series_monthly),
+        )
+
+    def macro_release(self) -> Fetched[SeriesObservation]:
+        return self._call(
+            "macro_release",
+            MacroReleaseProvider,
+            lambda p: p.fetch_macro_release(),
+            lambda p, raw: p.parse_macro_release(raw),
         )
 
     def quotes(self, symbols: Sequence[tuple[str, Market]]) -> Fetched[Quote]:

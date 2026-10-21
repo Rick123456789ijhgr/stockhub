@@ -7,13 +7,16 @@ from pathlib import Path
 import httpx
 
 from stockhub.common.rawstore import RawStore
+from stockhub.etl.providers.fred import FredProvider
 from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.mis import TwseMisProvider
+from stockhub.etl.providers.ndc import NdcProvider
 from stockhub.etl.providers.registry import ProviderRegistry
 from stockhub.etl.providers.router import ProviderRouter, RateLimiter, RetryPolicy
 from stockhub.etl.providers.tdcc import TdccProvider
 from stockhub.etl.providers.tpex import TpexProvider
 from stockhub.etl.providers.twse import TwseProvider
+from stockhub.etl.providers.yahoo import YahooProvider
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -76,6 +79,14 @@ def official_handler(request: httpx.Request) -> httpx.Response:
         return chip_response(request)
     elif path.endswith("/getOD.ashx"):
         name = "tdcc_1_5.csv"
+    elif path.endswith("/MI_5MINS_HIST") or path.endswith("/indexInfo/inx"):
+        return index_response(request)
+    elif "/v8/finance/chart/" in path or path.endswith("/fredgraph.csv"):
+        return series_response(request)
+    elif request.url.host == "data.gov.tw":
+        name = "datagov_6099.json"
+    elif request.url.host == "ws.ndc.gov.tw":
+        name = "ndc_business_indicators.zip"
     elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
         # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
         year = params["startDate"][:4]
@@ -132,6 +143,33 @@ def chip_response(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!", "total": 0})
 
 
+def index_response(request: httpx.Request) -> httpx.Response:
+    """TAIEX and TPEx index months: October 2026 only; other months answer empty."""
+    date_ = request.url.params["date"]
+    if request.url.path.endswith("/MI_5MINS_HIST"):
+        if date_ == "20261001":
+            return httpx.Response(200, content=fixture("twse_mi_5mins_hist_202610.json"))
+        return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!"})
+    if date_ == "2026/10/01":
+        return httpx.Response(200, content=fixture("tpex_inx_202610.json"))
+    fields = ["日期", "開市", "最高", "最低", "收市", "漲/跌"]
+    return httpx.Response(200, json={"stat": "ok", "tables": [{"fields": fields, "data": []}]})
+
+
+def series_response(request: httpx.Request) -> httpx.Response:
+    """Yahoo serves ^GSPC (2026-10-01..10-20) and nothing else; FRED serves DGS10 and an
+    empty CSV for any other id."""
+    if "/v8/finance/chart/" in request.url.path:
+        if request.url.path.endswith("/%5EGSPC") or request.url.path.endswith("/^GSPC"):
+            return httpx.Response(200, content=fixture("yahoo_chart_gspc.json"))
+        error = {"code": "Not Found", "description": "No data found, symbol may be delisted"}
+        return httpx.Response(404, json={"chart": {"result": None, "error": error}})
+    series = request.url.params["id"]
+    if series == "DGS10":
+        return httpx.Response(200, content=fixture("fred_dgs10.csv"))
+    return httpx.Response(200, content=f"observation_date,{series}\n".encode())
+
+
 def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRouter:  # type: ignore[no-untyped-def]
     client = make_client(httpx.MockTransport(handler))
     twse, tpex = TwseProvider(client), TpexProvider(client)
@@ -150,6 +188,8 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "foreign_holdings": [twse, tpex],
             "market_institutional": [twse, tpex],
             "shareholding_distribution": [TdccProvider(client)],
+            "market_series": [twse, tpex, YahooProvider(client), FredProvider(client)],
+            "macro_release": [NdcProvider(client)],
         }
     )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)
