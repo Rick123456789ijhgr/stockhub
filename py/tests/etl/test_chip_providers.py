@@ -319,3 +319,10 @@ def test_tpex_bare_no_data_notice_is_retried() -> None:
     client = make_client(httpx.MockTransport(lambda _: httpx.Response(200, content=notice)))
     with pytest.raises(TransientProviderError):
         TpexProvider(client).fetch_foreign_holdings(date(2017, 7, 10), "tpex")
+
+
+def test_twse_foreign_holdings_before_publication_is_empty() -> None:
+    notice = {"stat": "查詢日期大於可查詢最大日期，請重新查詢!"}
+    client = make_client(httpx.MockTransport(lambda _: httpx.Response(200, json=notice)))
+    twse = TwseProvider(client)
+    assert twse.parse_foreign_holdings(twse.fetch_foreign_holdings(DAY, "twse")) == []
