@@ -35,7 +35,7 @@ export interface Alerts {
   detail: Generated<Json>;
   id: Generated<Int8>;
   /**
-   * holding_move = a holding moved beyond its volatility threshold; institutional_flow = an institutional group traded a large share of a holding's volume (PLAN.md section 5); M6 adds news and macro.
+   * holding_move = a holding moved beyond its volatility threshold; institutional_flow = an institutional group traded a large share of a holding's volume; business_signal = the 景氣對策信號 light changed colour; policy_rate = the Fed target rate changed (PLAN.md section 5); M6 adds news.
    */
   kind: string;
   /**
@@ -43,10 +43,13 @@ export interface Alerts {
    */
   notified_at: Timestamp | null;
   severity: string;
-  stock_id: Int8;
+  /**
+   * The stock concerned; NULL exactly for the macro kinds (business_signal, policy_rate).
+   */
+  stock_id: Int8 | null;
   title: string;
   /**
-   * Taipei trading date the alert is about.
+   * Taipei trading date the alert is about (macro kinds: the observation date of the series).
    */
   trade_date: string;
 }
@@ -577,6 +580,26 @@ export interface JobRuns {
   trigger: string;
 }
 
+export interface MacroEvents {
+  created_at: Generated<Timestamp>;
+  /**
+   * Local date of the event (FOMC: the decision day in Washington).
+   */
+  event_date: string;
+  id: Generated<Int8>;
+  /**
+   * fomc = Fed rate decision; cbc = 中央銀行理監事會; ndc_signal = 國發會景氣燈號發布; other = anything else.
+   */
+  kind: string;
+  note: string | null;
+  /**
+   * seed = this migration (FOMC 2026 from federalreserve.gov); manual = /admin; auto = recorded by sync_macro when a new month appeared.
+   */
+  source: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface MarginDaily {
   fetched_at: Generated<Timestamp>;
   /**
@@ -651,6 +674,104 @@ export interface MarketMarginDaily {
   short_balance: Int8;
   source: string;
   trade_date: string;
+}
+
+export interface MarketSeries {
+  category: string;
+  /**
+   * Our series code (TAIEX, SPX, UST10Y, TW_SIGNAL, ...); providers map it to their own symbol.
+   */
+  code: string;
+  enabled: Generated<boolean>;
+  /**
+   * daily = one value per trading day of its exchange; monthly = obs_date is the first day of the month.
+   */
+  frequency: string;
+  /**
+   * Whether the primary source publishes open/high/low (otherwise only value).
+   */
+  has_ohlc: Generated<boolean>;
+  /**
+   * Default start of backfill_markets for the series.
+   */
+  history_start: Generated<string>;
+  /**
+   * Quality check: a change against the previous value beyond this fraction is quarantined; NULL = no check.
+   */
+  max_daily_move: Numeric | null;
+  name: string;
+  /**
+   * Values must be > 0 (false for oil futures, which settled negative in 2020, and for rates).
+   */
+  positive: Generated<boolean>;
+  sort_order: number;
+  /**
+   * IANA zone of the exchange; obs_date is the local trading date there (rule 2).
+   */
+  timezone: string;
+  /**
+   * Display unit: point, index, percent, score, TWD, USD, USD/oz, USD/bbl.
+   */
+  unit: string;
+}
+
+export interface MarketSeriesQuarantine {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  obs_date: string;
+  /**
+   * The parsed observation as received (model_dump, numbers as JSON).
+   */
+  payload: Json;
+  raw_object_id: Int8 | null;
+  /**
+   * Failed checks: ohlc_inconsistent, not_positive, move_too_large.
+   */
+  reasons: string[];
+  /**
+   * accepted = written by the user; rejected = discarded; superseded = a later fetch passed.
+   */
+  resolution: string | null;
+  resolved_at: Timestamp | null;
+  series_code: string;
+  source: string;
+}
+
+export interface MarketSeriesStatus {
+  category: string | null;
+  code: string | null;
+  enabled: boolean | null;
+  first_date: string | null;
+  frequency: string | null;
+  last_date: string | null;
+  last_fetched_at: Timestamp | null;
+  name: string | null;
+  observations: number | null;
+}
+
+export interface MarketSeriesValues {
+  fetched_at: Generated<Timestamp>;
+  high: Numeric | null;
+  /**
+   * Published category with the value, e.g. the 景氣對策信號 light (紅燈, 黃紅燈, 綠燈, 黃藍燈, 藍燈).
+   */
+  label: string | null;
+  low: Numeric | null;
+  /**
+   * Local trading date of the series' exchange; first day of the month for monthly series.
+   */
+  obs_date: string;
+  open: Numeric | null;
+  raw_object_id: Int8 | null;
+  series_code: string;
+  /**
+   * Provider that served the value (fallbacks are used only when the primary failed).
+   */
+  source: string;
+  /**
+   * Close (daily) or the indicator value (monthly).
+   */
+  value: Numeric;
 }
 
 export interface MonthlyRevenue {
@@ -922,6 +1043,29 @@ export interface Stocks {
   updated_at: Generated<Timestamp>;
 }
 
+export interface StockThemes {
+  created_at: Generated<Timestamp>;
+  note: string | null;
+  stock_id: Int8;
+  theme_id: Int8;
+  /**
+   * First Taipei date the stock counts as a member.
+   */
+  valid_from: string;
+  /**
+   * Last date it counts; NULL = still a member. Periods of one stock and theme do not overlap (checked by the site).
+   */
+  valid_to: string | null;
+}
+
+export interface Themes {
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<Int8>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface TradingCalendar {
   date: string;
   is_trading_day: boolean;
@@ -965,9 +1109,14 @@ export interface DB {
   institutional_trades_daily: InstitutionalTradesDaily;
   job_requests: JobRequests;
   job_runs: JobRuns;
+  macro_events: MacroEvents;
   margin_daily: MarginDaily;
   market_institutional_daily: MarketInstitutionalDaily;
   market_margin_daily: MarketMarginDaily;
+  market_series: MarketSeries;
+  market_series_quarantine: MarketSeriesQuarantine;
+  market_series_status: MarketSeriesStatus;
+  market_series_values: MarketSeriesValues;
   monthly_revenue: MonthlyRevenue;
   monthly_revenue_growth: MonthlyRevenueGrowth;
   portfolio_transactions: PortfolioTransactions;
@@ -979,7 +1128,9 @@ export interface DB {
   settings: Settings;
   shareholding_concentration: ShareholdingConcentration;
   shareholding_distribution: ShareholdingDistribution;
+  stock_themes: StockThemes;
   stocks: Stocks;
+  themes: Themes;
   trading_calendar: TradingCalendar;
   watchlist: Watchlist;
 }

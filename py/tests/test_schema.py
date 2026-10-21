@@ -508,3 +508,98 @@ def test_shareholding_concentration_matches_engine(pg: psycopg.Connection) -> No
     assert float(row[0]) == pytest.approx(holder_ratio(by_level, BIG_HOLDER_LEVELS))
     assert float(row[1]) == pytest.approx(holder_ratio(by_level, [WHALE_LEVEL]))
     assert (row[2], row[3]) == (7, 918)
+
+
+M5_TABLES = {
+    "market_series",
+    "market_series_values",
+    "market_series_status",
+    "market_series_quarantine",
+    "themes",
+    "stock_themes",
+    "macro_events",
+}
+
+
+def test_m5_tables_are_commented_and_seeded(pg: psycopg.Connection) -> None:
+    rows = pg.execute(
+        "SELECT c.relname, obj_description(c.oid, 'pg_class') FROM pg_class c "
+        "WHERE c.relname = ANY(%s)",
+        (list(M5_TABLES),),
+    ).fetchall()
+    assert {name for name, comment in rows if comment} == M5_TABLES
+    codes = {r[0] for r in pg.execute("SELECT code FROM market_series").fetchall()}
+    assert {"TAIEX", "TPEX", "SPX", "SOX", "USDTWD", "UST10Y", "TW_SIGNAL"} <= codes
+    fomc = pg.execute("SELECT count(*) FROM macro_events WHERE kind = 'fomc'").fetchone()
+    assert fomc == (8,)
+
+
+def test_market_series_values_key_checks_and_status(pg: psycopg.Connection) -> None:
+    sql = (
+        "INSERT INTO market_series_values (series_code, obs_date, high, low, value, source) "
+        "VALUES (%s, %s, %s, %s, %s, 'test')"
+    )
+    pg.execute(sql, ("TAIEX", "2026-10-16", 100, 90, 95))
+    pg.execute(sql, ("TAIEX", "2026-10-19", None, None, 96))
+    _expect(pg, errors.UniqueViolation, sql, ("TAIEX", "2026-10-16", None, None, 1))
+    _expect(pg, errors.CheckViolation, sql, ("TAIEX", "2026-10-20", 90, 100, 95))
+    _expect(pg, errors.ForeignKeyViolation, sql, ("NOPE", "2026-10-20", None, None, 1))
+    row = pg.execute(
+        "SELECT first_date, last_date, observations FROM market_series_status WHERE code = 'TAIEX'"
+    ).fetchone()
+    assert row == (date(2026, 10, 16), date(2026, 10, 19), 2)
+    empty = pg.execute(
+        "SELECT last_date, observations FROM market_series_status WHERE code = 'SPX'"
+    ).fetchone()
+    assert empty == (None, 0)
+
+
+def test_market_series_quarantine_resolution_pairs(pg: psycopg.Connection) -> None:
+    sql = (
+        "INSERT INTO market_series_quarantine (series_code, obs_date, source, payload, reasons, "
+        "resolved_at, resolution) VALUES ('SPX', '2026-10-16', 'yahoo', '{}', %s, %s, %s)"
+    )
+    _expect(pg, errors.CheckViolation, sql, ([], None, None))
+    _expect(pg, errors.CheckViolation, sql, (["x"], None, "accepted"))
+    pg.execute(sql, (["move_too_large"], None, None))
+
+
+def test_stock_themes_period_and_cascade(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    row = pg.execute("INSERT INTO themes (name) VALUES ('AI 伺服器') RETURNING id").fetchone()
+    assert row
+    theme_id = row[0]
+    _expect(pg, errors.UniqueViolation, "INSERT INTO themes (name) VALUES ('AI 伺服器')")
+    _expect(pg, errors.CheckViolation, "INSERT INTO themes (name) VALUES ('  ')")
+    sql = (
+        "INSERT INTO stock_themes (theme_id, stock_id, valid_from, valid_to) "
+        "VALUES (%s, %s, %s, %s)"
+    )
+    _expect(pg, errors.CheckViolation, sql, (theme_id, stock_id, "2026-10-01", "2026-09-30"))
+    pg.execute(sql, (theme_id, stock_id, "2026-01-01", None))
+    pg.execute("DELETE FROM themes WHERE id = %s", (theme_id,))
+    assert pg.execute("SELECT count(*) FROM stock_themes").fetchone() == (0,)
+
+
+def test_m5_macro_alerts_have_no_stock_and_share_a_cooldown(pg: psycopg.Connection) -> None:
+    stock_id = _insert_stock(pg)
+    sql = (
+        "INSERT INTO alerts (kind, stock_id, trade_date, severity, title) "
+        "VALUES (%s, %s, '2026-08-01', 'warning', 't')"
+    )
+    pg.execute(sql, ("business_signal", None))
+    _expect(pg, errors.UniqueViolation, sql, ("business_signal", None))
+    _expect(pg, errors.CheckViolation, sql, ("policy_rate", stock_id))
+    _expect(pg, errors.CheckViolation, sql, ("holding_move", None))
+    pg.execute(sql, ("holding_move", stock_id))
+    _expect(
+        pg,
+        errors.UniqueViolation,
+        "INSERT INTO macro_events (event_date, kind, title, source) "
+        "VALUES ('2026-10-28', 'fomc', 'FOMC 利率決策', 'manual')",
+    )
+    for job in ("sync_markets", "sync_macro"):
+        pg.execute(
+            "INSERT INTO job_requests (job_name, requested_by) VALUES (%s, 'me@example.com')",
+            (job,),
+        )
