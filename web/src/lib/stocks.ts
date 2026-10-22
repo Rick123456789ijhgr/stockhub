@@ -77,8 +77,8 @@ const MARKET_CAP_SQL = sql`CASE WHEN s.type = 'stock' AND s.issued_shares > 0
 
 export const RANKINGS = ["turnover", "volume", "gainers", "losers", "marketCap"] as const;
 export type Ranking = (typeof RANKINGS)[number];
-/** Rankings are of common stocks or of ETFs, never mixed; ETFs have no market value. */
-export type RankingKind = "stock" | "etf";
+/** Rankings of common stocks, ETFs or both; market value ranks stocks only (ETFs have none). */
+export type RankingKind = "stock" | "etf" | "all";
 
 const RANKING_ORDER: Record<Ranking, ReturnType<typeof sql>> = {
   turnover: sql`l.turnover DESC`,
@@ -105,8 +105,8 @@ export async function recentTradingDates(db: Kysely<DB>, count: number): Promise
 }
 
 /**
- * The top `limit` common stocks or ETFs of the latest trading day by `ranking`. Changes use
- * the previous close rebased with adj_factor, like everywhere else.
+ * The top `limit` common stocks, ETFs or both of the latest trading day by `ranking`.
+ * Changes use the previous close rebased with adj_factor, like everywhere else.
  */
 export async function getRanking(
   db: Kysely<DB>,
@@ -116,6 +116,7 @@ export async function getRanking(
 ): Promise<{ date: string | null; rows: StockListItem[] }> {
   const [date] = await recentTradingDates(db, 1);
   if (!date) return { date: null, rows: [] };
+  const types = ranking === "marketCap" || kind === "stock" ? ["stock"] : kind === "etf" ? ["etf"] : ["stock", "etf"];
   const movers =
     ranking === "gainers" || ranking === "losers" ? sql`AND l.prev_close > 0` : sql``;
   const result = await sql<StockListItem>`
@@ -132,7 +133,7 @@ export async function getRanking(
       WHERE p.trade_date = ${date} AND p.close IS NOT NULL
     ) l
     JOIN stocks s ON s.id = l.stock_id
-    WHERE s.delisted_date IS NULL AND s.type = ${kind} ${movers}
+    WHERE s.delisted_date IS NULL AND s.type IN (${sql.join(types)}) ${movers}
     ORDER BY ${RANKING_ORDER[ranking]}, s.symbol
     LIMIT ${limit}
   `.execute(db);

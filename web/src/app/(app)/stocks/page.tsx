@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/coming-soon";
 import { activeTab, type PageTab, PageTabs, tabHref } from "@/components/page-tabs";
-import { SegmentedLinks } from "@/components/segmented-links";
+import { ToggleLinks } from "@/components/segmented-links";
 import { StockList } from "@/components/stocks/stock-list";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/session";
@@ -32,7 +32,7 @@ async function StockSearch({ searchParams }: { searchParams: PageProps<"/stocks"
   await requireUser();
   const params = await searchParams;
   const q = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
-  const kind: RankingKind = params.type === "etf" ? "etf" : "stock";
+  const kind: RankingKind = params.type === "etf" || params.type === "all" ? params.type : "stock";
   const tab = activeTab(kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS, params.tab);
 
   return (
@@ -73,7 +73,22 @@ const RANKING_TABS: PageTab<Ranking>[] = [
 /** ETFs have no market value (their units are not shares of a company). */
 const ETF_RANKING_TABS = RANKING_TABS.filter((t) => t.key !== "marketCap");
 
-const KIND_LABEL: Record<RankingKind, string> = { stock: "股票", etf: "ETF" };
+type Listing = "stock" | "etf";
+const LISTING_LABEL: Record<Listing, string> = { stock: "股票", etf: "ETF" };
+const KIND_LABEL: Record<RankingKind, string> = { stock: "股票", etf: "ETF", all: "股票與 ETF" };
+const KIND_LISTINGS: Record<RankingKind, Listing[]> = {
+  stock: ["stock"],
+  etf: ["etf"],
+  all: ["stock", "etf"],
+};
+
+/** The kind with `listing` switched on or off; null when it is the only one left on. */
+function toggledKind(kind: RankingKind, listing: Listing): RankingKind | null {
+  const on = KIND_LISTINGS[kind];
+  const next = on.includes(listing) ? on.filter((l) => l !== listing) : [...on, listing];
+  if (next.length === 0) return null;
+  return next.length === 2 ? "all" : next[0]!;
+}
 
 const RANKING_NOTE: Record<Ranking, string> = {
   turnover: "成交金額前 50 名，最能看出當天的熱門標的。",
@@ -85,24 +100,35 @@ const RANKING_NOTE: Record<Ranking, string> = {
 
 /** Query that keeps the kind when switching ranking tabs (stocks are the default). */
 const kindQuery = (kind: RankingKind): Record<string, string> =>
-  kind === "etf" ? { type: "etf" } : {};
+  kind === "stock" ? {} : { type: kind };
 
 async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Ranking }) {
   const { date, rows } = await getRanking(getDb(), ranking, kind);
   const tabs = kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS;
   return (
     <div className="space-y-3">
-      <SegmentedLinks
-        label="類別"
-        options={KIND_LABEL}
-        active={kind}
-        // Keep the ranking across kinds when the other kind has it.
-        href={(k) => {
-          const keep = (k === "etf" ? ETF_RANKING_TABS : RANKING_TABS).some((t) => t.key === ranking);
-          return tabHref("/stocks", ranking, !keep || ranking === RANKING_TABS[0]!.key, kindQuery(k));
-        }}
+      <PageTabs
+        tabs={tabs}
+        active={ranking}
+        basePath="/stocks"
+        query={kindQuery(kind)}
+        end={
+          <ToggleLinks
+            label="類別"
+            options={LISTING_LABEL}
+            selected={KIND_LISTINGS[kind]}
+            // Keep the ranking across kinds when the new kind has it.
+            href={(listing) => {
+              const next = toggledKind(kind, listing);
+              if (next === null) return null;
+              const keep = (next === "etf" ? ETF_RANKING_TABS : RANKING_TABS).some(
+                (t) => t.key === ranking,
+              );
+              return tabHref("/stocks", ranking, !keep || ranking === RANKING_TABS[0]!.key, kindQuery(next));
+            }}
+          />
+        }
       />
-      <PageTabs tabs={tabs} active={ranking} basePath="/stocks" query={kindQuery(kind)} />
       {rows.length === 0 ? (
         <Card>
           <CardContent className="text-sm text-muted-foreground">
@@ -112,7 +138,11 @@ async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Rank
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            {date} 收盤 · {KIND_LABEL[kind]}{RANKING_NOTE[ranking]}
+            {date} 收盤 · {ranking === "marketCap" ? "股票" : KIND_LABEL[kind]}
+            {/* A space between Latin and CJK: "ETF 成交金額", "股票成交金額". */}
+            {ranking !== "marketCap" && kind !== "stock" ? " " : ""}
+            {RANKING_NOTE[ranking]}
+            {ranking === "marketCap" && kind === "all" ? "ETF 沒有市值，不列入。" : ""}
           </p>
           <StockList stocks={rows} ranking={ranking} etf={kind === "etf"} />
         </>
