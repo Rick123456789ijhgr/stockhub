@@ -38,16 +38,19 @@ type Column = "change" | "volume" | "turnover" | "marketCap";
 export function StockList({
   stocks,
   ranking,
+  etf = false,
 }: {
   stocks: StockListItem[];
   /** Set for a ranking: rows are numbered and its column is highlighted. */
   ranking?: Ranking;
+  /** Only ETFs: no industry or market value columns (always empty for them). */
+  etf?: boolean;
 }) {
   const sorted = ranking ? RANK_COLUMN[ranking] : undefined;
   return (
     <>
       <StockCards stocks={stocks} sorted={sorted} numbered={ranking !== undefined} />
-      <StockTable stocks={stocks} sorted={sorted} numbered={ranking !== undefined} />
+      <StockTable stocks={stocks} sorted={sorted} numbered={ranking !== undefined} etf={etf} />
     </>
   );
 }
@@ -133,10 +136,12 @@ function StockTable({
   stocks,
   sorted,
   numbered,
+  etf,
 }: {
   stocks: StockListItem[];
   sorted: Column | undefined;
   numbered: boolean;
+  etf: boolean;
 }) {
   // The ranked column stands out; a ranking is one trading day, so no date column.
   const head = (column: Column) =>
@@ -150,12 +155,12 @@ function StockTable({
             <TableHead>代號</TableHead>
             <TableHead>名稱</TableHead>
             <TableHead>類別</TableHead>
-            <TableHead>產業</TableHead>
+            {etf ? null : <TableHead>產業</TableHead>}
             <TableHead className="text-right">收盤</TableHead>
             <TableHead className={head("change")}>漲跌幅</TableHead>
             <TableHead className={head("volume")}>成交量（張）</TableHead>
             <TableHead className={head("turnover")}>成交金額（億）</TableHead>
-            <TableHead className={head("marketCap")}>市值（億）</TableHead>
+            {etf ? null : <TableHead className={head("marketCap")}>市值（億）</TableHead>}
             {numbered ? null : <TableHead>資料日期</TableHead>}
           </TableRow>
         </TableHeader>
@@ -178,16 +183,18 @@ function StockTable({
               <TableCell>
                 <Labels stock={s} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{s.industry ?? "—"}</TableCell>
+              {etf ? null : <TableCell className="text-muted-foreground">{s.industry ?? "—"}</TableCell>}
               <TableCell className="text-right tabular-nums">{formatPrice(s.close)}</TableCell>
               <TableCell className="text-right">
                 <Change stock={s} />
               </TableCell>
               <TableCell className="text-right tabular-nums">{formatLots(s.volume)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatHundredMillion(s.turnover)}</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {formatHundredMillion(s.marketCap, 0)}
-              </TableCell>
+              {etf ? null : (
+                <TableCell className="text-right tabular-nums">
+                  {formatHundredMillion(s.marketCap, 0)}
+                </TableCell>
+              )}
               {numbered ? null : (
                 <TableCell className="text-muted-foreground tabular-nums">{s.tradeDate ?? "—"}</TableCell>
               )}

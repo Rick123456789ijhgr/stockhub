@@ -11,19 +11,35 @@ export function activeTab<K extends string>(tabs: readonly PageTab<K>[], value: 
   return (found ?? tabs[0]!).key;
 }
 
+/** Link of a tab: the first tab is the bare path; `query` is kept on every tab. */
+export function tabHref(
+  basePath: string,
+  key: string,
+  first: boolean,
+  query: Record<string, string> = {},
+): string {
+  const params = new URLSearchParams(query);
+  if (!first) params.set("tab", key);
+  const search = params.toString();
+  return search ? `${basePath}?${search}` : basePath;
+}
+
 /**
  * Underlined tab bar driven by `?tab=`: the server renders only the active tab, so a tab's
- * queries run only when it is opened. Other query parameters are dropped on switch.
+ * queries run only when it is opened. Other query parameters are dropped on switch, except
+ * those in `query`.
  */
 export function PageTabs<K extends string>({
   tabs,
   active,
   basePath,
+  query,
   className,
 }: {
   tabs: readonly PageTab<K>[];
   active: K;
   basePath: string;
+  query?: Record<string, string>;
   className?: string;
 }) {
   return (
@@ -40,7 +56,7 @@ export function PageTabs<K extends string>({
           return (
             <li key={tab.key}>
               <Link
-                href={i === 0 ? basePath : `${basePath}?tab=${tab.key}`}
+                href={tabHref(basePath, tab.key, i === 0, query)}
                 scroll={false}
                 aria-current={current ? "page" : undefined}
                 className={cn(

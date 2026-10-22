@@ -112,7 +112,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 財報的「可用日」是 `available_date`（已知公布日，否則法定截止日，`common/filings.py`）；估值、篩選、回測都用它對齊，不要直接用 `period_end`。
 - 估值公式：`py/stockhub/engine/valuation.py` 與 `web/src/lib/valuation.ts` 逐式對應，改任一邊都要同步另一邊，並用 `py/scripts/gen_valuation_fixture.py` 重產 `testdata/valuation.json`。
 - 網站觸發 Python 任務一律排入 `job_requests`（`POST /api/jobs`，可排的任務在 `lib/job-request-input.ts` 與資料表 CHECK 兩處列舉，新增時兩邊都改），不要在 route handler 直接執行任務。
-- 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁）；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
+- 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁；要保留其他參數用 `query`）；分段切換（例如股票／ETF、熱力圖期間）用 `components/segmented-links.tsx`；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
 - 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。
 - 市場與總經：每條線是 `market_series` 的一個序列，值在 `market_series_values`（國際市場存交易所當地日期，月資料存月初）；provider 以 `series_symbols` 宣告服務哪些序列，`PROVIDERS_MARKET_SERIES` 的順序就是主來源與備援，一次只服務一個月的來源設 `series_monthly`。新增序列＝遷移加一列目錄＋在 provider 的 `series_symbols` 加代號。寫入一律經 `jobs/markets.py` 的 `store_observations`（品質檢查、隔離、取代隔離）；沒有 `has_ohlc` 的序列只存收盤值。涵蓋讀 `market_series_status` 檢視表。Yahoo 是非官方來源，只經 `YahooProvider`。

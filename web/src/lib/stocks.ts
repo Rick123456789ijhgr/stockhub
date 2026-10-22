@@ -6,6 +6,7 @@ import type { ChartBar } from "@/lib/chart-data";
 import type { DB } from "@/lib/db";
 
 import type { Market } from "@/lib/stock-market";
+import { escapeLike, normalizeQuery } from "@/lib/stock-search";
 
 export { MARKET_LABEL, type Market } from "@/lib/stock-market";
 
@@ -28,20 +29,21 @@ export type StockListItem = {
 };
 
 /**
- * Stocks matching `query` (symbol prefix or name substring), each with its latest bar and
+ * Listings whose symbol or name contains `query` (878 finds 00878), best match first:
+ * exact symbol, symbol prefix, name prefix, then anything containing it; within each, the
+ * listed ones before delisted, the most traded first. Symbols also match without their
+ * leading zeros, so 50 is an exact match for 0050 and 878 a prefix of 00878. Each comes with its latest bar and
  * the previous close rebased with adj_factor, so the change on an ex-date is measured
- * against the reference price instead of the pre-dividend close. Delisted stocks only
- * appear when searched for, after the active ones.
+ * against the reference price instead of the pre-dividend close.
  */
 export async function searchStocks(
   db: Kysely<DB>,
   query: string,
   limit = 100,
 ): Promise<StockListItem[]> {
-  const q = query.trim();
-  const filter = q
-    ? sql`AND (s.symbol ILIKE ${`${q}%`} OR s.name ILIKE ${`%${q}%`})`
-    : sql``;
+  const q = normalizeQuery(query);
+  if (!q) return [];
+  const like = escapeLike(q);
   const result = await sql<StockListItem>`
     SELECT s.symbol, s.name, s.market, s.type, s.industry, s.delisted_date AS "delistedDate",
            l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume,
@@ -57,9 +59,13 @@ export async function searchStocks(
       ORDER BY p.trade_date DESC
       LIMIT 1
     ) l ON true
-    WHERE (s.delisted_date IS NULL OR ${q} <> '') ${filter}
-    ORDER BY (s.symbol = ${q}) DESC, (s.delisted_date IS NULL) DESC, s.type DESC, s.symbol,
-             s.delisted_date DESC
+    WHERE s.symbol ILIKE ${`%${like}%`} OR s.name ILIKE ${`%${like}%`}
+    ORDER BY (upper(s.symbol) = upper(${q}) OR ltrim(s.symbol, '0') = ${q}) DESC,
+             (s.symbol ILIKE ${`${like}%`} OR ltrim(s.symbol, '0') ILIKE ${`${like}%`}) DESC,
+             s.name ILIKE ${`${like}%`} DESC,
+             s.delisted_date IS NULL DESC,
+             l.turnover DESC NULLS LAST,
+             s.symbol, s.delisted_date DESC
     LIMIT ${limit}
   `.execute(db);
   return result.rows;
@@ -71,6 +77,8 @@ const MARKET_CAP_SQL = sql`CASE WHEN s.type = 'stock' AND s.issued_shares > 0
 
 export const RANKINGS = ["turnover", "volume", "gainers", "losers", "marketCap"] as const;
 export type Ranking = (typeof RANKINGS)[number];
+/** Rankings are of common stocks or of ETFs, never mixed; ETFs have no market value. */
+export type RankingKind = "stock" | "etf";
 
 const RANKING_ORDER: Record<Ranking, ReturnType<typeof sql>> = {
   turnover: sql`l.turnover DESC`,
@@ -97,19 +105,17 @@ export async function recentTradingDates(db: Kysely<DB>, count: number): Promise
 }
 
 /**
- * The top `limit` listings of the latest trading day by `ranking`: turnover and volume
- * over stocks and ETFs, gainers, losers and market value over common stocks only (ETFs'
- * units are not shares of a company, and leveraged ETFs would crowd the movers). Changes
- * use the previous close rebased with adj_factor, like everywhere else.
+ * The top `limit` common stocks or ETFs of the latest trading day by `ranking`. Changes use
+ * the previous close rebased with adj_factor, like everywhere else.
  */
 export async function getRanking(
   db: Kysely<DB>,
   ranking: Ranking,
+  kind: RankingKind,
   limit = 50,
 ): Promise<{ date: string | null; rows: StockListItem[] }> {
   const [date] = await recentTradingDates(db, 1);
   if (!date) return { date: null, rows: [] };
-  const stocksOnly = ranking === "turnover" || ranking === "volume" ? sql`` : sql`AND s.type = 'stock'`;
   const movers =
     ranking === "gainers" || ranking === "losers" ? sql`AND l.prev_close > 0` : sql``;
   const result = await sql<StockListItem>`
@@ -126,7 +132,7 @@ export async function getRanking(
       WHERE p.trade_date = ${date} AND p.close IS NOT NULL
     ) l
     JOIN stocks s ON s.id = l.stock_id
-    WHERE s.delisted_date IS NULL ${stocksOnly} ${movers}
+    WHERE s.delisted_date IS NULL AND s.type = ${kind} ${movers}
     ORDER BY ${RANKING_ORDER[ranking]}, s.symbol
     LIMIT ${limit}
   `.execute(db);

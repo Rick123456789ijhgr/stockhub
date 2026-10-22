@@ -3,13 +3,13 @@ import Link from "next/link";
 
 import { InfoNote } from "@/components/disclosure";
 import { PriceChange } from "@/components/price-change";
+import { SegmentedLinks } from "@/components/segmented-links";
 import { ShowMoreRows } from "@/components/show-more";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { DB } from "@/lib/db";
 import { HEATMAP_PERIODS, type HeatmapPeriod } from "@/lib/heatmap-data";
 import { loadHeatmap } from "@/lib/heatmap";
-import { cn } from "@/lib/utils";
 
 import { Heatmap, HeatmapLegend } from "./heatmap";
 
@@ -31,39 +31,6 @@ export function parseHeatmapParams(query: Record<string, string | string[] | und
   return { by, period };
 }
 
-function Segmented<K extends string>({
-  options,
-  active,
-  href,
-  label,
-}: {
-  options: Record<K, string>;
-  active: K;
-  href: (key: K) => string;
-  label: string;
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex rounded-md border p-0.5 text-sm">
-      {(Object.keys(options) as K[]).map((key) => (
-        <Link
-          key={key}
-          href={href(key)}
-          scroll={false}
-          aria-current={key === active ? "true" : undefined}
-          className={cn(
-            "rounded-[5px] px-2.5 py-1",
-            key === active
-              ? "bg-muted font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {options[key]}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 /** 產業與題材熱力圖: market-cap treemap coloured by change, with a table of the groups. */
 export async function HeatmapSection({
   db,
@@ -80,8 +47,8 @@ export async function HeatmapSection({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Segmented label="分組" options={BY_LABEL} active={by} href={(b) => href(b, period)} />
-        <Segmented label="期間" options={PERIOD_LABEL} active={period} href={(p) => href(by, p)} />
+        <SegmentedLinks label="分組" options={BY_LABEL} active={by} href={(b) => href(b, period)} />
+        <SegmentedLinks label="期間" options={PERIOD_LABEL} active={period} href={(p) => href(by, p)} />
         {data ? (
           <span className="text-xs text-muted-foreground tabular-nums">
             {data.baseDate ? `${data.baseDate} → ` : ""}

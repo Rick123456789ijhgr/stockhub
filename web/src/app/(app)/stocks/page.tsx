@@ -3,12 +3,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/coming-soon";
-import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
+import { activeTab, type PageTab, PageTabs, tabHref } from "@/components/page-tabs";
+import { SegmentedLinks } from "@/components/segmented-links";
 import { StockList } from "@/components/stocks/stock-list";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { getRanking, type Ranking, searchStocks } from "@/lib/stocks";
+import {
+  getRanking,
+  type Ranking,
+  type RankingKind,
+  searchStocks,
+  type StockListItem,
+} from "@/lib/stocks";
 
 export const metadata: Metadata = { title: "個股" };
 
@@ -25,7 +32,8 @@ async function StockSearch({ searchParams }: { searchParams: PageProps<"/stocks"
   await requireUser();
   const params = await searchParams;
   const q = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
-  const tab = activeTab(RANKING_TABS, params.tab);
+  const kind: RankingKind = params.type === "etf" ? "etf" : "stock";
+  const tab = activeTab(kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS, params.tab);
 
   return (
     <>
@@ -50,7 +58,7 @@ async function StockSearch({ searchParams }: { searchParams: PageProps<"/stocks"
         </button>
       </form>
 
-      {q ? <SearchResults q={q} /> : <RankingView ranking={tab} />}
+      {q ? <SearchResults q={q} /> : <RankingView kind={kind} ranking={tab} />}
     </>
   );
 }
@@ -62,20 +70,39 @@ const RANKING_TABS: PageTab<Ranking>[] = [
   { key: "losers", label: "跌幅" },
   { key: "marketCap", label: "市值" },
 ];
+/** ETFs have no market value (their units are not shares of a company). */
+const ETF_RANKING_TABS = RANKING_TABS.filter((t) => t.key !== "marketCap");
+
+const KIND_LABEL: Record<RankingKind, string> = { stock: "股票", etf: "ETF" };
 
 const RANKING_NOTE: Record<Ranking, string> = {
-  turnover: "成交金額前 50 名（含 ETF），最能看出當天的熱門股。",
-  volume: "成交量前 50 名（含 ETF）；低價股的張數容易偏多。",
-  gainers: "漲幅前 50 名（不含 ETF），以參考價（還原後的前收）計算。",
-  losers: "跌幅前 50 名（不含 ETF），以參考價（還原後的前收）計算。",
-  marketCap: "市值前 50 名（不含 ETF）＝收盤價 × 發行股數。",
+  turnover: "成交金額前 50 名，最能看出當天的熱門標的。",
+  volume: "成交量前 50 名；低價的張數容易偏多。",
+  gainers: "漲幅前 50 名，以參考價（還原後的前收）計算。",
+  losers: "跌幅前 50 名，以參考價（還原後的前收）計算。",
+  marketCap: "市值前 50 名＝收盤價 × 發行股數。",
 };
 
-async function RankingView({ ranking }: { ranking: Ranking }) {
-  const { date, rows } = await getRanking(getDb(), ranking);
+/** Query that keeps the kind when switching ranking tabs (stocks are the default). */
+const kindQuery = (kind: RankingKind): Record<string, string> =>
+  kind === "etf" ? { type: "etf" } : {};
+
+async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Ranking }) {
+  const { date, rows } = await getRanking(getDb(), ranking, kind);
+  const tabs = kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS;
   return (
     <div className="space-y-3">
-      <PageTabs tabs={RANKING_TABS} active={ranking} basePath="/stocks" />
+      <SegmentedLinks
+        label="類別"
+        options={KIND_LABEL}
+        active={kind}
+        // Keep the ranking across kinds when the other kind has it.
+        href={(k) => {
+          const keep = (k === "etf" ? ETF_RANKING_TABS : RANKING_TABS).some((t) => t.key === ranking);
+          return tabHref("/stocks", ranking, !keep || ranking === RANKING_TABS[0]!.key, kindQuery(k));
+        }}
+      />
+      <PageTabs tabs={tabs} active={ranking} basePath="/stocks" query={kindQuery(kind)} />
       {rows.length === 0 ? (
         <Card>
           <CardContent className="text-sm text-muted-foreground">
@@ -85,9 +112,9 @@ async function RankingView({ ranking }: { ranking: Ranking }) {
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            {date} 收盤 · {RANKING_NOTE[ranking]}
+            {date} 收盤 · {KIND_LABEL[kind]}{RANKING_NOTE[ranking]}
           </p>
-          <StockList stocks={rows} ranking={ranking} />
+          <StockList stocks={rows} ranking={ranking} etf={kind === "etf"} />
         </>
       )}
     </div>
@@ -95,23 +122,40 @@ async function RankingView({ ranking }: { ranking: Ranking }) {
 }
 
 async function SearchResults({ q }: { q: string }) {
-  const stocks = await searchStocks(getDb(), q);
-  if (stocks.length === 0) {
+  const found = await searchStocks(getDb(), q);
+  if (found.length === 0) {
     return (
       <Card>
         <CardContent className="text-sm text-muted-foreground">找不到「{q}」。</CardContent>
       </Card>
     );
   }
+  // The group holding the best match comes first (searching 50 finds 0050 before 5013).
+  const groups: [string, StockListItem[]][] = (
+    [
+      ["股票", found.filter((s) => s.type === "stock")],
+      ["ETF", found.filter((s) => s.type === "etf")],
+    ] satisfies [string, StockListItem[]][]
+  ).sort(([, a], [, b]) => found.indexOf(a[0]!) - found.indexOf(b[0]!));
   return (
-    <>
-      <p className="mb-2 text-xs text-muted-foreground">
-        「{q}」的搜尋結果（最多顯示 100 筆）·{" "}
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        「{q}」的搜尋結果：代號或名稱含「{q}」，最接近、成交最多的在前（最多 100 筆）·{" "}
         <Link href="/stocks" className="hover:text-foreground hover:underline">
           回到榜單
         </Link>
       </p>
-      <StockList stocks={stocks} />
-    </>
+      {groups.map(([label, rows]) =>
+        rows.length ? (
+          <section key={label} aria-label={label} className="space-y-2">
+            <h2 className="text-sm font-medium">
+              {label}
+              <span className="ml-1.5 text-muted-foreground tabular-nums">{rows.length}</span>
+            </h2>
+            <StockList stocks={rows} etf={label === "ETF"} />
+          </section>
+        ) : null,
+      )}
+    </div>
   );
 }
