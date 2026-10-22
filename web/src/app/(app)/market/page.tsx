@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
 import { HeatmapSection, parseHeatmapParams } from "@/components/market/heatmap-section";
 import { MacroSection } from "@/components/market/macro-section";
 import { MarketOverview } from "@/components/market/market-overview";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
-import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { taipeiToday } from "@/lib/market-hours";
@@ -24,9 +22,7 @@ export default function MarketPage({ searchParams }: PageProps<"/market">) {
   return (
     <>
       <PageHeader title="市場" description="台股與國際市場、產業與題材熱力圖、總經指標與事件。" />
-      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <MarketContent searchParams={searchParams} />
-      </Suspense>
+      <MarketContent searchParams={searchParams} />
     </>
   );
 }

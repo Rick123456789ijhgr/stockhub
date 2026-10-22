@@ -1,7 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 
 import { ChipsSection } from "@/components/chips/chips-section";
 import { FundamentalsSection } from "@/components/fundamentals/fundamentals-section";
@@ -10,11 +9,10 @@ import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
-import { StockChart, StockChartSkeleton } from "@/components/stock-chart/stock-chart";
+import { StockChart } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -61,9 +59,7 @@ export default function StockPage({ params, searchParams }: PageProps<"/stocks/[
         <ChevronLeft className="size-4" aria-hidden />
         個股
       </Link>
-      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <StockContent params={params} searchParams={searchParams} />
-      </Suspense>
+      <StockContent params={params} searchParams={searchParams} />
     </>
   );
 }
@@ -151,18 +147,14 @@ async function StockContent({
         {tab === "chart" ? (
           <div className="space-y-4">
             {bars.length > 0 && chartBars ? (
-              <Suspense fallback={<StockChartSkeleton />}>
-                <StockChart symbol={stock.symbol} initial={chartBars} />
-              </Suspense>
+              <StockChart symbol={stock.symbol} initial={chartBars} />
             ) : null}
             <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
           </div>
         ) : null}
-        <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
-          {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
-          {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
-          {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
-        </Suspense>
+        {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
+        {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
+        {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
         {tab === "daily" ? (
           bars.length > 0 ? (
             <BarsTable bars={bars} />

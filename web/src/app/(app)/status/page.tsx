@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
 import { Disclosure } from "@/components/disclosure";
 import { ShowMoreList, ShowMoreRows } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -61,9 +59,7 @@ export default function StatusPage({ searchParams }: PageProps<"/status">) {
   return (
     <>
       <PageHeader title="資料狀態" description="資料抓取進度、每日涵蓋與任務紀錄（時間為台北時間）。" />
-      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <StatusContent searchParams={searchParams} />
-      </Suspense>
+      <StatusContent searchParams={searchParams} />
     </>
   );
 }

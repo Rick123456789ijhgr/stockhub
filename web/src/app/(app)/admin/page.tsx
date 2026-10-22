@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { AuditLogList } from "@/components/admin/audit-log";
 import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
@@ -16,7 +15,6 @@ import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { PriceChange } from "@/components/price-change";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { listAuditLog } from "@/lib/audit";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -43,9 +41,7 @@ export default function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
     <>
       <PageHeader title="設定" description="資料確認與顯示設定；手動操作都會寫入稽核紀錄。" />
-      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-        <AdminContent searchParams={searchParams} />
-      </Suspense>
+      <AdminContent searchParams={searchParams} />
     </>
   );
 }
@@ -89,9 +85,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                   <code>compute_adj_factors</code>（<code>make etl-daily</code> 或{" "}
                   <code>make etl-adjust</code>）時更新。
                 </InfoNote>
-                <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-                  <PriceGaps total={gapCount} />
-                </Suspense>
+                <PriceGaps total={gapCount} />
               </div>
             </Disclosure>
             <Disclosure
@@ -104,9 +98,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                 <InfoNote>
                   品質檢查沒過的整份報表（例如資料源把年初至今的累計數當成單季），沒有寫入正式資料。通常選「捨棄」：資料源修正後，下次抓取通過檢查就會自動取代；確定沒問題才選「仍然採用」。
                 </InfoNote>
-                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
-                  <FinancialsQuarantine total={quarantineCount} />
-                </Suspense>
+                <FinancialsQuarantine total={quarantineCount} />
               </div>
             </Disclosure>
             <Disclosure
@@ -120,9 +112,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                   三大法人加總、融資融券餘額連續性、外資持股比或集保級距加總對不上的資料，沒有寫入正式資料。通常選「捨棄」：交易所更正後，用「籌碼更新到今天」或{" "}
                   <code>make etl-chips date=YYYY-MM-DD</code> 重抓，通過檢查就會自動取代。
                 </InfoNote>
-                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
-                  <ChipsQuarantine total={chipCount} />
-                </Suspense>
+                <ChipsQuarantine total={chipCount} />
               </div>
             </Disclosure>
             <Disclosure
@@ -136,9 +126,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                   指數、匯率、商品或利率的數值不合理（開收盤不在高低區間、非正數、或和前一筆相比變動過大），沒有寫入正式資料。Yahoo
                   偶爾會給出錯的單日數值（例如美元兌台幣 1.8），通常選「捨棄」；確定是真實的大幅變動才選「仍然採用」。
                 </InfoNote>
-                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
-                  <SeriesQuarantine />
-                </Suspense>
+                <SeriesQuarantine />
               </div>
             </Disclosure>
           </CardContent>
@@ -150,9 +138,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
             <CardDescription>最近 {AUDIT_SHOWN} 筆手動操作（交易、自選、設定、事件確認）。</CardDescription>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-              <AuditLog />
-            </Suspense>
+            <AuditLog />
           </CardContent>
         </Card>
       ) : null}
@@ -171,9 +157,7 @@ function ThemesAndEvents() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-            <Themes />
-          </Suspense>
+          <Themes />
         </CardContent>
       </Card>
       <Card size="sm">
@@ -182,9 +166,7 @@ function ThemesAndEvents() {
           <CardDescription>顯示在「市場 → 總經」；景氣燈號發布由每日任務自動記錄。</CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-            <Events />
-          </Suspense>
+          <Events />
         </CardContent>
       </Card>
     </div>
@@ -218,9 +200,7 @@ function General() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-            <Fees />
-          </Suspense>
+          <Fees />
         </CardContent>
       </Card>
       <div className="grid gap-4">

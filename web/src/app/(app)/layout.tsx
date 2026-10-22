@@ -8,9 +8,18 @@ import {
   SidebarNav,
   SidebarNavList,
 } from "@/components/nav/nav-links";
+import { NavProgress } from "@/components/nav/nav-progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
+
+/**
+ * Navigations between pages block until the new page is ready (30–150 ms locally) instead
+ * of showing skeletons: React keeps a revealed fallback up for at least ~300 ms, so a
+ * skeleton made every switch slower than the data (docs/DECISIONS.md D-118). Pages render
+ * their content without a page-level <Suspense>; nav links and tabs show the pending state.
+ */
+export const instant = false;
 
 /**
  * Signed-in shell: sidebar on desktop, bottom bar on mobile. The shell is static; page
@@ -20,6 +29,9 @@ import { requireUser } from "@/lib/auth/session";
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[13rem_1fr]">
+      <Suspense fallback={null}>
+        <NavProgress />
+      </Suspense>
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r bg-sidebar px-3 py-5 md:flex">
         <Brand />
         <Suspense fallback={<SidebarNavList pathname="" />}>
