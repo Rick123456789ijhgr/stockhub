@@ -8,6 +8,7 @@ import { DISCLOSURE_CHEVRON } from "@/components/disclosure";
 import { ShowMoreList } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { sendJson } from "@/lib/send-json";
 import type { QuarantinedObservation } from "@/lib/series-quarantine";
 
 const REASON: Record<string, string> = {
@@ -34,14 +35,8 @@ export function SeriesQuarantineList({ rows }: { rows: QuarantinedObservation[] 
 function Item({ row }: { row: QuarantinedObservation }) {
   const router = useRouter();
   const resolve = useMutation({
-    mutationFn: async (decision: "accept" | "reject") => {
-      const response = await fetch(`/api/admin/series-quarantine/${row.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    },
+    mutationFn: (decision: "accept" | "reject") =>
+      sendJson("POST", `/api/admin/series-quarantine/${row.id}`, { decision }),
     onSuccess: () => router.refresh(),
   });
   const value = (row.payload as { value?: string } | null)?.value;
@@ -58,7 +53,7 @@ function Item({ row }: { row: QuarantinedObservation }) {
           </span>
           <Badge variant="outline">{row.source}</Badge>
           <div className="ml-auto flex items-center gap-1.5">
-            {resolve.isError ? <span className="text-xs text-destructive">送出失敗</span> : null}
+            {resolve.error ? <span className="text-xs text-destructive">{resolve.error.message}</span> : null}
             <Button
               size="sm"
               variant="outline"

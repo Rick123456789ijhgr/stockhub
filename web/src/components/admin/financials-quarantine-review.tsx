@@ -10,6 +10,7 @@ import { DISCLOSURE_CHEVRON } from "@/components/disclosure";
 import { ShowMoreList } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { sendJson } from "@/lib/send-json";
 import type { QuarantinedStatement } from "@/lib/fundamentals-status";
 
 const STATEMENT = { IS: "損益表", BS: "資產負債表", CF: "現金流量表" } as const;
@@ -63,14 +64,8 @@ export function FinancialsQuarantineList({ rows }: { rows: QuarantinedStatement[
 function Item({ row }: { row: QuarantinedStatement }) {
   const router = useRouter();
   const resolve = useMutation({
-    mutationFn: async (decision: "accept" | "reject") => {
-      const response = await fetch(`/api/admin/financials-quarantine/${row.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    },
+    mutationFn: (decision: "accept" | "reject") =>
+      sendJson("POST", `/api/admin/financials-quarantine/${row.id}`, { decision }),
     onSuccess: () => router.refresh(),
   });
   const items = row.items.filter((i) => SHOWN_ITEMS.includes(i.itemCode));
@@ -89,7 +84,7 @@ function Item({ row }: { row: QuarantinedStatement }) {
             {row.reasons.map((r) => REASON_SHORT[r] ?? r).join("、")}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
-            {resolve.isError ? <span className="text-xs text-destructive">送出失敗</span> : null}
+            {resolve.error ? <span className="text-xs text-destructive">{resolve.error.message}</span> : null}
             <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate("reject")}>
               捨棄
             </Button>

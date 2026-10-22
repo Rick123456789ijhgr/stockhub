@@ -1,4 +1,5 @@
 import { requireApiUser } from "@/lib/auth/session";
+import { reviewResponse } from "@/lib/constraint-error";
 import { getDb } from "@/lib/db";
 import { resolveQuarantinedObservation } from "@/lib/series-quarantine";
 
@@ -16,7 +17,5 @@ export async function POST(
   if (decision !== "accept" && decision !== "reject") {
     return Response.json({ error: "invalid decision" }, { status: 400 });
   }
-  const done = await resolveQuarantinedObservation(getDb(), id, decision, user.email);
-  if (!done) return Response.json({ error: "not found or already reviewed" }, { status: 409 });
-  return Response.json({ ok: true });
+  return reviewResponse(() => resolveQuarantinedObservation(getDb(), id, decision, user.email));
 }
