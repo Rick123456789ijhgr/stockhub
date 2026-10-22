@@ -179,3 +179,34 @@
     @apply font-sans;
   }
 }
+
+/* Navigation progress (components/nav/nav-progress.tsx): invisible for the first 150 ms,
+   so quick switches show nothing; then grows towards the right while the page loads. */
+@keyframes nav-progress {
+  from {
+    transform: scaleX(0.05);
+  }
+  to {
+    transform: scaleX(0.9);
+  }
+}
+@keyframes nav-progress-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.nav-progress {
+  opacity: 0;
+  animation:
+    nav-progress-in 120ms ease-out 150ms forwards,
+    nav-progress 4s cubic-bezier(0.1, 0.6, 0.3, 1) 150ms forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress {
+    animation: nav-progress-in 120ms ease-out 150ms forwards;
+    transform: scaleX(0.9);
+  }
+}

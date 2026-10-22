@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { LinkPending } from "@/components/nav/nav-progress";
 import { cn } from "@/lib/utils";
 
 export type PageTab<K extends string> = { key: K; label: string; badge?: number };
@@ -48,7 +49,8 @@ export function PageTabs<K extends string>({
                   "inline-flex items-center gap-1.5 py-2.5",
                   current
                     ? "font-medium text-foreground shadow-[inset_0_-2px_0_var(--foreground)]"
-                    : "text-muted-foreground hover:text-foreground",
+                    : // Clicked: underline at once while the tab loads (LinkPending).
+                      "text-muted-foreground hover:text-foreground has-data-link-pending:text-foreground has-data-link-pending:shadow-[inset_0_-2px_0_var(--foreground)]",
                 )}
               >
                 {tab.label}
@@ -57,6 +59,7 @@ export function PageTabs<K extends string>({
                     {tab.badge.toLocaleString("zh-TW")}
                   </span>
                 ) : null}
+                <LinkPending />
               </Link>
             </li>
           );
