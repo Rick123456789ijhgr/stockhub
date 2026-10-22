@@ -13,21 +13,41 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatLots, formatPrice } from "@/lib/format";
+import { formatHundredMillion, formatLots, formatPrice } from "@/lib/format";
 import { priceChange } from "@/lib/price";
 import { MARKET_LABEL } from "@/lib/stock-market";
-import type { StockListItem } from "@/lib/stocks";
+import type { Ranking, StockListItem } from "@/lib/stocks";
+import { cn } from "@/lib/utils";
+
+/** Which column a ranking sorts by (highlighted in the table, shown on phone cards). */
+const RANK_COLUMN: Record<Ranking, Column> = {
+  turnover: "turnover",
+  volume: "volume",
+  gainers: "change",
+  losers: "change",
+  marketCap: "marketCap",
+};
+
+type Column = "change" | "volume" | "turnover" | "marketCap";
 
 /**
- * Search results as phone cards and a desktop table. A client component so a navigation
- * downloads the rows once as data, not twice as rendered elements (the page was ~850 KB,
- * docs/DECISIONS.md D-118).
+ * Search results or a ranking, as phone cards and a desktop table. A client component so a
+ * navigation downloads the rows once as data, not twice as rendered elements (the page was
+ * ~850 KB, docs/DECISIONS.md D-118).
  */
-export function StockList({ stocks }: { stocks: StockListItem[] }) {
+export function StockList({
+  stocks,
+  ranking,
+}: {
+  stocks: StockListItem[];
+  /** Set for a ranking: rows are numbered and its column is highlighted. */
+  ranking?: Ranking;
+}) {
+  const sorted = ranking ? RANK_COLUMN[ranking] : undefined;
   return (
     <>
-      <StockCards stocks={stocks} />
-      <StockTable stocks={stocks} />
+      <StockCards stocks={stocks} sorted={sorted} numbered={ranking !== undefined} />
+      <StockTable stocks={stocks} sorted={sorted} numbered={ranking !== undefined} />
     </>
   );
 }
@@ -51,22 +71,46 @@ function Labels({ stock }: { stock: StockListItem }) {
   );
 }
 
+/** The ranked figure under a card's labels (the change is already on the right). */
+function CardMetric({ stock, column }: { stock: StockListItem; column: Column | undefined }) {
+  if (column === "turnover") return <>成交 {formatHundredMillion(stock.turnover)} 億</>;
+  if (column === "volume") return <>{formatLots(stock.volume)} 張</>;
+  if (column === "marketCap") return <>市值 {formatHundredMillion(stock.marketCap, 0)} 億</>;
+  return null;
+}
+
 /** Mobile: tappable cards. */
-function StockCards({ stocks }: { stocks: StockListItem[] }) {
+function StockCards({
+  stocks,
+  sorted,
+  numbered,
+}: {
+  stocks: StockListItem[];
+  sorted: Column | undefined;
+  numbered: boolean;
+}) {
   return (
     <ul className="space-y-2 md:hidden">
-      {stocks.map((s) => (
+      {stocks.map((s, i) => (
         <li key={`${s.symbol}-${s.delistedDate ?? ""}`}>
           <Link href={`/stocks/${s.symbol}`}>
             <Card size="sm">
               <CardContent className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm">{s.symbol}</span>
-                    <span className="truncate font-medium">{s.name}</span>
-                  </div>
-                  <div className="mt-1">
-                    <Labels stock={s} />
+                <div className="flex min-w-0 items-center gap-3">
+                  {numbered ? (
+                    <span className="w-5 shrink-0 text-right text-sm text-muted-foreground tabular-nums">
+                      {i + 1}
+                    </span>
+                  ) : null}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">{s.symbol}</span>
+                      <span className="truncate font-medium">{s.name}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                      <Labels stock={s} />
+                      <CardMetric stock={s} column={sorted} />
+                    </div>
                   </div>
                 </div>
                 <div className="text-right tabular-nums">
@@ -85,25 +129,42 @@ function StockCards({ stocks }: { stocks: StockListItem[] }) {
 }
 
 /** Desktop: table. */
-function StockTable({ stocks }: { stocks: StockListItem[] }) {
+function StockTable({
+  stocks,
+  sorted,
+  numbered,
+}: {
+  stocks: StockListItem[];
+  sorted: Column | undefined;
+  numbered: boolean;
+}) {
+  // The ranked column stands out; a ranking is one trading day, so no date column.
+  const head = (column: Column) =>
+    cn("text-right", sorted === column && "font-semibold text-foreground");
   return (
     <div className="hidden rounded-lg border md:block">
       <Table>
         <TableHeader>
           <TableRow>
+            {numbered ? <TableHead className="w-10 text-right">#</TableHead> : null}
             <TableHead>代號</TableHead>
             <TableHead>名稱</TableHead>
             <TableHead>類別</TableHead>
             <TableHead>產業</TableHead>
             <TableHead className="text-right">收盤</TableHead>
-            <TableHead className="text-right">漲跌幅</TableHead>
-            <TableHead className="text-right">成交量（張）</TableHead>
-            <TableHead>資料日期</TableHead>
+            <TableHead className={head("change")}>漲跌幅</TableHead>
+            <TableHead className={head("volume")}>成交量（張）</TableHead>
+            <TableHead className={head("turnover")}>成交金額（億）</TableHead>
+            <TableHead className={head("marketCap")}>市值（億）</TableHead>
+            {numbered ? null : <TableHead>資料日期</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {stocks.map((s) => (
+          {stocks.map((s, i) => (
             <TableRow key={`${s.symbol}-${s.delistedDate ?? ""}`}>
+              {numbered ? (
+                <TableCell className="text-right text-muted-foreground tabular-nums">{i + 1}</TableCell>
+              ) : null}
               <TableCell className="font-mono">
                 <Link href={`/stocks/${s.symbol}`} className="underline-offset-4 hover:underline">
                   {s.symbol}
@@ -123,7 +184,13 @@ function StockTable({ stocks }: { stocks: StockListItem[] }) {
                 <Change stock={s} />
               </TableCell>
               <TableCell className="text-right tabular-nums">{formatLots(s.volume)}</TableCell>
-              <TableCell className="text-muted-foreground tabular-nums">{s.tradeDate ?? "—"}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatHundredMillion(s.turnover)}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatHundredMillion(s.marketCap, 0)}
+              </TableCell>
+              {numbered ? null : (
+                <TableCell className="text-muted-foreground tabular-nums">{s.tradeDate ?? "—"}</TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

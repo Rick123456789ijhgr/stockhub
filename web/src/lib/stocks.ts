@@ -21,6 +21,10 @@ export type StockListItem = {
   /** Previous close on the latest bar's share basis (see `rebasedPrevClose`). */
   prevClose: string | null;
   volume: string | null;
+  /** TWD. */
+  turnover: string | null;
+  /** Close × issued shares (TWD); null for ETFs and when shares are unknown. */
+  marketCap: string | null;
 };
 
 /**
@@ -40,10 +44,11 @@ export async function searchStocks(
     : sql``;
   const result = await sql<StockListItem>`
     SELECT s.symbol, s.name, s.market, s.type, s.industry, s.delisted_date AS "delistedDate",
-           l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume
+           l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume,
+           l.turnover, ${MARKET_CAP_SQL} AS "marketCap"
     FROM stocks s
     LEFT JOIN LATERAL (
-      SELECT p.trade_date, p.close, p.volume::text AS volume,
+      SELECT p.trade_date, p.close, p.volume::text AS volume, p.turnover,
              (SELECT round(p2.close * p2.adj_factor / p.adj_factor, 4) FROM prices_daily p2
                WHERE p2.stock_id = s.id AND p2.trade_date < p.trade_date AND p2.close IS NOT NULL
                ORDER BY p2.trade_date DESC LIMIT 1) AS prev_close
@@ -58,6 +63,74 @@ export async function searchStocks(
     LIMIT ${limit}
   `.execute(db);
   return result.rows;
+}
+
+/** close × issued shares of `s` and lateral/row `l`, for common stocks only. */
+const MARKET_CAP_SQL = sql`CASE WHEN s.type = 'stock' AND s.issued_shares > 0
+  THEN round(l.close * s.issued_shares) END`;
+
+export const RANKINGS = ["turnover", "volume", "gainers", "losers", "marketCap"] as const;
+export type Ranking = (typeof RANKINGS)[number];
+
+const RANKING_ORDER: Record<Ranking, ReturnType<typeof sql>> = {
+  turnover: sql`l.turnover DESC`,
+  volume: sql`l.volume::bigint DESC`,
+  gainers: sql`l.close / l.prev_close DESC`,
+  losers: sql`l.close / l.prev_close ASC`,
+  marketCap: sql`${MARKET_CAP_SQL} DESC NULLS LAST`,
+};
+
+/**
+ * Trading dates with TWSE closes, newest first (prices_daily_coverage, not prices_daily).
+ * A date counts once most of the market is in, so a half-loaded day is not "latest".
+ */
+export async function recentTradingDates(db: Kysely<DB>, count: number): Promise<string[]> {
+  const rows = await db
+    .selectFrom("prices_daily_coverage")
+    .select("trade_date")
+    .where("market", "=", "twse")
+    .where("bars", ">", 500)
+    .orderBy("trade_date", "desc")
+    .limit(count)
+    .execute();
+  return rows.map((r) => String(r.trade_date));
+}
+
+/**
+ * The top `limit` listings of the latest trading day by `ranking`: turnover and volume
+ * over stocks and ETFs, gainers, losers and market value over common stocks only (ETFs'
+ * units are not shares of a company, and leveraged ETFs would crowd the movers). Changes
+ * use the previous close rebased with adj_factor, like everywhere else.
+ */
+export async function getRanking(
+  db: Kysely<DB>,
+  ranking: Ranking,
+  limit = 50,
+): Promise<{ date: string | null; rows: StockListItem[] }> {
+  const [date] = await recentTradingDates(db, 1);
+  if (!date) return { date: null, rows: [] };
+  const stocksOnly = ranking === "turnover" || ranking === "volume" ? sql`` : sql`AND s.type = 'stock'`;
+  const movers =
+    ranking === "gainers" || ranking === "losers" ? sql`AND l.prev_close > 0` : sql``;
+  const result = await sql<StockListItem>`
+    SELECT s.symbol, s.name, s.market, s.type, s.industry, s.delisted_date AS "delistedDate",
+           l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume,
+           l.turnover, ${MARKET_CAP_SQL} AS "marketCap"
+    FROM (
+      SELECT p.stock_id, p.trade_date, p.close, p.volume::text AS volume, p.turnover,
+             (SELECT round(p2.close * p2.adj_factor / p.adj_factor, 4) FROM prices_daily p2
+               WHERE p2.stock_id = p.stock_id AND p2.trade_date < p.trade_date
+                 AND p2.close IS NOT NULL
+               ORDER BY p2.trade_date DESC LIMIT 1) AS prev_close
+      FROM prices_daily p
+      WHERE p.trade_date = ${date} AND p.close IS NOT NULL
+    ) l
+    JOIN stocks s ON s.id = l.stock_id
+    WHERE s.delisted_date IS NULL ${stocksOnly} ${movers}
+    ORDER BY ${RANKING_ORDER[ranking]}, s.symbol
+    LIMIT ${limit}
+  `.execute(db);
+  return { date, rows: result.rows };
 }
 
 export type StockDetail = {

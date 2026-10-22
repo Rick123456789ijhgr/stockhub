@@ -85,8 +85,11 @@ export function formatLots(shares: string | number | null | undefined): string {
   return LOTS.format(Math.round(Number(shares) / 1000));
 }
 
-/** TWD -> 億 (100 million) with two decimals. */
-export function formatHundredMillion(value: string | number | null | undefined): string {
+/** TWD -> 億 (100 million), two decimals by default. */
+export function formatHundredMillion(
+  value: string | number | null | undefined,
+  digits = 2,
+): string {
   if (value == null || value === "") return "—";
-  return fixed(2).format(Number(value) / 1e8);
+  return fixed(digits).format(Number(value) / 1e8);
 }

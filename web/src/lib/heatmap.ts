@@ -12,6 +12,7 @@ import {
   industryGroups,
   themeGroups,
 } from "@/lib/heatmap-data";
+import { recentTradingDates } from "@/lib/stocks";
 
 export type HeatmapData = {
   /** Latest trading date with closes, and the date the period is measured from. */
@@ -19,22 +20,6 @@ export type HeatmapData = {
   baseDate: string | null;
   groups: HeatmapGroup[];
 };
-
-/**
- * Trading dates with TWSE closes, newest first (prices_daily_coverage, not prices_daily).
- * A date counts once most of the market is in, so a half-loaded day is not "latest".
- */
-async function recentTradingDates(db: Kysely<DB>, count: number): Promise<string[]> {
-  const rows = await db
-    .selectFrom("prices_daily_coverage")
-    .select("trade_date")
-    .where("market", "=", "twse")
-    .where("bars", ">", 500)
-    .orderBy("trade_date", "desc")
-    .limit(count)
-    .execute();
-  return rows.map((r) => String(r.trade_date));
-}
 
 /** Common stocks with a close on the latest date and their change over the period. */
 async function loadStocks(db: Kysely<DB>, date: string, baseDate: string | null) {
