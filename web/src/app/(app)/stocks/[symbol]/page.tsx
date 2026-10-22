@@ -6,6 +6,7 @@ import { ChipsSection } from "@/components/chips/chips-section";
 import { FundamentalsSection } from "@/components/fundamentals/fundamentals-section";
 import { ValuationSection } from "@/components/fundamentals/valuation-section";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
+import { RememberedLink } from "@/components/nav/remembered-link";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
@@ -52,13 +53,13 @@ const BARS_SHOWN = 20;
 export default function StockPage({ params, searchParams }: PageProps<"/stocks/[symbol]">) {
   return (
     <>
-      <Link
+      <RememberedLink
         href="/stocks"
         className="mb-3 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" aria-hidden />
         個股
-      </Link>
+      </RememberedLink>
       <StockContent params={params} searchParams={searchParams} />
     </>
   );

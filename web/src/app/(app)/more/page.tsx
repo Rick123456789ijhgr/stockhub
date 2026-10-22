@@ -1,9 +1,9 @@
 import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { PageHeader } from "@/components/coming-soon";
 import { SECONDARY_ITEMS } from "@/components/nav/nav-items";
+import { RememberedLink } from "@/components/nav/remembered-link";
 import { Card } from "@/components/ui/card";
 import { SignOutButton } from "@/components/user-menu";
 
@@ -18,11 +18,11 @@ export default function MorePage() {
         <ul className="divide-y">
           {SECONDARY_ITEMS.map(({ href, label, icon: Icon }) => (
             <li key={href}>
-              <Link href={href} className="flex min-h-12 items-center gap-3 px-4 text-sm">
+              <RememberedLink href={href} className="flex min-h-12 items-center gap-3 px-4 text-sm">
                 <Icon className="size-4 text-muted-foreground" aria-hidden />
                 <span className="flex-1">{label}</span>
                 <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-              </Link>
+              </RememberedLink>
             </li>
           ))}
         </ul>

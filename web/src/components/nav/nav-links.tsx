@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { LinkPending } from "@/components/nav/nav-progress";
+import { RememberedLink } from "@/components/nav/remembered-link";
 import { cn } from "@/lib/utils";
 
 import { isActive, isMoreActive, MORE_ITEM, NAV_ITEMS, type NavItem } from "./nav-items";
@@ -29,7 +29,7 @@ export function SidebarNavList({ pathname }: { pathname: string }) {
 function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
   return (
-    <Link
+    <RememberedLink
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -43,7 +43,7 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
       <Icon className="size-4" aria-hidden />
       {item.label}
       <LinkPending />
-    </Link>
+    </RememberedLink>
   );
 }
 
@@ -60,7 +60,7 @@ export function BottomNavList({ pathname }: { pathname: string }) {
           item.href === MORE_ITEM.href ? isMoreActive(pathname) : isActive(pathname, item.href);
         const Icon = item.icon;
         return (
-          <Link
+          <RememberedLink
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
@@ -72,7 +72,7 @@ export function BottomNavList({ pathname }: { pathname: string }) {
             <Icon className="size-5" aria-hidden />
             {item.label}
             <LinkPending />
-          </Link>
+          </RememberedLink>
         );
       })}
     </nav>

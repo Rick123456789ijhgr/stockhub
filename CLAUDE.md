@@ -103,6 +103,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 手動確認的事件 `corporate_actions.source = 'manual'`；匯入同一天的官方事件時會刪掉它。`action_type` 保留交易所的標示（它是自然鍵的一部分），事件實際內容看 `cash_dividend`、`stock_dividend_ratio`、`rights_ratio`。
 - `/status` 這類彙總要讀 `prices_daily_coverage`（由觸發器維護），不要直接掃 `prices_daily`。
 - 顯示偏好（主題、漲跌配色）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。
+- 連到頂層頁面（側邊欄、返回連結）用 `components/nav/remembered-link.tsx` 的 `RememberedLink`，會回到該頁上次的分頁與選項（`lib/nav-memory.ts`，D-122）；新的頂層頁面要加進 `REMEMBERED_PAGES`。
 - 本機判斷一律用 `lib/auth/mode.ts` 的 `isLocalMachine`（免登入、網站觸發任務都靠它），不要另外檢查 `NODE_ENV`；`STOCKHUB_LOCAL_SERVER` 只由 `stockhub.ps1` 設定，不放 `.env`（D-117）。
 - 新的「每檔一段歷史」大表：遷移裡 `ALTER TABLE … CLUSTER ON` 以 `stock_id` 開頭的索引，`cluster_tables` 才會重排它（D-117）。
 - Web 讀資料的元件要先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。

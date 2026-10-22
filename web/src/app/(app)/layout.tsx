@@ -9,6 +9,7 @@ import {
   SidebarNavList,
 } from "@/components/nav/nav-links";
 import { NavProgress } from "@/components/nav/nav-progress";
+import { NavMemoryRecorder } from "@/components/nav/remembered-link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
     <div className="min-h-dvh md:grid md:grid-cols-[13rem_1fr]">
       <Suspense fallback={null}>
         <NavProgress />
+        <NavMemoryRecorder />
       </Suspense>
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r bg-sidebar px-3 py-5 md:flex">
         <Brand />
