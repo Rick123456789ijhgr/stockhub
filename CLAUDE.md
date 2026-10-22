@@ -105,7 +105,8 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 顯示偏好（主題、漲跌配色）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。
 - 本機判斷一律用 `lib/auth/mode.ts` 的 `isLocalMachine`（免登入、網站觸發任務都靠它），不要另外檢查 `NODE_ENV`；`STOCKHUB_LOCAL_SERVER` 只由 `stockhub.ps1` 設定，不放 `.env`（D-117）。
 - 新的「每檔一段歷史」大表：遷移裡 `ALTER TABLE … CLUSTER ON` 以 `stock_id` 開頭的索引，`cluster_tables` 才會重排它（D-117）。
-- Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
+- Web 讀資料的元件要先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
+- 切換頁面不顯示骨架（D-118）：`(app)/layout.tsx` 設了 `instant = false`，頁面裡讀資料的元件不要包 `<Suspense>`（React 的 fallback 至少停 300 ms）；只有真的慢的區塊才包。點擊回饋由 `components/nav/nav-progress.tsx` 負責，選單與分頁的連結裡放 `LinkPending`。寫入之後要 `router.refresh()`（`staleTimes.dynamic` 會保留看過的頁面 30 秒）。
 - 財報：`financials` 每個來源各存一份（`source` + `basis`：quarter／ytd／instant），數字改變就存成下一個 `revision`，寫入一律經 `store_statements`（品質檢查、隔離、取代隔離）。單季化、近四季、比率只在 `engine/fundamentals.py`，結果在 `fundamentals_quarterly`，網站只讀這張表；檢查規則改了就跑 `recheck_financials_quarantine`。
 - FinMind 只經 `FinMindProvider`（`QuotaGuard` 守每小時額度，token 用標頭送出）；不要另外寫迴圈直接打 FinMind。每日更新先用官方 OpenAPI 快照，再只向 FinMind 補新申報的公司。
 - 財報的「可用日」是 `available_date`（已知公布日，否則法定截止日，`common/filings.py`）；估值、篩選、回測都用它對齊，不要直接用 `period_end`。

@@ -704,3 +704,13 @@
 - Postgres：`shared_buffers` 128 MB → 2 GB（這台 32 GB），`effective_cache_size=12GB`、`work_mem=32MB`、`random_page_cost=1.1`（SSD）。寫在 `scripts/local-pg.sh` 的啟動參數與 `docker-compose.yml`，不用 `ALTER SYSTEM`，跟版本庫走。
 - 依股票重排：每日任務一次寫入全部股票的同一天，一檔股票的 121 根 K 線散在 91 個資料頁，第一次開某檔要從磁碟讀上百頁。遷移把 `prices_daily`、三張籌碼日表、`financials`、`fundamentals_quarterly`、`fundamental_signals`、`monthly_revenue` 標記 `CLUSTER ON`（以 `stock_id` 開頭的索引），`cluster_tables` 任務（`make db-cluster`）用 `CLUSTER` 重寫並 `ANALYZE`。執行時每張表會被鎖住幾分鐘，所以平日 07:00～22:30 自動跳過（`force=true` 例外）；排程週六 10:00（`register-tasks.ps1` 的「StockHub cluster」，錯過的會在開機後補跑，碰到平日白天就跳過）。之後新寫入的日子會再分散，但近期的資料本來就常在快取裡，每週重排一次就夠。
 - 未做：`/stocks` 列表把 100 筆同時渲染成手機卡片和桌面表格（約 850 KB），正式模式下只要 0.15 秒，暫不改。
+
+### D-118 切換頁面不顯示骨架（使用者要求，2026-10-22）
+- 量測（Chrome，正式建置）：伺服器 30～100 ms 就回應，但每次切換的骨架都停到約 300 ms。React 顯示 Suspense 的 fallback 之後，至少會留約 300 ms 才換成內容（避免閃爍），所以資料再快，切換也要 0.3 秒，而且畫面跳兩次。
+- 做法：`(app)/layout.tsx` 設 `export const instant = false`（允許導航等待），各頁拿掉頁面層與區塊的 `<Suspense>`。點擊後舊頁面多停 40～170 ms，接著一次換成完整的新頁面。實測 10 種切換都不再出現骨架（`/portfolio` 從 0.36 秒降到 0.09 秒）。直接開網址時仍由 layout 的 `<Suspense>`（AuthGate）先給骨架，不受影響。
+- D-032 不變：讀資料的元件仍然先 `await requireUser()`，只是外面不再包 `<Suspense>`；layout 與 page 仍並行渲染，所以頁面自己的檢查還是必要的。
+- 點擊回饋：`components/nav/nav-progress.tsx`。全域在捕獲階段監聽站內連結的點擊（`<Link>` 會 `preventDefault()`，冒泡階段分不出來），頂端細進度條在 150 ms 後才淡入，平常的切換完全看不到；網址改變就收起，15 秒沒有完成也收起。側邊欄、底部選單、分頁的連結裡放 `LinkPending`（`useLinkStatus`），被點的項目立刻呈現選取樣式（`has-data-link-pending:`）。
+- `staleTimes.dynamic = 30`：30 秒內回到看過的頁面直接用瀏覽器裡的那份（實測 40～66 ms）。寫入後一律 `router.refresh()` 清掉這份快取；原本只有「加入自選」按鈕沒有呼叫，已補上。報價由 client 端自己輪詢，不受影響。
+- `/stocks` 列表：100 筆原本渲染成卡片和表格兩份元素樹，全部放進切換時要下載的資料（HTML 845 KB）。改成 client component `components/stocks/stock-list.tsx`，資料只以 JSON 傳一次（449 KB），切換從 257 ms 降到 173 ms，畫面不變。`Market`／`MARKET_LABEL` 搬到 client 端也能用的 `lib/stock-market.ts`，`lib/stocks.ts` 轉匯出。
+- 未做：滑鼠移到連結上就先抓整頁資料（`"use cache"` + `prefetch={true}`），第一次點擊也能 0 延遲。這需要把資料查詢改成可快取，並在 ETL 更新後讓網站清快取，工程大，等體感不夠時再評估。
+- 新頁面的寫法：讀資料的元件直接放在頁面裡，不要再包 `<Suspense>`；真的慢（超過約 300 ms）的區塊才包，並在 DECISIONS 記錄原因。

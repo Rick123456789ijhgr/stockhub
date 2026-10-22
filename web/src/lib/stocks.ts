@@ -5,9 +5,9 @@ import { type Kysely, sql } from "kysely";
 import type { ChartBar } from "@/lib/chart-data";
 import type { DB } from "@/lib/db";
 
-export type Market = "twse" | "tpex";
+import type { Market } from "@/lib/stock-market";
 
-export const MARKET_LABEL: Record<Market, string> = { twse: "上市", tpex: "上櫃" };
+export { MARKET_LABEL, type Market } from "@/lib/stock-market";
 
 export type StockListItem = {
   symbol: string;
