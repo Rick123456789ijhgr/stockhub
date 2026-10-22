@@ -1,12 +1,12 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 
 import { ChipsSection } from "@/components/chips/chips-section";
 import { FundamentalsSection } from "@/components/fundamentals/fundamentals-section";
 import { ValuationSection } from "@/components/fundamentals/valuation-section";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
+import { RememberedLink } from "@/components/nav/remembered-link";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
@@ -14,7 +14,6 @@ import { StockChart } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -30,7 +29,14 @@ import { getQuoteFundamentals } from "@/lib/fundamentals";
 import { stockThemes } from "@/lib/heatmap";
 import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
-import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
+import {
+  CHART_RECENT_MONTHS,
+  type DailyBarRow,
+  findStock,
+  getChartBars,
+  getRecentBars,
+  MARKET_LABEL,
+} from "@/lib/stocks";
 
 type Tab = "chart" | "fundamentals" | "valuation" | "chips" | "daily";
 const STOCK_TABS: PageTab<Tab>[] = [
@@ -47,16 +53,14 @@ const BARS_SHOWN = 20;
 export default function StockPage({ params, searchParams }: PageProps<"/stocks/[symbol]">) {
   return (
     <>
-      <Link
+      <RememberedLink
         href="/stocks"
         className="mb-3 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" aria-hidden />
         個股
-      </Link>
-      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <StockContent params={params} searchParams={searchParams} />
-      </Suspense>
+      </RememberedLink>
+      <StockContent params={params} searchParams={searchParams} />
     </>
   );
 }
@@ -73,13 +77,16 @@ async function StockContent({
   const db = getDb();
   const stock = await findStock(db, decodeURIComponent(symbol));
   if (!stock) notFound();
+  const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
+  const tab = activeTab(tabs, query.tab);
+  // Not awaited: the chart's bars stream in with the page instead of being fetched after it.
+  const chartBars =
+    tab === "chart" ? getChartBars(db, stock.id, CHART_RECENT_MONTHS).catch(() => null) : null;
   const [bars, fundamentals, themes] = await Promise.all([
     getRecentBars(db, stock.id),
     getQuoteFundamentals(db, stock.id, taipeiToday()),
     stockThemes(db, stock.id, taipeiToday()),
   ]);
-  const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
-  const tab = activeTab(tabs, query.tab);
 
   // Futu's order: section tabs on top, then the quote header, then the section.
   return (
@@ -140,15 +147,15 @@ async function StockContent({
       <div className="pt-2">
         {tab === "chart" ? (
           <div className="space-y-4">
-            {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
+            {bars.length > 0 && chartBars ? (
+              <StockChart symbol={stock.symbol} initial={chartBars} />
+            ) : null}
             <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
           </div>
         ) : null}
-        <Suspense key={tab} fallback={<Skeleton className="h-64 w-full" />}>
-          {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
-          {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
-          {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
-        </Suspense>
+        {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
+        {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
+        {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
         {tab === "daily" ? (
           bars.length > 0 ? (
             <BarsTable bars={bars} />

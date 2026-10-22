@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
 import { SessionRefresh } from "@/components/session-refresh";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { WatchlistView } from "@/components/watchlist/watchlist-view";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -21,9 +19,7 @@ export default function WatchlistPage() {
       />
       <Card>
         <CardContent>
-          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <WatchlistContent />
-          </Suspense>
+          <WatchlistContent />
         </CardContent>
       </Card>
     </>

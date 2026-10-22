@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activeTab } from "./page-tabs";
+import { activeTab, tabHref } from "./page-tabs";
 
 const TABS = [
   { key: "general", label: "一般" },
@@ -16,5 +16,17 @@ describe("activeTab", () => {
     expect(activeTab(TABS, undefined)).toBe("general");
     expect(activeTab(TABS, "nope")).toBe("general");
     expect(activeTab(TABS, ["review", "general"])).toBe("general");
+  });
+});
+
+describe("tabHref", () => {
+  it("links the first tab to the bare path and the others with ?tab=", () => {
+    expect(tabHref("/stocks", "turnover", true)).toBe("/stocks");
+    expect(tabHref("/stocks", "gainers", false)).toBe("/stocks?tab=gainers");
+  });
+
+  it("keeps the given query on every tab", () => {
+    expect(tabHref("/stocks", "turnover", true, { type: "etf" })).toBe("/stocks?type=etf");
+    expect(tabHref("/stocks", "gainers", false, { type: "etf" })).toBe("/stocks?type=etf&tab=gainers");
   });
 });

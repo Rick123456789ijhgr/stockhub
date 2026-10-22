@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Suspense } from "react";
 
 import { FlowRanking } from "@/components/chips/flow-ranking";
 import { MarketStrip } from "@/components/market/market-strip";
@@ -9,7 +8,6 @@ import { PriceChange } from "@/components/price-change";
 import { SessionRefresh } from "@/components/session-refresh";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { listRecentAlerts } from "@/lib/alerts";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -31,9 +29,7 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-              <Holdings />
-            </Suspense>
+            <Holdings />
           </CardContent>
         </Card>
         <Card>
@@ -46,9 +42,7 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<Skeleton className="h-28 w-full" />}>
-              <Markets />
-            </Suspense>
+            <Markets />
           </CardContent>
         </Card>
         <Card>
@@ -63,9 +57,7 @@ export default function HomePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<Skeleton className="h-16 w-full" />}>
-              <Alerts />
-            </Suspense>
+            <Alerts />
           </CardContent>
         </Card>
         <Card>
@@ -73,9 +65,7 @@ export default function HomePage() {
             <CardTitle className="text-base">三大法人買賣超排行</CardTitle>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-              <Flows />
-            </Suspense>
+            <Flows />
           </CardContent>
         </Card>
       </div>

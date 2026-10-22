@@ -1,13 +1,10 @@
 import { requireApiUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { findStock, getChartBars } from "@/lib/stocks";
-
-/** Months of bars in the first, fast load (?period=recent): 3 years + indicator warm-up. */
-const RECENT_MONTHS = 42;
+import { CHART_RECENT_MONTHS, findStock, getChartBars } from "@/lib/stocks";
 
 /**
  * Traded daily bars of a stock for the K-line chart: all of them, or with ?period=recent
- * the last RECENT_MONTHS (`complete: false` when older ones exist). Session required.
+ * the last CHART_RECENT_MONTHS (`complete: false` when older ones exist). Session required.
  */
 export async function GET(
   request: Request,
@@ -20,7 +17,7 @@ export async function GET(
   const stock = await findStock(db, decodeURIComponent(symbol));
   if (!stock) return Response.json({ error: "not found" }, { status: 404 });
   const recent = new URL(request.url).searchParams.get("period") === "recent";
-  const { bars, complete } = await getChartBars(db, stock.id, recent ? RECENT_MONTHS : undefined);
+  const { bars, complete } = await getChartBars(db, stock.id, recent ? CHART_RECENT_MONTHS : undefined);
   return Response.json(
     { symbol: stock.symbol, bars, complete },
     { headers: { "Cache-Control": "private, max-age=60" } },

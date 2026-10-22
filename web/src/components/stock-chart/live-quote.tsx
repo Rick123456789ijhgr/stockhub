@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Star } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { directionClass } from "@/components/price-change";
 import { formatHundredMillion, formatLots, formatPrice, formatTaipeiDateTime } from "@/lib/format";
@@ -35,6 +36,7 @@ function useQuote(symbol: string) {
 
 export function WatchButton({ symbol }: { symbol: string }) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { data } = useQuote(symbol);
   const toggle = useMutation({
     mutationFn: async (watch: boolean) => {
@@ -43,7 +45,11 @@ export function WatchButton({ symbol }: { symbol: string }) {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["quote", symbol] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["quote", symbol] });
+      // Drops the browser's copy of /watchlist (staleTimes, D-118) so it shows the change.
+      router.refresh();
+    },
   });
   const watched = data?.watched ?? false;
   return (

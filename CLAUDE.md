@@ -62,8 +62,9 @@ make etl-chips-history        # 籌碼歷史（2012-05-02 起，約 11 小時，
 make etl-markets              # 市場與總經：指數、匯率、商品、美債、國發會、美國總經、總經警示（07:30 排程）
 make etl-markets-history      # 市場序列歷史（2004 起；series=SPX,TAIEX start= end=，可續跑）
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
-stockhub.bat                  # 雙擊＝啟動資料庫與網站（背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status（邏輯在 scripts/stockhub.ps1）
-scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、登入時啟動資料庫）；記錄在 .local/logs
+make db-cluster               # 依股票重排大表（CLUSTER，會鎖表；平日 07:00～22:30 跳過，force=true 例外；週六排程）
+stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，程式碼有變先 build；只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
+scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -102,13 +103,17 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 手動確認的事件 `corporate_actions.source = 'manual'`；匯入同一天的官方事件時會刪掉它。`action_type` 保留交易所的標示（它是自然鍵的一部分），事件實際內容看 `cash_dividend`、`stock_dividend_ratio`、`rights_ratio`。
 - `/status` 這類彙總要讀 `prices_daily_coverage`（由觸發器維護），不要直接掃 `prices_daily`。
 - 顯示偏好（主題、漲跌配色）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。
-- Web 讀資料的頁面要在自己的 `<Suspense>` 內先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
+- 連到頂層頁面（側邊欄、返回連結）用 `components/nav/remembered-link.tsx` 的 `RememberedLink`，會回到該頁上次的分頁與選項（`lib/nav-memory.ts`，D-122）；新的頂層頁面要加進 `REMEMBERED_PAGES`。
+- 本機判斷一律用 `lib/auth/mode.ts` 的 `isLocalMachine`（免登入、網站觸發任務都靠它），不要另外檢查 `NODE_ENV`；`STOCKHUB_LOCAL_SERVER` 只由 `stockhub.ps1` 設定，不放 `.env`（D-117）。
+- 新的「每檔一段歷史」大表：遷移裡 `ALTER TABLE … CLUSTER ON` 以 `stock_id` 開頭的索引，`cluster_tables` 才會重排它（D-117）。
+- Web 讀資料的元件要先 `await requireUser()`；route handler 用 `requireApiUser()`。layout 與 page 並行渲染，proxy 和 layout 的檢查都不夠（見 DECISIONS D-032）。
+- 切換頁面不顯示骨架（D-118）：`(app)/layout.tsx` 設了 `instant = false`，頁面裡讀資料的元件不要包 `<Suspense>`（React 的 fallback 至少停 300 ms）；只有真的慢的區塊才包。點擊回饋由 `components/nav/nav-progress.tsx` 負責，選單與分頁的連結裡放 `LinkPending`。寫入之後要 `router.refresh()`（`staleTimes.dynamic` 會保留看過的頁面 30 秒）。
 - 財報：`financials` 每個來源各存一份（`source` + `basis`：quarter／ytd／instant），數字改變就存成下一個 `revision`，寫入一律經 `store_statements`（品質檢查、隔離、取代隔離）。單季化、近四季、比率只在 `engine/fundamentals.py`，結果在 `fundamentals_quarterly`，網站只讀這張表；檢查規則改了就跑 `recheck_financials_quarantine`。
 - FinMind 只經 `FinMindProvider`（`QuotaGuard` 守每小時額度，token 用標頭送出）；不要另外寫迴圈直接打 FinMind。每日更新先用官方 OpenAPI 快照，再只向 FinMind 補新申報的公司。
 - 財報的「可用日」是 `available_date`（已知公布日，否則法定截止日，`common/filings.py`）；估值、篩選、回測都用它對齊，不要直接用 `period_end`。
 - 估值公式：`py/stockhub/engine/valuation.py` 與 `web/src/lib/valuation.ts` 逐式對應，改任一邊都要同步另一邊，並用 `py/scripts/gen_valuation_fixture.py` 重產 `testdata/valuation.json`。
 - 網站觸發 Python 任務一律排入 `job_requests`（`POST /api/jobs`，可排的任務在 `lib/job-request-input.ts` 與資料表 CHECK 兩處列舉，新增時兩邊都改），不要在 route handler 直接執行任務。
-- 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁）；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
+- 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁；要保留其他參數用 `query`）；分段切換（例如股票／ETF、熱力圖期間）用 `components/segmented-links.tsx`；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
 - 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。
 - 市場與總經：每條線是 `market_series` 的一個序列，值在 `market_series_values`（國際市場存交易所當地日期，月資料存月初）；provider 以 `series_symbols` 宣告服務哪些序列，`PROVIDERS_MARKET_SERIES` 的順序就是主來源與備援，一次只服務一個月的來源設 `series_monthly`。新增序列＝遷移加一列目錄＋在 provider 的 `series_symbols` 加代號。寫入一律經 `jobs/markets.py` 的 `store_observations`（品質檢查、隔離、取代隔離）；沒有 `has_ohlc` 的序列只存收盤值。涵蓋讀 `market_series_status` 檢視表。Yahoo 是非官方來源，只經 `YahooProvider`。

@@ -603,3 +603,28 @@ def test_m5_macro_alerts_have_no_stock_and_share_a_cooldown(pg: psycopg.Connecti
             "INSERT INTO job_requests (job_name, requested_by) VALUES (%s, 'me@example.com')",
             (job,),
         )
+
+
+def test_per_stock_tables_cluster_by_stock(pg: psycopg.Connection) -> None:
+    # `make db-cluster` runs a plain CLUSTER, which only rewrites tables marked here (D-117).
+    rows = pg.execute(
+        """
+        SELECT c.relname, a.attname
+        FROM pg_index x
+        JOIN pg_class c ON c.oid = x.indrelid
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = x.indkey[0]
+        WHERE x.indisclustered
+        """
+    ).fetchall()
+    clustered: dict[str, str] = {r[0]: r[1] for r in rows}
+    for table in (
+        "prices_daily",
+        "institutional_trades_daily",
+        "margin_daily",
+        "foreign_holdings_daily",
+        "financials",
+        "fundamentals_quarterly",
+        "fundamental_signals",
+        "monthly_revenue",
+    ):
+        assert clustered.get(table) == "stock_id", table

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
 
 import { PageHeader } from "@/components/coming-soon";
 import { InfoNote } from "@/components/disclosure";
@@ -10,7 +9,6 @@ import { PortfolioSummary } from "@/components/portfolio/summary";
 import { ShowAll, TransactionsPanel } from "@/components/portfolio/transactions-panel";
 import { SessionRefresh } from "@/components/session-refresh";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { describeFeeSettings } from "@/lib/fee-settings";
@@ -32,9 +30,7 @@ export default function PortfolioPage({ searchParams }: PageProps<"/portfolio">)
         title="持股"
         description="平均成本法；除權息不調整成本，股利另列收入。盤中有報價時用報價（每 30 秒更新）。"
       />
-      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <PortfolioContent searchParams={searchParams} />
-      </Suspense>
+      <PortfolioContent searchParams={searchParams} />
     </>
   );
 }

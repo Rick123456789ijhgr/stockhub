@@ -4,11 +4,13 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { isLocalMachine } from "@/lib/auth/mode";
+
 /**
  * Starts `make etl-requests` (python -m stockhub.etl drain-requests) in the background so a
  * request queued from the site runs right away. Only with JOB_RUNNER=local, and never on
- * Vercel or in a production build: there nothing can run Python, and requests wait for the
- * next scheduled etl-daily (which drains the queue first).
+ * Vercel or in a deployed production build (`isLocalMachine`): there nothing can run Python,
+ * and requests wait for the next scheduled etl-daily (which drains the queue first).
  *
  * Runs through scripts/scheduled.sh, so it gets the same tool PATH, database start-up and
  * daily log file (.local/logs/etl-requests-YYYYMMDD.log) as the scheduled jobs.
@@ -16,7 +18,7 @@ import path from "node:path";
 export type RunnerResult = "started" | "queued";
 
 export function runnerEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.JOB_RUNNER === "local" && !env.VERCEL && env.NODE_ENV !== "production";
+  return env.JOB_RUNNER === "local" && isLocalMachine(env);
 }
 
 function repoRoot(): string | null {
