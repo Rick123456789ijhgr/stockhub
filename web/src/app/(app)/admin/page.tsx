@@ -236,6 +236,18 @@ function General() {
               <PriceChange value={-0.8} suffix="%" />
               <PriceChange value={0} suffix="%" />
             </div>
+            <p className="text-xs text-muted-foreground">
+              圖表使用{" "}
+              <a
+                href="https://www.tradingview.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                TradingView
+              </a>{" "}
+              Lightweight Charts™（Copyright © 2025 TradingView, Inc.）。
+            </p>
           </CardContent>
         </Card>
         <Card size="sm">

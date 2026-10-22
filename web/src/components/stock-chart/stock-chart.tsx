@@ -145,6 +145,8 @@ export function StockChart({ symbol }: { symbol: string }) {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
+        // No logo on the chart; the attribution the library's NOTICE asks for is on /admin.
+        attributionLogo: false,
         textColor: text,
         fontFamily: getComputedStyle(el).fontFamily,
         panes: { separatorColor: grid, separatorHoverColor: grid },
