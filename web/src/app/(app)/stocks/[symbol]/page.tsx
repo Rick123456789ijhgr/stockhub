@@ -10,7 +10,7 @@ import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
-import { StockChart } from "@/components/stock-chart/stock-chart";
+import { StockChart, StockChartSkeleton } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,7 +30,14 @@ import { getQuoteFundamentals } from "@/lib/fundamentals";
 import { stockThemes } from "@/lib/heatmap";
 import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
-import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
+import {
+  CHART_RECENT_MONTHS,
+  type DailyBarRow,
+  findStock,
+  getChartBars,
+  getRecentBars,
+  MARKET_LABEL,
+} from "@/lib/stocks";
 
 type Tab = "chart" | "fundamentals" | "valuation" | "chips" | "daily";
 const STOCK_TABS: PageTab<Tab>[] = [
@@ -73,13 +80,16 @@ async function StockContent({
   const db = getDb();
   const stock = await findStock(db, decodeURIComponent(symbol));
   if (!stock) notFound();
+  const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
+  const tab = activeTab(tabs, query.tab);
+  // Not awaited: the chart's bars stream in with the page instead of being fetched after it.
+  const chartBars =
+    tab === "chart" ? getChartBars(db, stock.id, CHART_RECENT_MONTHS).catch(() => null) : null;
   const [bars, fundamentals, themes] = await Promise.all([
     getRecentBars(db, stock.id),
     getQuoteFundamentals(db, stock.id, taipeiToday()),
     stockThemes(db, stock.id, taipeiToday()),
   ]);
-  const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
-  const tab = activeTab(tabs, query.tab);
 
   // Futu's order: section tabs on top, then the quote header, then the section.
   return (
@@ -140,7 +150,11 @@ async function StockContent({
       <div className="pt-2">
         {tab === "chart" ? (
           <div className="space-y-4">
-            {bars.length > 0 ? <StockChart symbol={stock.symbol} /> : null}
+            {bars.length > 0 && chartBars ? (
+              <Suspense fallback={<StockChartSkeleton />}>
+                <StockChart symbol={stock.symbol} initial={chartBars} />
+              </Suspense>
+            ) : null}
             <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
           </div>
         ) : null}

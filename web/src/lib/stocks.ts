@@ -158,6 +158,9 @@ export async function getRecentBars(
   });
 }
 
+/** Months of bars in the chart's first, fast load: 3 years + indicator warm-up. */
+export const CHART_RECENT_MONTHS = 42;
+
 /**
  * Traded bars of a stock, oldest first, as compact numbers for the chart. With
  * `recentMonths`, only bars within that many months of the latest one; `complete` tells

@@ -14,7 +14,7 @@ import {
   TickMarkType,
   type Time,
 } from "lightweight-charts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 
 import { cssColor, useThemeVersion } from "@/components/charts/chart-theme";
 import { PriceChange } from "@/components/price-change";
@@ -87,7 +87,11 @@ function toLine(times: string[], values: Series) {
   return values.flatMap((value, i) => (value === null ? [] : [{ time: times[i], value }]));
 }
 
-type BarsResponse = { bars: ChartBar[]; complete: boolean };
+export type BarsResponse = { bars: ChartBar[]; complete: boolean };
+
+export function StockChartSkeleton() {
+  return <Skeleton className="h-[440px] w-full md:h-[560px]" />;
+}
 
 async function fetchBars(symbol: string, recent: boolean): Promise<BarsResponse> {
   const query = recent ? "?period=recent" : "";
@@ -96,7 +100,19 @@ async function fetchBars(symbol: string, recent: boolean): Promise<BarsResponse>
   return (await response.json()) as BarsResponse;
 }
 
-export function StockChart({ symbol }: { symbol: string }) {
+/**
+ * `initial`: the recent bars, queried by the page together with the rest of it, so the
+ * chart does not wait for a request of its own after the page loads (null when that query
+ * failed; the chart then fetches them itself).
+ */
+export function StockChart({
+  symbol,
+  initial,
+}: {
+  symbol: string;
+  initial?: Promise<BarsResponse | null>;
+}) {
+  const initialData = (initial ? use(initial) : null) ?? undefined;
   const [mode, setMode] = useState<PriceMode>("adjusted");
   const [range, setRange] = useState<RangeKey>("1Y");
   const [indicator, setIndicator] = useState<IndicatorKey>("KD");
@@ -109,6 +125,7 @@ export function StockChart({ symbol }: { symbol: string }) {
     queryKey: ["bars", symbol, "recent"],
     queryFn: () => fetchBars(symbol, true),
     staleTime: 60_000,
+    initialData,
   });
   const full = useQuery({
     queryKey: ["bars", symbol, "all"],
@@ -267,7 +284,7 @@ export function StockChart({ symbol }: { symbol: string }) {
     });
   }, [range, bars]);
 
-  if (isPending) return <Skeleton className="h-[440px] w-full md:h-[560px]" />;
+  if (isPending) return <StockChartSkeleton />;
   if (isError) {
     return <p className="text-sm text-muted-foreground">K 線資料載入失敗，請重新整理。</p>;
   }
