@@ -20,7 +20,8 @@ from sqlalchemy import Connection, Engine, text
 from stockhub.common.db import make_engine
 from stockhub.common.settings import PROJECT_ROOT
 
-# Every table the app writes to; trading_calendar and financial_item_map keep their seeds.
+# Every table the app writes to; trading_calendar, financial_item_map and market_series keep
+# their seeds (macro_events keeps its seeded rows, see clean_db).
 MUTABLE_TABLES = (
     "stocks, prices_daily, corporate_actions, financials, monthly_revenue, "
     "raw_objects, job_runs, settings, audit_log, watchlist, portfolio_transactions, quotes_latest, "
@@ -28,7 +29,8 @@ MUTABLE_TABLES = (
     "dividend_receipts, alerts, financials_quarantine, financial_fetch_state, "
     "fundamentals_quarterly, fundamental_signals, job_requests, institutional_trades_daily, "
     "margin_daily, foreign_holdings_daily, shareholding_distribution, market_institutional_daily, "
-    "market_margin_daily, chip_coverage, chip_quarantine, chip_summary"
+    "market_margin_daily, chip_coverage, chip_quarantine, chip_summary, market_series_values, "
+    "market_series_quarantine, themes, stock_themes"
 )
 
 
@@ -90,4 +92,5 @@ def sa_conn(engine: Engine) -> Iterator[Connection]:
 def clean_db(engine: Engine) -> Engine:
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {MUTABLE_TABLES} RESTART IDENTITY CASCADE"))
+        conn.execute(text("DELETE FROM macro_events WHERE source <> 'seed'"))
     return engine

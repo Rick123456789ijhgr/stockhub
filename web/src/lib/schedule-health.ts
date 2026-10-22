@@ -28,6 +28,15 @@ export type Schedule = {
 
 export const SCHEDULES: readonly Schedule[] = [
   {
+    key: "markets",
+    label: "國際市場與總經",
+    command: "make etl-markets",
+    time: "07:30",
+    jobs: ["sync_markets", "sync_macro", "check_macro_alerts"],
+    graceMinutes: 30,
+    maxMinutes: 60,
+  },
+  {
     key: "quotes",
     label: "盤中報價",
     command: "make etl-quotes",

@@ -238,3 +238,39 @@ def test_compute_chip_summary(run: Any, clean_db: Engine) -> None:
     assert row.big_holder_week == DAY
     assert float(row.whale_ratio) == pytest.approx(21_928_634_563 / 25_932_370_067)
     assert row.whale_change_1w is None
+
+
+def _throttled_qfii(request: httpx.Request) -> httpx.Response:
+    """TPEx's throttling notice for the foreign holdings table, everything else as recorded."""
+    if request.url.path.endswith("/qfii"):
+        return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!"})
+    return official_handler(request)
+
+
+def test_a_throttled_table_is_skipped_and_retried_later(
+    clean_db: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_stocks(clean_db)
+    pauses: list[float] = []
+    monkeypatch.setattr(chips, "pause", pauses.append)
+    result = _runner(clean_db, tmp_path / "a", _throttled_qfii)(
+        "backfill_chips", start=DAY.isoformat(), end=DAY.isoformat()
+    )
+    assert result.status == "failed"
+    assert "抓取失敗 1 份" in (result.error or "")
+    assert pauses == [chips.FAILURE_PAUSE]
+    covered = _rows(clean_db, "SELECT dataset, market FROM chip_coverage")
+    assert ("foreign_holdings", "twse") in covered
+    assert ("foreign_holdings", "tpex") not in covered
+    assert ("institutional", "tpex") in covered  # the other tables of the day are kept
+    checkpoint = _rows(clean_db, "SELECT checkpoint FROM job_runs WHERE id = :id", id=result.run_id)
+    assert checkpoint[0][0]["next"] == DAY.isoformat()  # the rerun starts at the failed day
+
+    again = _runner(clean_db, tmp_path / "b")(
+        "backfill_chips", start=DAY.isoformat(), end=DAY.isoformat()
+    )
+    assert again.status == "succeeded", again.error
+    assert again.resumed_from is not None
+    assert ("foreign_holdings", "tpex") in _rows(
+        clean_db, "SELECT dataset, market FROM chip_coverage"
+    )

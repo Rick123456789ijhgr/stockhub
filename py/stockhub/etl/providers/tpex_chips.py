@@ -34,6 +34,7 @@ from stockhub.etl.providers.base import (
     MarketMargin,
     PermanentProviderError,
     RawResponse,
+    TransientProviderError,
 )
 from stockhub.etl.providers.http import get_json_bytes
 from stockhub.etl.providers.twse_chips import (
@@ -63,6 +64,9 @@ SUMMARY_INVESTORS: dict[str, Investor | None] = {
     "自營商(避險)": "dealer_hedge",
     "三大法人合計": "total",
 }
+
+
+NO_DATA_STAT = "沒有符合條件的資料"
 
 
 def tpex_tables(raw: RawResponse) -> list[dict[str, Any]] | None:
@@ -139,6 +143,11 @@ class TpexChipsMixin(
             raise PermanentProviderError(f"tpex does not publish {market} {dataset}")
         query = {**params, "date": f"{trade_date:%Y/%m/%d}", "response": "json"}
         body = get_json_bytes(self.client, url, query)
+        if b'"stat"' in body[:200] and NO_DATA_STAT.encode() in body[:200]:
+            # TPEx answers a day without data with its date and empty tables; this bare
+            # TWSE-style notice came back once mid-backfill for a day that has data (2017-07-10
+            # qfii), so it is a hiccup to retry, not a holiday.
+            raise TransientProviderError(f"tpex {dataset} {trade_date}: bare no-data notice")
         return RawResponse(dataset, body, {"date": trade_date.isoformat(), "market": market})
 
     # ------------------------------------------------------------------ institutional

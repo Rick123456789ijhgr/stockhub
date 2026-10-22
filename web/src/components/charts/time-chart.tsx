@@ -90,6 +90,8 @@ export function TimeChart({
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
+        // No logo on the chart; the attribution the library's NOTICE asks for is on /admin.
+        attributionLogo: false,
         textColor: color("--muted-foreground"),
         fontFamily: getComputedStyle(el).fontFamily,
       },

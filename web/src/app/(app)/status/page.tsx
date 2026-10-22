@@ -21,6 +21,7 @@ import { hasPendingRequest, JobRequestList } from "@/components/jobs/job-request
 import { AutoRefresh } from "@/components/status/auto-refresh";
 import { ChipsStatusCard } from "@/components/status/chips-status";
 import { FundamentalsStatusCard } from "@/components/status/fundamentals-status";
+import { MarketsStatusCard } from "@/components/status/markets-status";
 import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
   BackfillCard,
@@ -35,6 +36,7 @@ import { getDb } from "@/lib/db";
 import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/format";
 import { getFundamentalsStatus } from "@/lib/fundamentals-status";
 import { listJobRequests } from "@/lib/job-requests";
+import { getMarketsStatus } from "@/lib/markets";
 import { runnerEnabled } from "@/lib/job-runner";
 import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
 import { getScheduleRuns, getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
@@ -73,7 +75,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, chips, params] =
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, chips, markets, params] =
     await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
@@ -83,6 +85,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     listJobRequests(db, { limit: 8 }),
     getFundamentalsStatus(db),
     getChipsStatus(db),
+    getMarketsStatus(db),
     searchParams,
   ]);
 
@@ -132,6 +135,9 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
         <section aria-label="籌碼" className="min-w-0">
           <ChipsStatusCard status={chips} now={now} />
+        </section>
+        <section aria-label="市場與總經" className="min-w-0">
+          <MarketsStatusCard status={markets} />
         </section>
       </div>
 

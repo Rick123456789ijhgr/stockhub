@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/table";
 import { formatValue, periodLabel, type ValueFormat } from "@/lib/chart-format";
 import type { DB } from "@/lib/db";
+import { inFinancialWindow } from "@/lib/financial-window";
+import { taipeiToday } from "@/lib/market-hours";
 import {
   FINANCIAL_INDUSTRIES,
   getMonthlyRevenue,
@@ -27,7 +29,6 @@ import {
 
 type StockInfo = { id: number; symbol: string; type: string; industry: string | null };
 
-const CHART_QUARTERS = 20;
 const TABLE_QUARTERS = 8;
 
 function line(
@@ -87,7 +88,9 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
       </section>
     );
   }
-  const recent = withIncome.slice(-CHART_QUARTERS);
+  const today = taipeiToday();
+  const recent = inFinancialWindow(withIncome, (q) => q.periodEnd, today);
+  const shownRevenue = inFinancialWindow(revenue, (r) => r.month, today);
   const latest = withIncome.at(-1);
 
   return (
@@ -103,7 +106,7 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {revenue.length > 0 ? <RevenueCard rows={revenue} /> : null}
+        {shownRevenue.length > 0 ? <RevenueCard rows={shownRevenue} /> : null}
         {recent.length > 0 ? (
           <Card size="sm">
             <CardHeader>
@@ -173,14 +176,13 @@ export async function FundamentalsSection({ db, stock }: { db: Kysely<DB>; stock
       {withIncome.length > 0 ? <QuarterTable rows={withIncome.slice(-TABLE_QUARTERS)} /> : null}
       <p className="text-xs text-muted-foreground">
         財報為合併報表；單季數字由累計數換算（Q4 = 全年 − 前三季）。資料來源：證交所／櫃買中心
-        OpenAPI（最新一季）與 FinMind（歷史）。2013 年以前（舊會計準則）不收錄。
+        OpenAPI（最新一季）與 FinMind（歷史）。圖表顯示今年與前 4 年（每年 1 月 1 日往後移一年）。
       </p>
     </section>
   );
 }
 
 function RevenueCard({ rows }: { rows: RevenueRow[] }) {
-  const recent = rows.slice(-36);
   const latest = rows.at(-1);
   return (
     <Card size="sm" className="lg:col-span-2">
@@ -204,7 +206,7 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
                 name: "營收",
                 kind: "histogram",
                 color: "--series-1",
-                data: recent.map((r) => ({ time: r.month, value: r.revenue })),
+                data: rows.map((r) => ({ time: r.month, value: r.revenue })),
               },
             ]}
           />
@@ -217,7 +219,7 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
                 name: "年增率",
                 kind: "line",
                 color: "--series-1",
-                data: recent.map((r) => ({ time: r.month, value: r.yoy })),
+                data: rows.map((r) => ({ time: r.month, value: r.yoy })),
               },
             ]}
           />

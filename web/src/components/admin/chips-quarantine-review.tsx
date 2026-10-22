@@ -9,6 +9,7 @@ import { DISCLOSURE_CHEVRON } from "@/components/disclosure";
 import { ShowMoreList } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { sendJson } from "@/lib/send-json";
 import type { ChipDataset, QuarantinedChip } from "@/lib/chips-quarantine";
 
 const DATASET: Record<ChipDataset, string> = {
@@ -32,6 +33,8 @@ const REASON: Record<string, string> = {
   levels_do_not_add_up: "各級距股數加總對不上合計",
   missing_total: "缺合計列",
 };
+/** Rows failing these cannot be stored at all (the table's CHECK holds ratios to 0–1). */
+const REJECT_ONLY = new Set(["ratio_out_of_range", "limit_out_of_range"]);
 const SHOWN = 20;
 
 export function ChipsQuarantineList({ rows }: { rows: QuarantinedChip[] }) {
@@ -44,14 +47,8 @@ export function ChipsQuarantineList({ rows }: { rows: QuarantinedChip[] }) {
 function Item({ row }: { row: QuarantinedChip }) {
   const router = useRouter();
   const resolve = useMutation({
-    mutationFn: async (decision: "accept" | "reject") => {
-      const response = await fetch(`/api/admin/chips-quarantine/${row.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    },
+    mutationFn: (decision: "accept" | "reject") =>
+      sendJson("POST", `/api/admin/chips-quarantine/${row.id}`, { decision }),
     onSuccess: () => router.refresh(),
   });
   return (
@@ -66,13 +63,19 @@ function Item({ row }: { row: QuarantinedChip }) {
           <span>{DATASET[row.dataset]}</span>
           <Badge variant="outline">{row.source}</Badge>
           <div className="ml-auto flex items-center gap-1.5">
-            {resolve.isError ? <span className="text-xs text-destructive">送出失敗</span> : null}
+            {resolve.error ? <span className="text-xs text-destructive">{resolve.error.message}</span> : null}
             <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate("reject")}>
               捨棄
             </Button>
-            <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate("accept")}>
-              仍然採用
-            </Button>
+            {row.reasons.some((r) => REJECT_ONLY.has(r)) ? (
+              <span className="text-xs text-muted-foreground" title="比率超出 0～100%，資料表不能儲存">
+                只能捨棄
+              </span>
+            ) : (
+              <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate("accept")}>
+                仍然採用
+              </Button>
+            )}
           </div>
         </summary>
         <div className="space-y-1 pt-1 pl-7 text-xs text-muted-foreground">

@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     providers_foreign_holdings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_market_institutional: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_shareholding_distribution: CommaList = Field(default_factory=lambda: ["tdcc"])
+    providers_market_series: CommaList = Field(
+        default_factory=lambda: ["twse", "tpex", "yahoo", "fred"]
+    )
+    """Each series uses the listed sources that serve it, in this order (D-105)."""
+    providers_macro_release: CommaList = Field(default_factory=lambda: ["ndc"])
 
     @field_validator(
         "alert_email_to",
@@ -93,6 +98,8 @@ class Settings(BaseSettings):
         "providers_foreign_holdings",
         "providers_market_institutional",
         "providers_shareholding_distribution",
+        "providers_market_series",
+        "providers_macro_release",
         mode="before",
     )
     @classmethod

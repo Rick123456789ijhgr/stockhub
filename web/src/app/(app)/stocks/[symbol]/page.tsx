@@ -27,6 +27,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatHundredMillion, formatLots, formatPrice } from "@/lib/format";
 import { getQuoteFundamentals } from "@/lib/fundamentals";
+import { stockThemes } from "@/lib/heatmap";
 import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
 import { type DailyBarRow, findStock, getRecentBars, MARKET_LABEL } from "@/lib/stocks";
@@ -72,9 +73,10 @@ async function StockContent({
   const db = getDb();
   const stock = await findStock(db, decodeURIComponent(symbol));
   if (!stock) notFound();
-  const [bars, fundamentals] = await Promise.all([
+  const [bars, fundamentals, themes] = await Promise.all([
     getRecentBars(db, stock.id),
     getQuoteFundamentals(db, stock.id, taipeiToday()),
+    stockThemes(db, stock.id, taipeiToday()),
   ]);
   const tabs = stock.type === "etf" ? ETF_TABS : STOCK_TABS;
   const tab = activeTab(tabs, query.tab);
@@ -100,7 +102,22 @@ async function StockContent({
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
-                {stock.industry ? ` · ${stock.industry}` : ""}
+                {stock.industry ? (
+                  <>
+                    {" · "}
+                    <Link href="/market?tab=heatmap" className="hover:text-foreground hover:underline">
+                      {stock.industry}
+                    </Link>
+                  </>
+                ) : null}
+                {themes.map((t) => (
+                  <span key={t.id}>
+                    {" · "}
+                    <Link href="/market?tab=heatmap&by=theme" className="hover:text-foreground hover:underline">
+                      #{t.name}
+                    </Link>
+                  </span>
+                ))}
                 <span className="hidden sm:inline">
                   {stock.listedDateEstimated
                     ? ` · 最早資料 ${stock.listedDate}`

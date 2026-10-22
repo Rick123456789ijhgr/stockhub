@@ -11,6 +11,7 @@ Endpoints (robots.txt allows them; we stay at one request per 3 s):
   profiles of listed companies (see mops_openapi)
 - T86 / MI_MARGN / MI_QFIIS / BFI82U  chips: institutional trades, margin, foreign holdings,
   market-wide institutional value (see twse_chips)
+- TAIEX/MI_5MINS_HIST  加權指數 daily OHLC by month (see tw_indices)
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ from stockhub.etl.providers.http import (
 )
 from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
+from stockhub.etl.providers.tw_indices import TwseIndexMixin
 from stockhub.etl.providers.twse_chips import TwseChipsMixin
 
 MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
@@ -95,6 +97,7 @@ class TwseProvider(
     ExRightsPreviewProvider,
     MopsOpenApiMixin,
     TwseChipsMixin,
+    TwseIndexMixin,
 ):
     name: ClassVar[str] = "twse"
     min_interval: ClassVar[float] = 3.0

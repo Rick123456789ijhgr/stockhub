@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { FlowRanking } from "@/components/chips/flow-ranking";
+import { MarketStrip } from "@/components/market/market-strip";
 import { PageHeader } from "@/components/coming-soon";
 import { PortfolioSummary } from "@/components/portfolio/summary";
 import { PriceChange } from "@/components/price-change";
@@ -12,14 +13,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listRecentAlerts } from "@/lib/alerts";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { taipeiToday } from "@/lib/market-hours";
 import { loadPortfolio } from "@/lib/portfolio-data";
-
-const SECTIONS = [{ title: "大盤與國際市場", milestone: "M1 / M5" }];
 
 export default function HomePage() {
   return (
     <>
-      <PageHeader title="首頁" description="各區塊會隨里程碑逐步上線。" />
+      <PageHeader title="首頁" description="持股、市場、警示與法人動向。" />
       <div className="space-y-3">
         <Card>
           <CardHeader>
@@ -39,12 +39,27 @@ export default function HomePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-2 text-base">
+              大盤與國際市場
+              <Link href="/market" className="text-sm font-normal text-muted-foreground hover:text-foreground">
+                市場 →
+              </Link>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<Skeleton className="h-28 w-full" />}>
+              <Markets />
+            </Suspense>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2 text-base">
               警示
-              <Badge variant="secondary">新聞與總經 M6</Badge>
+              <Badge variant="secondary">新聞 M6</Badge>
             </CardTitle>
             <CardDescription>
               持股單日漲跌超過近 20 日報酬標準差 × 2.5（最低 3%）時，盤中輪詢與收盤後各檢查一次；外資、投信或自營商單日買賣超達持股成交量
-              10%（成交金額 5,000 萬以上）時，抓完籌碼後檢查。
+              10%（成交金額 5,000 萬以上）時，抓完籌碼後檢查；景氣燈號變色或 Fed 調整利率時也會提醒。
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -63,19 +78,6 @@ export default function HomePage() {
             </Suspense>
           </CardContent>
         </Card>
-        <div className="grid gap-3 md:grid-cols-2">
-          {SECTIONS.map((section) => (
-            <Card key={section.title}>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between gap-2 text-base">
-                  {section.title}
-                  <Badge variant="secondary">{section.milestone}</Badge>
-                </CardTitle>
-                <CardDescription>即將推出</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
       </div>
     </>
   );
@@ -100,6 +102,11 @@ async function Holdings() {
   );
 }
 
+async function Markets() {
+  await requireUser();
+  return <MarketStrip db={getDb()} today={taipeiToday()} />;
+}
+
 async function Flows() {
   await requireUser();
   return <FlowRanking db={getDb()} />;
@@ -113,7 +120,7 @@ async function Alerts() {
     <ul className="divide-y text-sm">
       {alerts.map((a) => (
         <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2">
-          <Link href={`/stocks/${a.symbol}`} className="font-medium hover:underline">
+          <Link href={a.symbol ? `/stocks/${a.symbol}` : "/market?tab=macro"} className="font-medium hover:underline">
             {a.title}
           </Link>
           <span className="text-xs text-muted-foreground tabular-nums">

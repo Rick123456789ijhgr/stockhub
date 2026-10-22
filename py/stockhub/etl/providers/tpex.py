@@ -8,6 +8,7 @@ capital reductions (from 2013) with the exchange's reference prices.
 OpenAPI mopsfin_t187ap0x: latest financial statements, monthly revenue and company profiles
 of OTC companies (see mops_openapi).
 insti/dailyTrade, margin/balance, insti/qfii, insti/summary: chips (see tpex_chips).
+indexInfo/inx: 櫃買指數 daily OHLC by month (see tw_indices).
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from stockhub.etl.providers.http import (
 from stockhub.etl.providers.mops_openapi import MopsOpenApiMixin
 from stockhub.etl.providers.registry import register_provider
 from stockhub.etl.providers.tpex_chips import TpexChipsMixin
+from stockhub.etl.providers.tw_indices import TpexIndexMixin
 
 OTC_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc"
 DELISTED_URL = "https://www.tpex.org.tw/www/zh-tw/company/deListed"
@@ -84,6 +86,7 @@ class TpexProvider(
     ExRightsPreviewProvider,
     MopsOpenApiMixin,
     TpexChipsMixin,
+    TpexIndexMixin,
 ):
     name: ClassVar[str] = "tpex"
     min_interval: ClassVar[float] = 3.0

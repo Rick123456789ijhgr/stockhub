@@ -35,6 +35,8 @@ DataKind = Literal[
     "foreign_holdings",
     "market_institutional",
     "shareholding_distribution",
+    "market_series",
+    "macro_release",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -367,6 +369,24 @@ class DistributionLevel(_Model):
     """Fraction of TDCC custody (published as a percentage)."""
 
 
+class SeriesObservation(_Model):
+    """One value of a market or macro series (market_series_values).
+
+    obs_date is the local trading date of the series' exchange, or the first day of the
+    month for monthly series. Not constrained here: the quality check quarantines junk.
+    """
+
+    code: str
+    """Our series code (market_series.code), not the source's symbol."""
+    obs_date: date
+    value: Decimal
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    label: str | None = None
+    """Published category with the value (景氣對策信號: 紅燈 … 藍燈)."""
+
+
 class Quote(_Model):
     """Intraday snapshot of one security."""
 
@@ -598,6 +618,37 @@ class ShareholdingDistributionProvider(Provider):
     def parse_shareholding_distribution(self, raw: RawResponse) -> list[DistributionLevel]: ...
 
 
+class MarketSeriesProvider(Provider):
+    """Daily or monthly history of individual series (indices, FX, rates, commodities)."""
+
+    series_symbols: ClassVar[dict[str, str]]
+    """Series this source serves: our code -> the source's own symbol."""
+    series_monthly: ClassVar[bool] = False
+    """True when one request covers one calendar month: the router only offers it requests
+    whose start and end fall in the same month, and jobs split longer ranges by month."""
+
+    @abstractmethod
+    def fetch_market_series(self, code: str, start: date, end: date) -> RawResponse: ...
+
+    @abstractmethod
+    def parse_market_series(self, raw: RawResponse) -> list[SeriesObservation]:
+        """Observations of the requested code within [start, end]; empty = none published."""
+
+
+class MacroReleaseProvider(Provider):
+    """A statistical release that carries several monthly series in one file."""
+
+    macro_codes: ClassVar[frozenset[str]]
+    """Series codes the release fills."""
+
+    @abstractmethod
+    def fetch_macro_release(self) -> RawResponse:
+        """The latest release (it carries the whole revised history)."""
+
+    @abstractmethod
+    def parse_macro_release(self, raw: RawResponse) -> list[SeriesObservation]: ...
+
+
 class QuoteProvider(Provider):
     max_symbols: ClassVar[int] = 50
     """Largest batch one request may carry; callers split longer lists."""
@@ -629,4 +680,6 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "foreign_holdings": ForeignHoldingProvider,
     "market_institutional": MarketInstitutionalProvider,
     "shareholding_distribution": ShareholdingDistributionProvider,
+    "market_series": MarketSeriesProvider,
+    "macro_release": MacroReleaseProvider,
 }

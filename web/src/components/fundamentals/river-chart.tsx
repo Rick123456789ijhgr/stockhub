@@ -9,7 +9,6 @@ import {
   metricValues,
   riverBands,
   type ValuationPoint,
-  windowYears,
 } from "@/lib/valuation";
 
 /** One hue in light-to-dark steps (sequential), behind the close in the foreground ink. */
@@ -50,10 +49,10 @@ function Toggle<T extends string | number>({
 /** 本益比／股價淨值比河流圖: close vs TTM EPS (or book value) x multiples of the window. */
 export function RiverChart({ points, hasPe }: { points: ValuationPoint[]; hasPe: boolean }) {
   const [metric, setMetric] = useState<"pe" | "pb">(hasPe ? "pe" : "pb");
-  const [years, setYears] = useState<5 | 10>(5);
 
   const { series, multiples } = useMemo(() => {
-    const shown = windowYears(points, years);
+    // The section passes the fixed five-year window (lib/financial-window).
+    const shown = points;
     const multiples = bandMultiples(metricValues(shown, metric));
     const bands = riverBands(shown, metric, multiples);
     const out: ChartSeries[] = multiples.map((m, i) => ({
@@ -72,7 +71,7 @@ export function RiverChart({ points, hasPe }: { points: ValuationPoint[]; hasPe:
       data: shown.map((p) => ({ time: p.date, value: p.close })),
     });
     return { series: out, multiples };
-  }, [points, metric, years]);
+  }, [points, metric]);
 
   return (
     <div className="space-y-2">
@@ -84,15 +83,6 @@ export function RiverChart({ points, hasPe }: { points: ValuationPoint[]; hasPe:
           options={[
             ...(hasPe ? [{ value: "pe" as const, label: "本益比" }] : []),
             { value: "pb" as const, label: "股價淨值比" },
-          ]}
-        />
-        <Toggle
-          label="期間"
-          value={years}
-          onChange={setYears}
-          options={[
-            { value: 5, label: "5 年" },
-            { value: 10, label: "10 年" },
           ]}
         />
       </div>

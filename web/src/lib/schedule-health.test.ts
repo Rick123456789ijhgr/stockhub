@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { lastOccurrence, SCHEDULES, type ScheduleRun, scheduleHealth } from "./schedule-health";
 
-const [QUOTES, DAILY] = SCHEDULES;
+const [, QUOTES, DAILY] = SCHEDULES;
 
 /** Taipei wall-clock time as a Date. */
 function taipei(iso: string): Date {

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
@@ -42,6 +43,7 @@ from stockhub.etl.providers.base import (
     MarginTable,
     Market,
     MarketInstitutional,
+    ProviderError,
 )
 from stockhub.etl.providers.router import ChipKind, Fetched, ProviderRouter
 from stockhub.etl.quality import (
@@ -60,6 +62,10 @@ CATCH_UP_DAYS = 10
 """sync_chips without a date looks back this many trading days for missing tables."""
 PUBLISH_TIME = (14, 30)
 """Taipei time before which today's tables are not even tried."""
+FAILURE_PAUSE = 60.0
+"""Seconds to wait after a table failed for good (a throttled source needs minutes)."""
+pause = time.sleep
+"""Replaced in tests."""
 HISTORY_START = date(2012, 5, 2)
 """First day of TWSE's per-stock institutional table; the default backfill start (D-097)."""
 
@@ -383,6 +389,9 @@ class DayReport:
     """Tables not published yet (left for the next run)."""
     empty: list[str] = field(default_factory=list)
     """Past trading days the exchange published empty (recorded as covered)."""
+    failed: list[str] = field(default_factory=list)
+    """Tables whose fetch failed after the router's retries (not covered; the next run retries)."""
+    first_failed: date | None = None
     requests: int = 0
 
     def summary(self) -> str:
@@ -392,6 +401,8 @@ class DayReport:
             parts.append(f"交易所無資料 {len(self.empty)} 份（{'、'.join(self.empty[:5])}）")
         if self.pending:
             parts.append(f"尚未公布 {len(self.pending)} 份（{'、'.join(self.pending[:5])}）")
+        if self.failed:
+            parts.append(f"抓取失敗 {len(self.failed)} 份（{'、'.join(self.failed[:5])}）")
         return "；".join(parts) or "沒有需要抓的資料"
 
 
@@ -413,10 +424,20 @@ def ingest_chip_day(
                 continue
             if skip is not None and (dataset.name, market, day) in skip:
                 continue
-            fetched = dataset.fetch(router, day, market)
-            report.requests += 1
-            published = dataset.count(fetched)
             tag = f"{dataset.label} {market} {day}"
+            report.requests += 1
+            try:
+                fetched = dataset.fetch(router, day, market)
+            except ProviderError as exc:
+                # TPEx throttles with a no-data notice that lasts minutes, longer than the
+                # router's retries: skip the table (no coverage, so a rerun fetches it) and
+                # give the source a rest before the next request (D-113).
+                log.warning("%s failed: %s", tag, exc)
+                report.failed.append(tag)
+                report.first_failed = min(day, report.first_failed or day)
+                pause(FAILURE_PAUSE)
+                continue
+            published = dataset.count(fetched)
             with ctx.engine.begin() as conn:
                 if published == 0:
                     if day >= today:
@@ -428,6 +449,13 @@ def ingest_chip_day(
                     report.stored[dataset.name].add(stats)
                     ctx.add_rows(stats.written)
                 record_coverage(conn, dataset.name, market, day, published, fetched.provider)
+
+
+def _outcome(report: DayReport, label: str) -> JobOutcome:
+    """Success, or a failure (notified) listing the tables to retry; stored tables stay."""
+    if report.failed:
+        raise JobError(f"{label}：{report.summary()}")
+    return JobOutcome(message=f"{label}：{report.summary()}")
 
 
 def pick_datasets(value: object) -> list[ChipDataset]:
@@ -466,7 +494,7 @@ class SyncChipsJob(Job):
         if ctx.params.get("date"):
             day = date.fromisoformat(str(ctx.params["date"]))
             ingest_chip_day(ctx, day, report, datasets)
-            return JobOutcome(message=f"{day}：{report.summary()}")
+            return _outcome(report, f"{day}")
         today = taipei_today()
         now = utcnow().astimezone(TAIPEI)
         with ctx.engine.connect() as conn:
@@ -479,7 +507,7 @@ class SyncChipsJob(Job):
             ingest_chip_day(ctx, day, report, datasets, skip=done)
         if report.requests == 0:
             return JobOutcome("skipped", f"近 {len(days)} 個交易日的籌碼都已抓齊")
-        return JobOutcome(message=f"{days[0]}～{days[-1]}：{report.summary()}")
+        return _outcome(report, f"{days[0]}～{days[-1]}")
 
 
 @register_job
@@ -507,9 +535,12 @@ class BackfillChipsJob(Job):
         for day in days:
             ingest_chip_day(ctx, day, report, datasets, skip=done)
             finished += 1
+            # A failed table holds the resume point back, so the rerun after this failed run
+            # starts there (covered tables in between cost no requests).
+            resume_at = min(day + timedelta(days=1), report.first_failed or day + timedelta(days=1))
             ctx.save_checkpoint(
                 {
-                    "next": (day + timedelta(days=1)).isoformat(),
+                    "next": resume_at.isoformat(),
                     "done": finished,
                     "total": len(all_days),
                     "start": start.isoformat(),
@@ -520,9 +551,8 @@ class BackfillChipsJob(Job):
                 log.info(
                     "backfill_chips %s (%d/%d) %s", day, finished, len(all_days), report.summary()
                 )
-        return JobOutcome(
-            message=f"{start}～{end}：{len(all_days)} 個交易日，請求 {report.requests} 次；"
-            f"{report.summary()}"
+        return _outcome(
+            report, f"{start}～{end}：{len(all_days)} 個交易日，請求 {report.requests} 次"
         )
 
 

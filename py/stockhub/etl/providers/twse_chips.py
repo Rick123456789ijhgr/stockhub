@@ -42,6 +42,8 @@ QFIIS_URL = "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS"
 BFI82U_URL = "https://www.twse.com.tw/rwd/zh/fund/BFI82U"
 
 NO_DATA = "沒有符合條件的資料"
+NOT_YET = "查詢日期大於可查詢最大日期"
+"""MI_QFIIS before the day's table is out (seen at 18:13 on a trading day)."""
 LOT = 1000
 HUNDRED = Decimal(100)
 THOUSAND = Decimal(1000)
@@ -70,7 +72,7 @@ def twse_table(raw: RawResponse) -> dict[str, Any] | None:
     nothing for it (holiday, or not published yet)."""
     data = loads(raw.payload)
     stat = str(data.get("stat", ""))
-    if NO_DATA in stat:
+    if NO_DATA in stat or NOT_YET in stat:
         return None
     if stat.upper() != "OK":
         raise ValueError(f"unexpected stat {stat!r}")

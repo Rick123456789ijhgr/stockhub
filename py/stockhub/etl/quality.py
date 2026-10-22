@@ -13,6 +13,7 @@ from stockhub.etl.providers.base import (
     ForeignHolding,
     InstitutionalTrade,
     MarginBalance,
+    SeriesObservation,
 )
 
 FACTOR_RANGE = (Decimal("0.02"), Decimal(50))
@@ -240,3 +241,26 @@ def check_distribution(levels: list[DistributionLevel]) -> list[str]:
     if abs(brackets - by[17].shares) != adjustment:
         return ["levels_do_not_add_up"]
     return []
+
+
+def check_series_observation(
+    obs: SeriesObservation,
+    previous: Decimal | None,
+    *,
+    positive: bool,
+    max_move: Decimal | None,
+) -> list[str]:
+    """Checks of one market series value against its catalog row (market_series) and the
+    previous stored value of the series."""
+    reasons: list[str] = []
+    present = [p for p in (obs.open, obs.high, obs.low, obs.value) if p is not None]
+    if positive and any(p <= 0 for p in present):
+        reasons.append("not_positive")
+    if obs.high is not None and obs.low is not None:
+        inside = [p for p in (obs.open, obs.value) if p is not None]
+        if obs.high < obs.low or any(not obs.low <= p <= obs.high for p in inside):
+            reasons.append("ohlc_inconsistent")
+    move = abs(obs.value / previous - 1) if previous and previous > 0 < obs.value else None
+    if max_move is not None and move is not None and move > max_move:
+        reasons.append("move_too_large")
+    return reasons

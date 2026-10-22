@@ -1,4 +1,6 @@
 # Register the StockHub schedule in Windows Task Scheduler (current user, no admin needed):
+#   StockHub markets weekdays 07:30  make etl-markets (international closes, US rates, NDC
+#                                                     indicators, macro alerts)
 #   StockHub quotes  weekdays 08:55  make etl-quotes  (polls until 13:35; skips market holidays)
 #   StockHub daily   weekdays 18:00  make etl-daily   (calendar, master, events, prices, factors,
 #                                                     fundamentals, chips)
@@ -17,6 +19,7 @@ if (-not (Test-Path $bash)) { throw "Git Bash not found at $bash" }
 $folder = "\StockHub\"
 
 $tasks = @(
+  @{ Name = "StockHub markets"; Target = "etl-markets"; At = "07:30"; Limit = (New-TimeSpan -Hours 1) },
   @{ Name = "StockHub quotes"; Target = "etl-quotes"; At = "08:55"; Limit = (New-TimeSpan -Hours 6) },
   @{ Name = "StockHub daily"; Target = "etl-daily"; At = "18:00"; Limit = (New-TimeSpan -Hours 3) },
   @{ Name = "StockHub chips"; Target = "etl-chips"; At = "21:30"; Limit = (New-TimeSpan -Hours 1) }
