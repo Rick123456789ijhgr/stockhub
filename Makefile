@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history etl-markets etl-markets-history \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history etl-markets etl-markets-history db-cluster \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -148,6 +148,9 @@ etl-backfill: ## Daily prices for [start, end] (default: the past 365 days); res
 etl-quotes: ## Refresh ex-rights previews, then poll quotes for watchlist + holdings every 30 s until 13:35 (symbols=2330,0050 adds more)
 	-$(ETL) sync_ex_rights_previews
 	$(ETL) poll_quotes $(if $(symbols),--param symbols=$(symbols)) $(if $(once),--param once=true)
+
+db-cluster: ## Rewrite per-stock tables in stock order (CLUSTER, locks each table for minutes; skips weekday 07:00-22:30 unless force=true)
+	$(ETL) cluster_tables $(if $(force),--param force=true)
 
 etl-previews: ## Upcoming ex-rights/dividend announcements (除權除息預告表) of both exchanges
 	$(ETL) sync_ex_rights_previews

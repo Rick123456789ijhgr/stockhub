@@ -18,6 +18,11 @@ fi
 
 pgctl() { "${BIN}pg_ctl" -D "$DATA" "$@"; }
 
+# Memory for a single-user machine (docs/DECISIONS.md D-117): the default 128 MB of shared
+# buffers holds a fraction of prices_daily, so first opens of a stock read from disk.
+# Same settings as docker-compose.yml.
+TUNING="-c shared_buffers=2GB -c effective_cache_size=12GB -c work_mem=32MB -c random_page_cost=1.1"
+
 case "${1:-}" in
   init)
     mkdir -p "$ROOT/.local"
@@ -31,7 +36,7 @@ case "${1:-}" in
     ;;
   start)
     # Redirect every stream: on Windows pg_ctl otherwise keeps the caller's pipes open.
-    pgctl -o "-p $PORT -c listen_addresses=localhost -c timezone=UTC" -l "$LOG" -w start </dev/null >/dev/null 2>&1
+    pgctl -o "-p $PORT -c listen_addresses=localhost -c timezone=UTC $TUNING" -l "$LOG" -w start </dev/null >/dev/null 2>&1
     echo "postgres listening on localhost:$PORT"
     ;;
   stop) pgctl -m fast stop ;;

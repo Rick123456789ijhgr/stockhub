@@ -36,7 +36,7 @@ infra/ ETL Dockerfile 與部署說明
 
 ```bash
 cp .env.example .env
-# 目前階段先不登入：把 AUTH_DISABLED 改成 true（只在 make web-dev 生效，部署環境一律無效）
+# 目前階段先不登入：把 AUTH_DISABLED 改成 true（只在本機生效：make web-dev 與 stockhub.bat 的正式建置；Vercel 一律無效）
 # 之後要啟用登入：AUTH_DISABLED=false，並填 AUTH_SECRET、ALLOWED_EMAIL、AUTH_GOOGLE_ID / SECRET
 ```
 
@@ -89,7 +89,8 @@ make etl-markets-history              # 市場序列歷史（2004 起；加權�
 ### 6. 開網站
 
 ```bash
-make web-dev          # http://localhost:3000
+stockhub.bat          # Windows 日常使用：資料庫＋正式建置的網站（程式碼有變先 build，約 1～2 分鐘），只綁 127.0.0.1
+make web-dev          # 改程式時：開發模式，http://localhost:3000（比正式建置慢 5～10 倍）
 ```
 
 - `/stocks`：搜尋股票與 ETF（搜尋時也會列出已下市公司）
@@ -107,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1          # �
 powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # 移除
 ```
 
-會建立五個工作（目前使用者，不需系統管理員）：平日 07:30 國際市場與總經（美股收盤後）、平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收、籌碼）、平日 21:30 籌碼（融資融券晚上才公布），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
+會建立六個工作（目前使用者，不需系統管理員）：平日 07:30 國際市場與總經（美股收盤後）、平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收、籌碼）、平日 21:30 籌碼（融資融券晚上才公布）、週六 10:00 依股票重排大表（`make db-cluster`），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
 
 ## 常用指令
 

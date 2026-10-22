@@ -694,3 +694,13 @@
 ### D-116 隔離資料「仍然採用」被資料表限制擋下時的處理（2026-10-22）
 - 籌碼隔離區的外資持股比大於 100%（例如 1.0012，多半是發行股數尚未更新）違反 `foreign_holdings_daily.foreign_ratio` 的 0～1 限制，按「仍然採用」一定失敗，畫面只顯示「送出失敗」。這類原因（`ratio_out_of_range`、`limit_out_of_range`）改成不提供「仍然採用」，標示「只能捨棄」。
 - 三個審核 API（財報、籌碼、市場）遇到資料庫的 CHECK／NOT NULL／數值範圍錯誤時回 409 與中文說明，畫面直接顯示伺服器的訊息。不放寬資料表限制：大於 100% 的比率不是可用的數字。
+
+### D-117 本機改跑正式建置、資料庫調校與依股票重排（使用者要求，2026-10-22）
+- 量測（D-095 之後點個股仍要等）：開發模式的個股頁 0.45～1.15 秒、`/stocks` 每次 0.5 秒；同一批頁面在正式建置（`next start`）是 0.04～0.37 秒。查詢本身都在 15～60 ms，時間主要花在開發模式的渲染；另外開發模式不預先載入連結、不壓縮 JS、第一次進頁面要現場編譯。
+- `stockhub.bat` 改跑正式建置：`start`／`restart` 發現 `web/` 的原始碼、設定或 `.env` 比 `.next/BUILD_ID` 新就先 `next build`（記錄在 `.local/logs/web-build-*.log`），建置失敗退回開發模式；`stockhub.bat dev` 直接用開發模式。只綁 `127.0.0.1`，區網連不進來。網址改開 `http://127.0.0.1:3000`：只綁 IPv4 時 `localhost` 會先試 `::1` 被拒，每條新連線多約 0.2 秒（量到 0.21 秒）。代價是顯示偏好（存在 localStorage，依網址分開）要在新網址重設一次。
+- 登入（使用者決定先擱置）：D-041 的免登入與網站觸發任務原本在 production 模式一律關閉。新增 `isLocalMachine`：不是 Vercel，而且是開發模式或 `STOCKHUB_LOCAL_SERVER=true`。這個變數只由 `stockhub.ps1` 在綁 127.0.0.1 的 `next start` 前設定，不放 `.env`。取捨：安全前提從「production 一律關」變成「Vercel 一律關、本機正式建置只綁 loopback」；部署仍在 Vercel，不受影響。改回需要登入時把 `AUTH_DISABLED` 設回 `false` 即可。
+- 正式模式下每個請求都報 `blocking-prerender-crypto`：Auth.js 的 `auth()` 會產生隨機 CSRF token，cacheComponents 預渲染時不允許。`getCurrentUser()` 一開始就 `await connection()`（原本只在免登入的分支）。
+- 走勢圖的近 42 個月 K 線改由頁面和其他資料一起查（不 await，promise 傳給 client 端 `use()`，失敗時圖表自己再抓），省掉「頁面載完 → hydrate → 再打 `/api/stocks/[symbol]/bars`」這一輪；完整歷史仍按需要由 API 載入。
+- Postgres：`shared_buffers` 128 MB → 2 GB（這台 32 GB），`effective_cache_size=12GB`、`work_mem=32MB`、`random_page_cost=1.1`（SSD）。寫在 `scripts/local-pg.sh` 的啟動參數與 `docker-compose.yml`，不用 `ALTER SYSTEM`，跟版本庫走。
+- 依股票重排：每日任務一次寫入全部股票的同一天，一檔股票的 121 根 K 線散在 91 個資料頁，第一次開某檔要從磁碟讀上百頁。遷移把 `prices_daily`、三張籌碼日表、`financials`、`fundamentals_quarterly`、`fundamental_signals`、`monthly_revenue` 標記 `CLUSTER ON`（以 `stock_id` 開頭的索引），`cluster_tables` 任務（`make db-cluster`）用 `CLUSTER` 重寫並 `ANALYZE`。執行時每張表會被鎖住幾分鐘，所以平日 07:00～22:30 自動跳過（`force=true` 例外）；排程週六 10:00（`register-tasks.ps1` 的「StockHub cluster」，錯過的會在開機後補跑，碰到平日白天就跳過）。之後新寫入的日子會再分散，但近期的資料本來就常在快取裡，每週重排一次就夠。
+- 未做：`/stocks` 列表把 100 筆同時渲染成手機卡片和桌面表格（約 850 KB），正式模式下只要 0.15 秒，暫不改。

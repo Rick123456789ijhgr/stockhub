@@ -5,6 +5,8 @@
 #   StockHub daily   weekdays 18:00  make etl-daily   (calendar, master, events, prices, factors,
 #                                                     fundamentals, chips)
 #   StockHub chips   weekdays 21:30  make etl-chips   (margin tables are published in the evening)
+#   StockHub cluster Saturday 10:00  make db-cluster  (per-stock tables in stock order; a run that
+#                                                     starts on a weekday daytime skips itself)
 #   StockHub database  at logon       scripts/local-pg.sh start (no time limit; the other tasks
 #                                     start it through this one so it never belongs to them)
 # Runs only while the user is logged on; a run missed while the PC was off starts when it
@@ -22,8 +24,10 @@ $tasks = @(
   @{ Name = "StockHub markets"; Target = "etl-markets"; At = "07:30"; Limit = (New-TimeSpan -Hours 1) },
   @{ Name = "StockHub quotes"; Target = "etl-quotes"; At = "08:55"; Limit = (New-TimeSpan -Hours 6) },
   @{ Name = "StockHub daily"; Target = "etl-daily"; At = "18:00"; Limit = (New-TimeSpan -Hours 3) },
-  @{ Name = "StockHub chips"; Target = "etl-chips"; At = "21:30"; Limit = (New-TimeSpan -Hours 1) }
+  @{ Name = "StockHub chips"; Target = "etl-chips"; At = "21:30"; Limit = (New-TimeSpan -Hours 1) },
+  @{ Name = "StockHub cluster"; Target = "db-cluster"; At = "10:00"; Limit = (New-TimeSpan -Hours 2); Days = @("Saturday") }
 )
+$weekdays = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 
 $dbTask = "StockHub database"
 Unregister-ScheduledTask -TaskPath $folder -TaskName $dbTask -Confirm:$false -ErrorAction SilentlyContinue
@@ -49,10 +53,12 @@ foreach ($t in $tasks) {
   # conhost --headless keeps the console window from popping up.
   $action = New-ScheduledTaskAction -Execute "conhost.exe" `
     -Argument "--headless `"$bash`" -l `"$script`" $($t.Target)" -WorkingDirectory $root
-  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $t.At
+  $days = if ($t.Days) { $t.Days } else { $weekdays }
+  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $t.At
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit $t.Limit `
     -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
   Register-ScheduledTask -TaskPath $folder -TaskName $t.Name -Action $action -Trigger $trigger `
     -Settings $settings -Description "StockHub: make $($t.Target) (scripts/scheduled.sh)" | Out-Null
-  Write-Host "registered $($t.Name): weekdays $($t.At) -> make $($t.Target)"
+  $when = if ($t.Days) { $t.Days -join "," } else { "weekdays" }
+  Write-Host "registered $($t.Name): $when $($t.At) -> make $($t.Target)"
 }
