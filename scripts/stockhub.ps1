@@ -1,17 +1,23 @@
-﻿# StockHub 本機啟動與關閉：私有 Postgres（port 5433）+ Next.js 開發伺服器（port 3000）。
-# 用法：stockhub.bat [start|stop|restart|status]；不帶參數（直接雙擊）等於 start。
+﻿# StockHub 本機啟動與關閉：私有 Postgres（port 5433）+ Next.js 正式建置（port 3000，只綁 127.0.0.1）。
+# 用法：stockhub.bat [start|stop|restart|status|dev]；不帶參數（直接雙擊）等於 start。
+# start／restart 發現程式碼比上次建置新就先 next build（約 1～2 分鐘，記錄在 .local\logs\web-build-YYYYMMDD.log），
+# 建置失敗時改用開發模式；dev 直接用開發模式（改程式時用，或用 make web-dev）。見 docs/DECISIONS.md D-117。
 # 網站在背景執行（沒有視窗），輸出寫到 .local\logs\web-YYYYMMDD.log；用 stop 關閉。
 # 排程任務（scripts/register-tasks.ps1）會自行啟動資料庫，所以關閉後排程照常執行；
 # 但不要在排程正在跑（08:55～13:35 報價、18:00 每日）時關閉，會讓該次任務失敗。
-param([ValidateSet("start", "stop", "restart", "status", "")][string]$Command = "")
+param([ValidateSet("start", "stop", "restart", "status", "dev", "")][string]$Command = "")
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $bash = "C:\Program Files\Git\bin\bash.exe"
 $port = 3000
-$url = "http://localhost:$port"
+# 用 127.0.0.1 而不是 localhost：網站只綁 IPv4，localhost 會先試 ::1 被拒，每條新連線多約 0.2 秒。
+$url = "http://127.0.0.1:$port"
 $pidFile = Join-Path $root ".local\web.pid"
 $logDir = Join-Path $root ".local\logs"
+$webDir = Join-Path $root "web"
+# 會影響建置結果的檔案；任何一個比 .next\BUILD_ID 新就重新建置。.env 也算（NEXT_PUBLIC_* 在建置時寫死）。
+$buildInputs = @("src", "public", "package.json", "pnpm-lock.yaml", "next.config.ts", "tsconfig.json", "postcss.config.mjs", "..\.env")
 
 function Invoke-LocalPg([string]$action) {
   # local-pg.sh 需要 Git Bash；輸出在 bash 內處理，避免 PowerShell 5.1 把 stderr 當成錯誤。
@@ -47,7 +53,33 @@ function Start-Db {
   return (Invoke-LocalPg "start")
 }
 
-function Start-Web {
+function Test-BuildStale {
+  $buildId = Join-Path $webDir ".next\BUILD_ID"
+  if (-not (Test-Path $buildId)) { return $true }
+  $built = (Get-Item $buildId).LastWriteTimeUtc
+  foreach ($item in $buildInputs) {
+    $path = Join-Path $webDir $item
+    if (-not (Test-Path $path)) { continue }
+    $newer = Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTimeUtc -gt $built } | Select-Object -First 1
+    if ($newer -or ((Get-Item $path).LastWriteTimeUtc -gt $built)) { return $true }
+  }
+  return $false
+}
+
+function Invoke-Build {
+  if (-not (Test-BuildStale)) { return $true }
+  $log = Join-Path $logDir ("web-build-{0}.log" -f (Get-Date -Format "yyyyMMdd"))
+  Write-Host "程式碼有更新，重新建置網站（約 1～2 分鐘，記錄在 $log）..."
+  $proc = Start-Process cmd.exe -ArgumentList "/c pnpm build >> `"$log`" 2>&1" `
+    -WorkingDirectory $webDir -WindowStyle Hidden -PassThru -Wait
+  if ($proc.ExitCode -eq 0) { return $true }
+  Write-Host "建置失敗，改用開發模式啟動（比較慢）。記錄的最後幾行：" -ForegroundColor Yellow
+  Get-Content $log -Tail 20 | Out-Host
+  return $false
+}
+
+function Start-Web([bool]$dev = $false) {
   $existing = Get-PortProcess
   if ($existing) {
     if ($existing.ProcessName -ne "node") {
@@ -58,11 +90,15 @@ function Start-Web {
     return $true
   }
   New-Item -ItemType Directory -Force $logDir | Out-Null
+  if (-not $dev) { $dev = -not (Invoke-Build) }
   $log = Join-Path $logDir ("web-{0}.log" -f (Get-Date -Format "yyyyMMdd"))
-  Write-Host "啟動網站（背景執行，記錄在 $log）..."
+  # 正式建置只綁 127.0.0.1（區網連不進來）；STOCKHUB_LOCAL_SERVER 讓本機免登入與網站觸發任務照常運作（D-117）。
+  $command = if ($dev) { "pnpm dev" } else { "set STOCKHUB_LOCAL_SERVER=true&& pnpm start -H 127.0.0.1 -p $port" }
+  $mode = if ($dev) { "開發模式" } else { "正式建置" }
+  Write-Host "啟動網站（$mode，背景執行，記錄在 $log）..."
   # 不開視窗：Next.js 會把主控台標題改成 next-server，留著視窗只會多一個工作列項目。
-  $proc = Start-Process cmd.exe -ArgumentList "/c pnpm dev >> `"$log`" 2>&1" `
-    -WorkingDirectory (Join-Path $root "web") -WindowStyle Hidden -PassThru
+  $proc = Start-Process cmd.exe -ArgumentList "/c $command >> `"$log`" 2>&1" `
+    -WorkingDirectory $webDir -WindowStyle Hidden -PassThru
   New-Item -ItemType Directory -Force (Split-Path $pidFile) | Out-Null
   Set-Content $pidFile "$($proc.Id),$($proc.StartTime.Ticks)"
   $deadline = (Get-Date).AddSeconds(90)
@@ -119,6 +155,10 @@ function Invoke-Action([string]$name) {
       return ((Start-Db) -and (Start-Web) -and (Open-Site))
     }
     "status" { Show-Status; return $true }
+    "dev" {
+      Stop-Web
+      return ((Start-Db) -and (Start-Web $true) -and (Open-Site))
+    }
   }
 }
 
