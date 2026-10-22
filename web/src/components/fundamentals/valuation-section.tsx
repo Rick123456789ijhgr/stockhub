@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { formatValue, periodLabel, type ValueFormat } from "@/lib/chart-format";
 import type { DB } from "@/lib/db";
+import { FINANCIAL_YEARS, financialWindowStart, inFinancialWindow } from "@/lib/financial-window";
 import { getPeers, getValuationInputs, type PeerRow } from "@/lib/fundamentals";
 import { taipeiToday } from "@/lib/market-hours";
 import { cn } from "@/lib/utils";
@@ -41,13 +42,11 @@ function SummaryTile({
   title,
   format,
   five,
-  ten,
   note,
 }: {
   title: string;
   format: ValueFormat;
   five: MetricSummary;
-  ten: MetricSummary;
   note?: string;
 }) {
   return (
@@ -59,21 +58,18 @@ function SummaryTile({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-0.5 text-xs text-muted-foreground tabular-nums">
-        {[
-          { label: "5 年", s: five },
-          { label: "10 年", s: ten },
-        ].map(({ label, s }) => (
-          <p key={label}>
-            {label}百分位{" "}
-            <span className="text-foreground">
-              {s.percentile === null ? "—" : `${Math.round(s.percentile * 100)}%`}
-            </span>
-            {level(s.percentile)}
-            {s.low !== null && s.high !== null
-              ? ` · 區間 ${formatValue(s.low, format)}～${formatValue(s.high, format)}`
-              : ""}
+        <p>
+          {FINANCIAL_YEARS} 年百分位{" "}
+          <span className="text-foreground">
+            {five.percentile === null ? "—" : `${Math.round(five.percentile * 100)}%`}
+          </span>
+          {level(five.percentile)}
+        </p>
+        {five.low !== null && five.high !== null ? (
+          <p>
+            區間 {formatValue(five.low, format)}～{formatValue(five.high, format)}
           </p>
-        ))}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -82,10 +78,17 @@ function SummaryTile({
 /** 估值: P/E, P/B and yield percentiles, river chart, yield history, peer comparison. */
 export async function ValuationSection({ db, stock }: { db: Kysely<DB>; stock: StockInfo }) {
   const today = taipeiToday();
-  const inputs = await getValuationInputs(db, stock.id, shiftYears(today, -10));
+  // Two extra years feed the trailing-four-quarter EPS and dividends at the window start.
+  const start = financialWindowStart(today);
+  const inputs = await getValuationInputs(db, stock.id, shiftYears(start, -2));
   if (inputs.prices.length === 0) return null;
-  const points = valuationSeries(inputs.prices, inputs.quarters, inputs.dividends);
-  const summary = (metric: Metric, years: number) => summarize(points, metric, years);
+  const points = inFinancialWindow(
+    valuationSeries(inputs.prices, inputs.quarters, inputs.dividends),
+    (p) => p.date,
+    today,
+  );
+  if (points.length === 0) return null;
+  const summary = (metric: Metric) => summarize(points, metric, FINANCIAL_YEARS);
   const isEtf = stock.type === "etf";
   const hasFundamentals = inputs.quarters.length > 0;
   const hasPe = points.some((p) => p.pe !== null);
@@ -104,23 +107,20 @@ export async function ValuationSection({ db, stock }: { db: Kysely<DB>; stock: S
             <SummaryTile
               title="本益比（近四季 EPS）"
               format="ratio"
-              five={summary("pe", 5)}
-              ten={summary("pe", 10)}
+              five={summary("pe")}
               note="虧損，不計算"
             />
             <SummaryTile
               title="股價淨值比"
               format="ratio"
-              five={summary("pb", 5)}
-              ten={summary("pb", 10)}
+              five={summary("pb")}
             />
           </>
         ) : null}
         <SummaryTile
           title="殖利率（近 12 個月現金股利）"
           format="percent"
-          five={summary("dividendYield", 5)}
-          ten={summary("dividendYield", 10)}
+          five={summary("dividendYield")}
         />
       </div>
       <p className="text-xs text-muted-foreground">
