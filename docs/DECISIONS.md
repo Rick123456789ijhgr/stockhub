@@ -739,3 +739,34 @@
 - 第一次渲染（含伺服器）一律用原本的網址，掛載後才換成記住的網址（`useSyncExternalStore`），避免 hydration 不一致。只接受同一頁的網址（`/stocks` 或 `/stocks?…`），storage 被封鎖、內容壞掉時退回原網址。
 - 實測：成交量＋股票與 ETF → 友達 → 「個股」返回、或從市場頁點側邊欄「個股」，都回到 `/stocks?type=all&tab=volume`；重新整理後仍記得；市場頁的熱力圖分頁同樣記得。
 - 未做：個股頁的分頁（走勢、基本面、估值、籌碼）換股票時不沿用，每檔都從走勢開始。要沿用的話，榜單裡的個股連結都要帶上分頁，或改由伺服器讀偏好決定預設分頁。
+
+### D-123 盤中報價改成「串流＋輪詢備援」的行情層（參考 GPT 的 Quote Provider 規劃，2026-10-24）
+- 背景：使用者提供 GPT 的 Quote Provider 規劃書。採用它的方向：來源可替換、長連線、每 30 秒寫入、斷線重連並重新訂閱、冷卻時間防止來回切換、斷流判斷。不採用的部分列在下面。Shioaji 仍在等開戶與 API Key（D-080），這次只做不需要 Key 的部分（階段 A）。
+- 介面：新增 `QuoteStreamProvider`（`connect`／`disconnect`／`is_connected`／`subscribe`／`unsubscribe`／純函式 `parse_message`）與 `QuoteUpdate`、`StreamMessage`；原本輪詢式的 `QuoteProvider` 不變。adapter 不保存訂閱狀態，由 `QuoteStreamSession`（`etl/quote_stream.py`）持有要訂閱的清單，每次重連後重新訂閱。
+- 設定：`PROVIDERS_QUOTE_STREAM`（順序就是主來源與備援，空的＝只輪詢）。另有 `QUOTE_STREAM_RECONNECT_ATTEMPTS`（5）、`QUOTE_STREAM_RECONNECT_MAX_DELAY`（30 秒）、`QUOTE_STREAM_FALLBACK_COOLDOWN`（300 秒）、`QUOTE_STREAM_STALE_AFTER`（120 秒）。沿用 `PROVIDERS_*` 的慣例，不另訂 `QUOTE_PRIMARY`／`QUOTE_FALLBACK`。
+- 任務：沿用 `poll_quotes`，所以排程、`make etl-quotes`、`/status` 的健康檢查都不用改。有串流來源時，開盤後連線一次，每輪（30 秒）依序：
+  - 把收到的訊息整批存進 RawStore（資料集 `quote_stream`，一輪一個原始檔，不逐筆存）；
+  - 解析後合併進記憶體快取 `LatestQuotes`；
+  - 有變動的寫入 `quotes_latest`。
+- 輪詢補位：第一輪一律也輪詢一次，補開盤價與參考價（串流中途加入可能不會送）。超過訂閱上限的股票、以及所有串流都失敗時，改用 `PROVIDERS_QUOTE` 輪詢。`once=true` 與 `mode=poll` 一律輪詢。
+- 重連：斷線（由 callback 或 `is_connected()` 發現）→ 同一來源以指數退避重試（1、2、4… 秒，最長 30 秒）→ 用盡換下一個串流來源 → 都不行就輪詢。帳密被拒（`PermanentProviderError`）不重試。
+- 防止來回切換：離開主來源後，冷卻時間（300 秒）內不試主來源；到期只試一次，失敗再等一個冷卻。主來源連上之後才關掉備援串流，中間不會斷資料。
+- 斷流判斷：只看整個來源的最後一則訊息，不逐檔看；只在連續交易時段 09:00～13:25 判斷（試撮與收盤集合競價本來就沒有成交）。超過 120 秒沒有訊息就重連；重連後仍完全沒有訊息、又判定斷流，就改用備援，不會每兩分鐘重連一次。
+- 快取合併：
+  - 成交訊息只更新它帶的欄位；
+  - 買賣價訊息只換 bid／ask（None 代表那一側沒有掛單，例如漲跌停）；
+  - 較舊的訊息只補缺的欄位；
+  - 跨日就重新開始。
+- `store_quotes`：同一天的快照缺開盤、最高、最低或參考價時，保留資料庫已有的值（原本只保留成交價）。
+- 每 10 輪（5 分鐘）重新讀一次自選與持股，當天新加入的股票不必等到隔天（輪詢模式也適用）。
+- 第一次改用輪詢備援時寄一次通知（warning）；任務結束的訊息會列出串流輪數、重新連線次數、改用備援次數。
+- 不採用：
+  - 所有來源共用一個 async 介面：MIS 是 HTTP 輪詢，Shioaji SDK 是 callback 加執行緒，專案其他部分全是同步的。
+  - GPT 的 `QuoteEvent`：只有價量與買賣價，網站還需要參考價、開高低與交易日。
+  - 每筆 tick 都存 RawStore。
+  - 時間戳存台北時間：規則 2 不變。
+  - Fubon Neo：要另開帳戶，而且 MIS 已經是可用的備援；需要時介面可以直接加。
+  - Redis、Kafka。
+- 未做：
+  - Shioaji adapter（階段 B，等 API Key）：要確認訂閱上限、使用條款、SDK 是否支援 Windows 與 Python 3.12；SDK 放在 uv 的選用依賴，只在 adapter 裡 import。
+  - 盤中歷史表（階段 D）：等使用者決定保存期間。

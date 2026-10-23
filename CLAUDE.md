@@ -48,7 +48,7 @@ make web-check                # lint + typecheck + test
 make etl-daily                # 休市表 + 股票主檔 + 當日日線（date=YYYY-MM-DD 可指定）
 make etl-backfill             # 回填日線（start= end=，預設過去一年；可中斷續跑）
 make etl-history              # 完整歷史（下市、2004 起日線、除權息、還原因子；約 7～8 小時）
-make etl-quotes               # 盤中報價輪詢（自選 + 持股，每 30 秒）
+make etl-quotes               # 盤中報價（自選 + 持股，每 30 秒寫入；有 PROVIDERS_QUOTE_STREAM 用長連線，否則輪詢；mode=poll 強制輪詢）
 make etl-adjust               # 重算還原因子（在 /admin 確認跳空後）
 make etl-dividends            # 證交所權息拆分（start= end=，預設近 30 天）
 make etl-etf-delistings       # 從已存的日線表推算下市 ETF（不連網，回填完成後才跑）
@@ -96,6 +96,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 新 schema：只加遷移檔（`make db-new`），必附 `COMMENT ON`、`down` 段與 pytest schema 測試，再跑 `make db-types`。
 - 指標公式：`py/stockhub/engine/indicators.py` 與 `web/src/lib/indicators.ts` 逐式對應；改任一邊都要同步另一邊，並用 `py/scripts/gen_indicator_fixture.py` 重產 `testdata/indicators.json`。
 - 持股計算：`py/stockhub/engine/portfolio.py` 與 `web/src/lib/portfolio.ts` 逐式對應（平均成本、手續費、證交稅、配息推算、今日損益），改任一邊都要同步另一邊，並用 `py/scripts/gen_portfolio_fixture.py` 重產 `testdata/portfolio.json`。交易寫入一律經 `applyTransactionChange`（重播檢查賣超、重算自動費用、寫稽核紀錄）。配息推算不入庫，頁面每次重算並標示「估算」；有 `dividend_receipts` 實收時改用實收。讀持股的 Python 程式一律用 `common/portfolio_store.holdings()`（引擎重播），不要自己加總交易股數。
+- 盤中報價：券商等推送來源實作 `QuoteStreamProvider`（只做連線、訂閱與純函式 `parse_message`，不保存訂閱狀態，SDK 只在 adapter 裡 import）；重連、重新訂閱、斷流判斷、備援與冷卻都在 `etl/quote_stream.py` 的 `QuoteStreamSession`，由 `poll_quotes` 驅動。訊息每輪整批存 RawStore 再解析，合併進 `LatestQuotes`，寫入一律經 `store_quotes`；網站只讀 `quotes_latest`（D-123）。
 - `corporate_action_previews` 是預告快照，只供推算與當天暫時套用（`with_previews`）；正式紀錄永遠是 `corporate_actions`。
 - 警示寫進 `alerts`（唯一鍵 kind + 股票 + 交易日就是冷卻），經 `Notifier` 送出；新種類要擴充 `kind` 的 CHECK。
 - 所有手動操作（交易、自選、設定、事件確認）都寫 `audit_log`，`action` 用 `領域.動作`（例如 `portfolio.update`），新動作要在 `components/admin/audit-log.tsx` 加中文標籤。

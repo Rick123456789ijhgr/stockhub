@@ -60,6 +60,7 @@ from stockhub.etl.providers.base import (
     ProviderParseError,
     Quote,
     QuoteProvider,
+    QuoteStreamProvider,
     RawResponse,
     Security,
     SecurityListProvider,
@@ -401,6 +402,18 @@ class ProviderRouter:
             lambda p: p.fetch_quotes(symbols),
             lambda p, raw: p.parse_quotes(raw),
         )
+
+    def quote_streams(self) -> list[QuoteStreamProvider]:
+        """Configured streaming quote sources in order (empty when none is configured).
+
+        Streams are long-lived sessions, so the caller drives them (connect, reconnect,
+        fallback); the router only hands out the instances.
+        """
+        try:
+            providers = self.registry.providers_for("quote_stream")
+        except ConfigError:
+            return []
+        return [p for p in providers if isinstance(p, QuoteStreamProvider)]
 
     # ------------------------------------------------------------------ internals
 

@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     providers_monthly_revenue_snapshot: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_company_profiles: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
     providers_quote: CommaList = Field(default_factory=lambda: ["twse_mis"])
+    providers_quote_stream: CommaList = Field(default_factory=list)
+    """Streaming quote sources in order (e.g. shioaji); empty = poll PROVIDERS_QUOTE only.
+    When every stream fails, poll_quotes falls back to polling PROVIDERS_QUOTE (D-123)."""
+    quote_stream_reconnect_attempts: int = Field(default=5, ge=1)
+    """Connection attempts (exponential backoff) before giving up on a stream source."""
+    quote_stream_reconnect_max_delay: float = Field(default=30.0, gt=0)
+    """Longest wait between two connection attempts, in seconds."""
+    quote_stream_fallback_cooldown: float = Field(default=300.0, ge=0)
+    """Seconds to stay on the fallback before trying the primary stream again."""
+    quote_stream_stale_after: float = Field(default=120.0, gt=0)
+    """Seconds without any message during continuous trading before the stream counts as
+    stale (not checked in the opening and closing call auctions)."""
     providers_calendar: CommaList = Field(default_factory=lambda: ["twse"])
     providers_securities: CommaList = Field(default_factory=lambda: ["twse"])
     providers_delistings: CommaList = Field(default_factory=lambda: ["twse", "tpex"])
@@ -83,6 +95,7 @@ class Settings(BaseSettings):
         "providers_price",
         "providers_financial",
         "providers_quote",
+        "providers_quote_stream",
         "providers_calendar",
         "providers_securities",
         "providers_delistings",

@@ -23,7 +23,7 @@
 - ETL 與網站分離：Vercel 不跑長任務。
 - 前端與一般查詢：Next.js route handlers 直接查資料庫。
 - 篩選器與回測：Python API（FastAPI），非同步（提交、輪詢、取結果），不對外公開。
-- 資料源轉接層：`PriceProvider`、`FinancialProvider`、`QuoteProvider`，每個來源一個 adapter，設主來源與備援。
+- 資料源轉接層：`PriceProvider`、`FinancialProvider`、`QuoteProvider`（輪詢）、`QuoteStreamProvider`（長連線，D-123），每個來源一個 adapter，設主來源與備援。
 - 技術指標：前端用日線資料計算；Python 端用同一套公式，兩端用共用測試資料驗證。
 
 ## 3. 資料來源
@@ -41,7 +41,7 @@
 
 twstock 與 yfinance 是非官方管道，可能被限流或改版，必須有備援與失敗告警。各來源條款與額度正式串接前要再確認。
 
-Shioaji adapter 只實作 `QuoteProvider`，登入時只要 API Key 和 Secret，不載入下單憑證。Shioaji 的 session 約 24 小時過期，所以 adapter 啟動時要先檢查 session 和行情連線，過期或斷線就重新登入，並重試一次；重試後還是失敗，就交給 `ProviderRouter` 切換到備援。
+Shioaji adapter 只實作 `QuoteStreamProvider`（D-123），登入時只要 API Key 和 Secret，不載入下單憑證。Shioaji 只是目前選的主來源，不是架構的一部分：行情層不綁定來源，換成其他券商只要再寫一個 adapter。Shioaji 的 session 約 24 小時過期；斷線、過期或沒有資料時，由 `poll_quotes` 的 `QuoteStreamSession` 用指數退避重新連線並重新訂閱，用盡才換下一個串流來源，最後退回證交所 MIS 輪詢，冷卻時間過後再試主來源。
 
 FinMind MCP 只在開發與研究時使用：在 Claude Code 裡臨時查資料、驗證想法。正式擷取一律走 provider adapter 與 RawStore（規則 5、6）。
 

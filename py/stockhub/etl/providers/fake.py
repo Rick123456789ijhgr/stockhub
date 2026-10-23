@@ -5,17 +5,20 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-from collections.abc import Sequence
-from datetime import date
+from collections.abc import Callable, Sequence
+from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from stockhub.etl.providers.base import (
     DailyBar,
     Market,
     PermanentProviderError,
     PriceProvider,
+    QuoteStreamProvider,
+    QuoteUpdate,
     RawResponse,
+    StreamMessage,
     TransientProviderError,
 )
 from stockhub.etl.providers.registry import register_provider
@@ -108,3 +111,96 @@ class FlakyFakeProvider(FakePriceProvider):
             error = PermanentProviderError if self.permanent else TransientProviderError
             raise error(f"{self.name}: simulated failure on call {self.calls}")
         return super().fetch_daily_prices(trade_date, market)
+
+
+@register_provider
+class FakeQuoteStreamProvider(QuoteStreamProvider):
+    """Scripted push feed: tests call `push` and `drop`; no threads, no network.
+
+    - fail_connects: the first N connects fail (transient, or permanent with `permanent`)
+    """
+
+    name: ClassVar[str] = "fake_stream"
+
+    def __init__(
+        self,
+        fail_connects: int = 0,
+        permanent: bool = False,
+        max_subscriptions: int = 100,
+        name: str | None = None,
+    ) -> None:
+        self.fail_connects, self.permanent = fail_connects, permanent
+        self.max_subscriptions = max_subscriptions  # type: ignore[misc]
+        if name is not None:
+            self.name = name  # type: ignore[misc]
+        self.connects = 0
+        self.subscribed: dict[str, Market] = {}
+        self._connected = False
+        self._on_message: Callable[[StreamMessage], None] | None = None
+        self._on_lost: Callable[[str], None] | None = None
+
+    def connect(
+        self,
+        on_message: Callable[[StreamMessage], None],
+        on_lost: Callable[[str], None],
+    ) -> None:
+        self.connects += 1
+        if self.connects <= self.fail_connects:
+            error = PermanentProviderError if self.permanent else TransientProviderError
+            raise error(f"{self.name}: simulated connect failure {self.connects}")
+        self._on_message, self._on_lost = on_message, on_lost
+        self._connected = True
+
+    def disconnect(self) -> None:
+        self._connected = False
+        self.subscribed.clear()
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def subscribe(self, symbols: Sequence[tuple[str, Market]]) -> None:
+        if not self._connected:
+            raise TransientProviderError("not connected")
+        self.subscribed.update(symbols)
+
+    def unsubscribe(self, symbols: Sequence[tuple[str, Market]]) -> None:
+        for symbol, _ in symbols:
+            self.subscribed.pop(symbol, None)
+
+    def push(self, symbol: str, at: datetime, kind: str = "tick", **fields: Any) -> None:
+        """Deliver one message, as the SDK callback would (only while subscribed)."""
+        if not self._connected or symbol not in self.subscribed or self._on_message is None:
+            return
+        payload = {
+            "symbol": symbol,
+            "market": self.subscribed[symbol],
+            "kind": kind,
+            "at": at.isoformat(),
+            **{k: str(v) for k, v in fields.items()},
+        }
+        self._on_message(StreamMessage(kind, payload, at))
+
+    def drop(self, reason: str = "simulated drop") -> None:
+        self._connected = False
+        self.subscribed.clear()
+        if self._on_lost is not None:
+            self._on_lost(reason)
+
+    def parse_message(self, message: StreamMessage) -> list[QuoteUpdate]:
+        p = message.payload
+        fields: dict[str, Any] = {
+            k: Decimal(p[k])
+            for k in ("price", "open", "high", "low", "prev_close", "bid", "ask")
+            if k in p
+        }
+        if "volume" in p:
+            fields["volume"] = int(p["volume"])
+        return [
+            QuoteUpdate(
+                symbol=p["symbol"],
+                market=p["market"],
+                kind=p["kind"],
+                at=datetime.fromisoformat(p["at"]),
+                **fields,
+            )
+        ]

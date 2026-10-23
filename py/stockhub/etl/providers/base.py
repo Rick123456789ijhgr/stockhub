@@ -8,9 +8,9 @@ two steps, so a parser bug never loses data (CLAUDE.md rules 5 and 6).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 
@@ -20,6 +20,7 @@ DataKind = Literal[
     "price",
     "financial",
     "quote",
+    "quote_stream",
     "calendar",
     "securities",
     "delistings",
@@ -408,6 +409,28 @@ class Quote(_Model):
     ask: Decimal | None = None
 
 
+class QuoteUpdate(_Model):
+    """One pushed update from a streaming source (a trade or a best bid/ask change).
+
+    Fields the message does not carry are None; the consumer merges updates into the
+    latest `Quote` per stock, so a bid/ask update never erases the last trade.
+    """
+
+    symbol: str
+    market: Market
+    kind: Literal["tick", "bidask"]
+    at: AwareDatetime
+    """Exchange time of the update."""
+    price: Decimal | None = None
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    prev_close: Decimal | None = None
+    volume: int | None = Field(default=None, ge=0, description="cumulative shares today")
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+
+
 @dataclass(frozen=True)
 class RawResponse:
     """What a fetch returned, before parsing; landed in RawStore by the router."""
@@ -661,10 +684,61 @@ class QuoteProvider(Provider):
     def parse_quotes(self, raw: RawResponse) -> list[Quote]: ...
 
 
+@dataclass(frozen=True)
+class StreamMessage:
+    """One message as a streaming source delivered it (JSON-serialisable), before parsing.
+
+    The consumer lands batches of these in RawStore before parsing (rule 5).
+    """
+
+    dataset: str
+    payload: Any
+    received_at: datetime
+
+
+class QuoteStreamProvider(Provider):
+    """A push feed over one long-lived session (broker market data, read-only).
+
+    Callbacks may run on the SDK's own threads; they must only hand messages over. The
+    consumer owns the wanted subscriptions and re-subscribes after every reconnect, so an
+    adapter keeps no subscription state of its own. Connection failures raise
+    TransientProviderError (retry) or PermanentProviderError (e.g. rejected credentials).
+    """
+
+    max_subscriptions: ClassVar[int] = 100
+    """Most symbols one session may subscribe to."""
+
+    @abstractmethod
+    def connect(
+        self,
+        on_message: Callable[[StreamMessage], None],
+        on_lost: Callable[[str], None],
+    ) -> None:
+        """Log in and open the feed; `on_lost(reason)` fires when the session drops."""
+
+    @abstractmethod
+    def disconnect(self) -> None:
+        """Close the session; safe to call when already disconnected."""
+
+    @abstractmethod
+    def is_connected(self) -> bool: ...
+
+    @abstractmethod
+    def subscribe(self, symbols: Sequence[tuple[str, Market]]) -> None: ...
+
+    @abstractmethod
+    def unsubscribe(self, symbols: Sequence[tuple[str, Market]]) -> None: ...
+
+    @abstractmethod
+    def parse_message(self, message: StreamMessage) -> list[QuoteUpdate]:
+        """Pure: one stored message -> updates (empty for messages that carry no quote)."""
+
+
 INTERFACES: dict[DataKind, type[Provider]] = {
     "price": PriceProvider,
     "financial": FinancialProvider,
     "quote": QuoteProvider,
+    "quote_stream": QuoteStreamProvider,
     "calendar": CalendarProvider,
     "securities": SecurityListProvider,
     "delistings": DelistingProvider,

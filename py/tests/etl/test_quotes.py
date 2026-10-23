@@ -100,6 +100,28 @@ def test_store_quotes_keeps_last_price_and_never_goes_back(clean_db: Engine, tsm
     assert (price, volume) == (D("2420.0000"), first.volume + 1000)
 
 
+def test_store_quotes_keeps_same_day_reference_when_a_snapshot_lacks_it(
+    clean_db: Engine, tsmc: int
+) -> None:
+    first = _mis().parse_quotes(_mis().fetch_quotes([("2330", "twse")]))[0]
+    partial = first.model_copy(
+        update={"open": None, "prev_close": None, "at": first.at + timedelta(seconds=5)}
+    )
+    next_day = partial.model_copy(
+        update={
+            "trade_date": first.trade_date + timedelta(days=3),
+            "at": first.at + timedelta(days=3),
+        }
+    )
+    query = text("SELECT open, prev_close FROM quotes_latest")
+    with clean_db.begin() as conn:
+        store_quotes(conn, [first], {"2330": tsmc}, "twse_mis", None)
+        store_quotes(conn, [partial], {"2330": tsmc}, "fake_stream", None)
+        assert tuple(conn.execute(query).one()) == (D("2430.0000"), D("2440.0000"))
+        store_quotes(conn, [next_day], {"2330": tsmc}, "fake_stream", None)
+        assert tuple(conn.execute(query).one()) == (None, None)  # not carried across days
+
+
 # ----------------------------------------------------------------------------- job
 
 
