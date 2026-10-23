@@ -444,6 +444,17 @@ def test_job_streams_lands_raw_and_writes_each_round(
     assert (row.source, row.provider, row.dataset) == ("fake_stream", "fake_stream", "quote_stream")
     assert row.quote_time == _at(13, 31, 11).astimezone(UTC)
 
+    with clean_db.connect() as conn:
+        samples = conn.execute(
+            text("SELECT sampled_at, price, source FROM quotes_intraday ORDER BY sampled_at")
+        ).all()
+    # One sample per round on the 30 s grid: the polled 13:30 snapshot, then the stream.
+    assert [(s.sampled_at, s.price, s.source) for s in samples] == [
+        (_at(13, 31).astimezone(UTC), D(2420), "twse_mis"),
+        (_at(13, 31, 30).astimezone(UTC), D(2425), "fake_stream"),
+        (_at(13, 32).astimezone(UTC), D(2425), "fake_stream"),
+    ]
+
 
 def test_job_polls_and_notifies_once_when_the_stream_is_down(
     clean_db: Engine, tmp_path: Path, tsmc: int

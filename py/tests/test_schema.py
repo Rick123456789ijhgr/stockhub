@@ -626,5 +626,21 @@ def test_per_stock_tables_cluster_by_stock(pg: psycopg.Connection) -> None:
         "fundamentals_quarterly",
         "fundamental_signals",
         "monthly_revenue",
+        "quotes_intraday",
     ):
         assert clustered.get(table) == "stock_id", table
+
+
+def test_quotes_intraday_key_checks_and_comments(pg: psycopg.Connection) -> None:
+    stock = _insert_stock(pg)
+    sql = (
+        "INSERT INTO quotes_intraday (stock_id, sampled_at, trade_date, quote_time, price, "
+        "volume, source) VALUES (%s, %s, '2026-10-16', '2026-10-16 01:00:00+00', %s, %s, 'test')"
+    )
+    pg.execute(sql, (stock, "2026-10-16 01:00:30+00", 100, 1000))
+    _expect(pg, errors.UniqueViolation, sql, (stock, "2026-10-16 01:00:30+00", 101, 1000))
+    _expect(pg, errors.CheckViolation, sql, (stock, "2026-10-16 01:01:00+00", 0, 1000))
+    _expect(pg, errors.NotNullViolation, sql, (stock, "2026-10-16 01:01:00+00", None, 1000))
+    comment = pg.execute("SELECT obj_description('quotes_intraday'::regclass)").fetchone()
+    assert comment
+    assert comment[0]

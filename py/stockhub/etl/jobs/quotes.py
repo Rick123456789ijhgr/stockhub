@@ -8,6 +8,9 @@ With PROVIDERS_QUOTE_STREAM set, the run keeps one stream session open instead a
 what it received every `interval` (D-123); the first round, symbols beyond the stream's
 subscription limit and any time no stream works are polled from PROVIDERS_QUOTE.
 `mode=poll` forces polling.
+
+Every round also stores one sample per stock in quotes_intraday (the day's chart); a run
+first deletes samples older than QUOTE_INTRADAY_KEEP_DAYS trading days (D-124).
 """
 
 from __future__ import annotations
@@ -116,6 +119,56 @@ def store_quotes(
     return changed
 
 
+def store_samples(
+    conn: Connection,
+    entries: Sequence[tuple[Quote, str]],
+    ids: dict[str, int],
+    sampled_at: datetime,
+    today: date,
+) -> int:
+    """One quotes_intraday row per stock that has traded today; reruns add nothing."""
+    rows = [
+        {
+            "stock_id": ids[q.symbol],
+            "sampled_at": sampled_at,
+            "trade_date": q.trade_date,
+            "quote_time": q.at,
+            "price": q.price,
+            "volume": q.volume,
+            "bid": q.bid,
+            "ask": q.ask,
+            "source": source,
+        }
+        for q, source in entries
+        if q.symbol in ids and q.trade_date == today and q.price is not None
+    ]
+    if not rows:
+        return 0
+    result = conn.execute(
+        text(
+            "INSERT INTO quotes_intraday (stock_id, sampled_at, trade_date, quote_time, price, "
+            "volume, bid, ask, source) VALUES (:stock_id, :sampled_at, :trade_date, "
+            ":quote_time, :price, :volume, :bid, :ask, :source) "
+            "ON CONFLICT (stock_id, sampled_at) DO NOTHING"
+        ),
+        rows,
+    )
+    return result.rowcount
+
+
+def prune_samples(conn: Connection, today: date, keep_days: int) -> int:
+    """Delete samples older than the latest `keep_days` trading days up to today."""
+    return conn.execute(
+        text(
+            "DELETE FROM quotes_intraday WHERE trade_date < ("
+            "  SELECT min(date) FROM ("
+            "    SELECT date FROM trading_calendar WHERE is_trading_day AND date <= :today "
+            "    ORDER BY date DESC LIMIT :keep) recent)"
+        ),
+        {"today": today, "keep": keep_days},
+    ).rowcount
+
+
 def _same_day(column: str) -> str:
     return (
         f"CASE WHEN excluded.{column} IS NULL AND cur.trade_date = excluded.trade_date "
@@ -142,9 +195,11 @@ class PollQuotesJob(Job):
         now: Callable[[], datetime] = utcnow,
         sleep: Callable[[float], None] = time_module.sleep,
         policy: StreamPolicy | None = None,
+        keep_days: int | None = None,
     ) -> None:
         self.now, self.sleep = now, sleep
         self.policy = policy
+        self.keep_days = keep_days
 
     def run(self, ctx: JobContext) -> JobOutcome:
         router = ctx.require_router()
@@ -164,6 +219,7 @@ class PollQuotesJob(Job):
             return JobOutcome("skipped", f"{today} 不是交易日")
 
         run = _QuoteRun(ctx, router, targets, extra, today)
+        run.prune(self.keep_days or get_settings().quote_intraday_keep_days)
         session = None
         if streams:
             policy = self.policy or StreamPolicy.from_settings(get_settings())
@@ -182,6 +238,8 @@ class PollQuotesJob(Job):
                     run.poll(run.requests)
                 else:
                     run.stream_round(session, first=rounds == 0)
+                if not once:
+                    run.sample(started)
                 run.check_alerts()
                 rounds += 1
                 if once or local >= until:
@@ -211,6 +269,7 @@ class _QuoteRun:
         self.streamed_rounds = 0
         self.parse_errors = 0
         self.notified_fallback = False
+        self.samples = 0
         self._set_targets(targets)
 
     def _set_targets(self, targets: list[tuple[int, str, Market]]) -> None:
@@ -304,6 +363,23 @@ class _QuoteRun:
             )
         except Exception:
             log.exception("could not send the quote fallback notice")
+
+    def sample(self, at: datetime) -> None:
+        """This round's latest quote per stock into quotes_intraday (the day's chart)."""
+        with self.ctx.engine.begin() as conn:
+            self.samples += store_samples(
+                conn, self.cache.entries(), self.ids, at.replace(microsecond=0), self.today
+            )
+
+    def prune(self, keep_days: int) -> None:
+        try:
+            with self.ctx.engine.begin() as conn:
+                pruned = prune_samples(conn, self.today, keep_days)
+        except Exception:
+            log.exception("could not prune quotes_intraday")
+            return
+        if pruned:
+            log.info("pruned %d intraday samples (keeping %d trading days)", pruned, keep_days)
 
     def check_alerts(self) -> None:
         """Holding alerts after each round; a failure here must not stop the quotes."""

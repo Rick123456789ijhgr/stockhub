@@ -126,6 +126,10 @@ class LatestQuotes:
             quote = quote.model_copy(update=keep)
         self._store(quote, source, dirty=dirty)
 
+    def entries(self) -> list[tuple[Quote, str]]:
+        """Every held quote with the source of its last update."""
+        return [(q, self._sources[s]) for s, q in sorted(self._quotes.items())]
+
     def take_dirty(self) -> dict[str, list[Quote]]:
         """Quotes changed since the last call, grouped by the source of their last update."""
         out: dict[str, list[Quote]] = {}

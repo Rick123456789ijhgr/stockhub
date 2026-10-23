@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     """Longest wait between two connection attempts, in seconds."""
     quote_stream_fallback_cooldown: float = Field(default=300.0, ge=0)
     """Seconds to stay on the fallback before trying the primary stream again."""
+    quote_intraday_keep_days: int = Field(default=5, ge=1)
+    """Trading days of 30 s samples kept in quotes_intraday (D-124)."""
     quote_stream_stale_after: float = Field(default=120.0, gt=0)
     """Seconds without any message during continuous trading before the stream counts as
     stale (not checked in the opening and closing call auctions)."""
