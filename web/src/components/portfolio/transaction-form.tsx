@@ -9,6 +9,7 @@ import type { FeeSettings } from "@/lib/portfolio";
 import type { TransactionRow } from "@/lib/portfolio-data";
 import { charges, SIDE_LABEL, type Side } from "@/lib/transaction-input";
 import { cn } from "@/lib/utils";
+import { SEGMENTED_GROUP, segmentedOption } from "@/components/segmented-links";
 
 type StockInfo = {
   symbol: string;
@@ -145,7 +146,7 @@ export function TransactionForm({
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-medium">{initial ? "修改交易" : "新增交易"}</h3>
-        <div role="radiogroup" aria-label="買賣" className="inline-flex rounded-md border p-0.5">
+        <div role="radiogroup" aria-label="買賣" className={SEGMENTED_GROUP}>
           {(["buy", "sell"] as const).map((s) => (
             <button
               key={s}
@@ -154,8 +155,9 @@ export function TransactionForm({
               aria-checked={side === s}
               onClick={() => setSide(s)}
               className={cn(
-                "rounded px-3 py-1 text-sm",
-                side === s && (s === "buy" ? "bg-up/15 text-up" : "bg-down/15 text-down"),
+                segmentedOption(side === s),
+                "px-3 text-sm",
+                side === s && (s === "buy" ? "text-up" : "text-down"),
               )}
             >
               {SIDE_LABEL[s]}

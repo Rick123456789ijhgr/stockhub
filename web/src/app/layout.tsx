@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 
 import { Providers } from "@/components/providers";
 import { APPEARANCE_SCRIPT } from "@/lib/appearance";
 
 import "./globals.css";
+
+/** Latin text and digits (D-125); CJK uses the system face via --app-font-sans. */
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
   title: { default: "StockHub", template: "%s · StockHub" },
@@ -25,7 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="zh-Hant-TW"
       data-price-colors="tw"
-      className="h-full antialiased"
+      className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

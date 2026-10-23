@@ -14,6 +14,7 @@ import {
   type Theme,
 } from "@/lib/appearance";
 import { cn } from "@/lib/utils";
+import { SEGMENTED_GROUP, segmentedOption } from "@/components/segmented-links";
 
 const THEME_LABEL: Record<Theme, string> = { system: "跟隨系統", light: "淺色", dark: "深色" };
 const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const;
@@ -101,19 +102,18 @@ function Segmented<K extends string>({
   return (
     <div role="radiogroup" aria-label={label} className="space-y-1.5">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="flex flex-wrap gap-1">
+      <div className={cn(SEGMENTED_GROUP, "flex-wrap text-xs")}>
         {options.map((o) => (
-          <Button
+          <button
             key={o.key}
+            type="button"
             role="radio"
             aria-checked={value === o.key}
-            variant={value === o.key ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(value === o.key && "ring-1 ring-border")}
+            className={segmentedOption(value === o.key)}
             onClick={() => onChange(o.key)}
           >
             {o.label}
-          </Button>
+          </button>
         ))}
       </div>
     </div>

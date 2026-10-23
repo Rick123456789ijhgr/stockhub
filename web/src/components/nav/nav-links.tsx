@@ -33,14 +33,15 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        // The bar on the left marks the current page in the brand color (D-125).
+        "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors duration-150 before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:rounded-full before:bg-brand before:transition-transform before:duration-200 before:ease-out-soft hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          ? "bg-brand-soft font-medium text-brand before:scale-y-100 hover:bg-brand-soft hover:text-brand"
           : // Clicked: look active at once while the page loads (LinkPending).
             "has-data-link-pending:bg-sidebar-accent has-data-link-pending:text-sidebar-accent-foreground",
       )}
     >
-      <Icon className="size-4" aria-hidden />
+      <Icon className="size-4 shrink-0" aria-hidden />
       {item.label}
       <LinkPending />
     </RememberedLink>
@@ -65,11 +66,19 @@ export function BottomNavList({ pathname }: { pathname: string }) {
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground",
-              active ? "font-medium text-foreground" : "has-data-link-pending:text-foreground",
+              "group flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground transition-colors",
+              active ? "font-medium text-brand" : "has-data-link-pending:text-foreground",
             )}
           >
-            <Icon className="size-5" aria-hidden />
+            {/* The pill behind the icon widens in on the current page. */}
+            <span
+              className={cn(
+                "relative grid h-7 w-12 place-items-center before:absolute before:inset-0 before:rounded-full before:bg-brand-soft before:transition-[opacity,transform] before:duration-200 before:ease-out-soft",
+                active ? "before:opacity-100" : "before:scale-x-50 before:opacity-0",
+              )}
+            >
+              <Icon className="relative size-5" aria-hidden />
+            </span>
             {item.label}
             <LinkPending />
           </RememberedLink>

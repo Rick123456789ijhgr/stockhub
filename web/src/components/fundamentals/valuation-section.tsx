@@ -198,7 +198,7 @@ function PeerTable({
         <CardDescription>ROE 與毛利率取已公布的最新一季（ROE 為近四季）。</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border bg-card">
           <Table className="min-w-[48rem] text-xs">
             <TableHeader>
               <TableRow>

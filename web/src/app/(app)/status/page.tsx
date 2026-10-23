@@ -269,7 +269,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
 /** Desktop: full table. */
 function JobRunTable({ runs }: { runs: JobRunRow[] }) {
   return (
-    <div className="hidden rounded-lg border md:block">
+    <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
       <Table>
         <TableHeader>
           <TableRow>

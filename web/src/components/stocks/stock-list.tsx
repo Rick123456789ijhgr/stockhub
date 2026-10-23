@@ -147,7 +147,7 @@ function StockTable({
   const head = (column: Column) =>
     cn("text-right", sorted === column && "font-semibold text-foreground");
   return (
-    <div className="hidden rounded-lg border md:block">
+    <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
       <Table>
         <TableHeader>
           <TableRow>

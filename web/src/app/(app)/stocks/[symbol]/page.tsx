@@ -196,7 +196,7 @@ function BarsTable({ bars }: { bars: DailyBarRow[] }) {
         近 {bars.length} 個交易日
       </h2>
       {/* Wide table scrolls inside its own box on phones; the page itself never scrolls sideways. */}
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <Table className="min-w-[40rem] text-xs">
           <TableHeader>
             <TableRow>

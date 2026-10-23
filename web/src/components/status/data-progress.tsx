@@ -47,7 +47,7 @@ export function StatTiles({
               {tile.warn ? <TriangleAlert className="size-3.5" aria-label="需要處理" /> : null}
               {tile.label}
             </CardDescription>
-            <CardTitle className="text-xl">{tile.value}</CardTitle>
+            <CardTitle className="text-xl group-data-[size=sm]/card:text-xl">{tile.value}</CardTitle>
           </CardHeader>
         </Card>
       ))}
