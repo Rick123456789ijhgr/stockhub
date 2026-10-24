@@ -7,7 +7,7 @@ WEB := cd web && pnpm
 
 .PHONY: help db-up db-down db-local-init db-local-up db-local-down migrate migrate-status \
 	migrate-test db-new db-types py-install py-test py-fmt notify-test etl-list etl-heartbeat etl-daily \
-	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history etl-markets etl-markets-history db-cluster \
+	etl-backfill etl-history etl-adjust etl-fundamentals etl-financials etl-requests etl-compute-fundamentals etl-previews etl-corporate-actions etl-dividends etl-etf-delistings etl-quotes etl-chips etl-chips-history etl-markets etl-markets-history etl-news etl-sentiment etl-llm-check db-cluster \
 	web-install web-dev web-build web-check check
 
 help: ## List available targets
@@ -95,6 +95,16 @@ etl-daily: ## Update calendar, stock master, delistings, the day's prices, funda
 	-$(ETL) compute_chip_summary
 	-$(ETL) check_institutional_alerts
 	-$(ETL) sync_markets --param series=TAIEX,TPEX
+	-$(ETL) aggregate_sentiment
+
+etl-news: ## News, announcements and forum posts: a round every minute 07:00-23:00 (links, LLM summaries, alerts); once=true runs one round of every source
+	$(if $(once),$(ETL) sync_news --param force=true,$(ETL) poll_news)
+
+etl-sentiment: ## Rebuild daily sentiment (days=5, or start= end=) and delete forum raw files older than 30 days
+	$(ETL) aggregate_sentiment $(if $(days),--param days=$(days)) $(if $(start),--param start=$(start)) $(if $(end),--param end=$(end))
+
+etl-llm-check: ## Check every enabled LLM service in llm_providers (key present, model listed)
+	$(ETL) check_llm_providers
 
 etl-markets: ## Market series (TW/international indices, FX, rates, commodities), NDC + US macro, macro alerts (07:30 schedule)
 	-$(ETL) sync_markets

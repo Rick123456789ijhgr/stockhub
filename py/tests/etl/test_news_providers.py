@@ -190,6 +190,8 @@ def test_ptt_reads_only_new_settled_target_posts() -> None:
         "pushes": 20,
         "boos": 3,
         "arrows": 11,
+        "category": "加碼多",
+        "stance": "bullish",
         "nrec": "17",
     }
     assert post.body is not None
@@ -206,6 +208,16 @@ def test_ptt_reads_only_new_settled_target_posts() -> None:
     )
     ptt.fetch_news(known)
     assert "/bbs/Stock/M.1792711156.A.6AC.html" not in requested
+
+
+def test_ptt_category_stance() -> None:
+    from stockhub.etl.providers.ptt import stance_of
+
+    assert stance_of("多") == "bullish"
+    assert stance_of("加碼空") == "bearish"
+    assert stance_of("多空") is None
+    assert stance_of("討論") is None
+    assert stance_of(None) is None
 
 
 def test_cmoney_forum_posts_with_author_stance() -> None:

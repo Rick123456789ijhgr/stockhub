@@ -72,8 +72,9 @@ def parse_post(article_id: str, page: str) -> NewsItem | None:
     if published is None:
         return None
     # The post itself comes first; recommended posts further down have tags of their own.
-    start = page.find("articleContent__wrapper")
-    end = page.find("articleContent__foot", start)
+    # Look for the elements, not the class names in the page's inline CSS.
+    start = page.find('class="articleContent__wrapper"')
+    end = page.find('class="articleContent__foot"', start)
     block = page[start:end] if start >= 0 and end > start else page
     symbols: list[str] = []
     stances: dict[str, Stance] = {}

@@ -12,6 +12,8 @@ from stockhub.etl.jobs import (
     maintenance,
     market_data,
     markets,
+    news,
+    news_alerts,
     previews,
     quotes,
 )
@@ -43,6 +45,8 @@ __all__ = [
     "maintenance",
     "market_data",
     "markets",
+    "news",
+    "news_alerts",
     "previews",
     "quotes",
     "register_job",

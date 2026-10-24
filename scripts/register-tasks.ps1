@@ -5,6 +5,8 @@
 #   StockHub daily   weekdays 18:00  make etl-daily   (calendar, master, events, prices, factors,
 #                                                     fundamentals, chips)
 #   StockHub chips   weekdays 21:30  make etl-chips   (margin tables are published in the evening)
+#   StockHub news    every day 06:55 make etl-news    (news, announcements, forum posts and
+#                                                     LLM summaries every minute until 23:00)
 #   StockHub cluster Saturday 10:00  make db-cluster  (per-stock tables in stock order; a run that
 #                                                     starts on a weekday daytime skips itself)
 #   StockHub database  at logon       scripts/local-pg.sh start (no time limit; the other tasks
@@ -25,6 +27,8 @@ $tasks = @(
   @{ Name = "StockHub quotes"; Target = "etl-quotes"; At = "08:55"; Limit = (New-TimeSpan -Hours 6) },
   @{ Name = "StockHub daily"; Target = "etl-daily"; At = "18:00"; Limit = (New-TimeSpan -Hours 3) },
   @{ Name = "StockHub chips"; Target = "etl-chips"; At = "21:30"; Limit = (New-TimeSpan -Hours 1) },
+  @{ Name = "StockHub news"; Target = "etl-news"; At = "06:55"; Limit = (New-TimeSpan -Hours 17);
+     Days = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") },
   @{ Name = "StockHub cluster"; Target = "db-cluster"; At = "10:00"; Limit = (New-TimeSpan -Hours 2); Days = @("Saturday") }
 )
 $weekdays = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")

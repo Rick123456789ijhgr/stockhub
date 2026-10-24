@@ -29,6 +29,7 @@ from stockhub.etl.providers.base import (
     NewsRequest,
     PermanentProviderError,
     RawResponse,
+    Stance,
 )
 from stockhub.etl.providers.http import get_bytes, make_client
 from stockhub.etl.providers.registry import register_provider
@@ -52,6 +53,17 @@ _META = re.compile(
 )
 _METALINE = re.compile(r'<div class="article-metaline(?:-right)?">.*?</div>', re.S)
 _PUSH_TAG = re.compile(r'<span class="[^"]*push-tag">(.*?)</span>')
+_CATEGORY = re.compile(r"分類\s*[:：]\s*([^\n]{0,20})")
+
+
+def stance_of(category: str | None) -> Stance | None:
+    """The [標的] template's 分類 line: 多 / 加碼多 -> bullish, 空 -> bearish, else None."""
+    if not category:
+        return None
+    bull, bear = "多" in category, "空" in category
+    if bull == bear:
+        return None
+    return "bullish" if bull else "bearish"
 
 
 def posted_at(article_id: str) -> datetime:
@@ -101,6 +113,7 @@ def parse_article(article_id: str, page: str, board_url: str) -> NewsItem | None
         if cut >= 0:
             text = text[:cut]
     tags = [html_to_text(t).strip() for t in _PUSH_TAG.findall(page)]
+    category = _CATEGORY.search(text)
     title = one_line(meta.get("標題", ""))
     if not title:
         return None
@@ -114,6 +127,8 @@ def parse_article(article_id: str, page: str, board_url: str) -> NewsItem | None
             "pushes": tags.count("推"),
             "boos": tags.count("噓"),
             "arrows": tags.count("→"),
+            "category": category.group(1).strip() if category else None,
+            "stance": stance_of(category.group(1)) if category else None,
         },
         body=clip(text.strip(), BODY_CHARS),
     )

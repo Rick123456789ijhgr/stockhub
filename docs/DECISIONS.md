@@ -954,3 +954,27 @@
 - PTT：用看板搜尋 `[標的]`（最多 3 頁、3 天內），只讀原文（`Re:`、`Fw:` 不讀）且發文滿 2 小時的文章，讓推噓數大致穩定；文章編號 `M.{epoch}` 就是發文時間。每輪最多 20 篇、每秒 1 次。美股標的（SOXS 等）也會抓到，關聯不到台股就不送 LLM。
 - CMoney 投資網誌：`www.cmoney.tw/notes/` 要登入，網誌網域 `cmnews.com.tw` 的憑證已被撤銷（CRYPT_E_REVOKED），列範圍外；`news_sources.kind` 保留 `cmoney_notes`，之後有可用來源再寫 adapter。
 - 重大訊息沒有單則網址，連到公開資訊觀測站該公司的重大訊息頁（`mops.twse.com.tw/mops/#/web/t05st01?companyId=代號`），只給人點，程式不抓。
+
+### D-144 新聞任務與 LLM 漏斗（2026-10-25）
+- `sync_news` 一輪：抓到期的來源（`news_sources.interval_minutes`；`force=true` 全抓）→ 存新項目與關聯 → 同事件合併 → LLM → 警示。`poll_news` 在 07:00～23:00 每分鐘跑一輪（`make etl-news`，Windows 排程「StockHub news」每天 06:55 啟動，假日也跑，因為新聞與論壇不休市）。
+- 關聯：來源標的（重大訊息的公司、鉅亨網標籤、論壇標籤、逐檔 RSS 的那檔）、括號代號、別名、三字以上名稱、文章標題裡的名稱算「強」；內文裡的兩字名稱算「弱」，只在送 LLM 時先連上，由 LLM 確認（`stocks` 只能從候選中挑），沒確認且不是來源標的就刪除。兩字名稱一半以上是常見詞，`engine/news.py` 另有排除清單（實測 PTT 範本的「正文」、「台中工會」的「中工」、「二十一世紀」的「世紀」都會誤配）。
+- 漏斗：不送 LLM 的有 `use_llm` 關閉的來源、關聯不到台股的論壇貼文（例如美股標的）、以及作者已標多空的貼文（同學會的看多／看空標籤、PTT [標的] 範本的「分類：多／空」），後者直接記 ±0.8、`sentiment_source = 'author'`。其餘依優先序送出：持股自選相關 → 重大訊息 → 有關聯的新聞 → 論壇 → 其他；每批 5 則（省免費額度的請求數），每日上限 `settings.news.llmDailyItems`（預設 400 則）。等超過 3 天的待處理項目改為 skipped；同一批失敗 3 次的項目標 failed。
+- 內文不入庫（D-138），等到下一輪才送 LLM 的項目，從 RawStore 的原始檔重新解析取內文。
+
+### D-145 新聞警示（2026-10-25）
+- 只對持股與自選股。設定在 `settings` 的 `news`（camelCase JSON，與 `fees` 同一張表）：`sentimentAlert`（0.7）、`importanceAlert`（4）、`buzzSigma`（3）、`buzzMinPosts`（5）、`llmDailyItems`、`llmDailyUsdCap`。
+- 重大訊息（critical，全部通道）：只看「發布公司」本身（`meta.tags`），內文提到的母公司、客戶不算。同股同日一列，後來的公告附加到 `detail.items` 並照樣送出（重大訊息每則都重要）。
+- 新聞情緒（warning，第一個推播通道）：LLM 處理完、|情緒| 與重要度達門檻；產業、題材關聯的門檻再加 0.1 與 1 分。同股同日只送第一則，之後的附加在警示上不再推播（冷卻）。
+- 社群熱度（info，只在站內）：今天的貼文數 ≥ 近 20 個日曆日的平均 + 3 個標準差，且至少 5 篇；論壇資料累積滿 10 天後才判斷（上線初期沒有基準）。
+
+### D-146 每日情緒彙整（2026-10-25）
+- 交易日歸屬：發布時間之後第一個 13:30 收盤的交易日；收盤後與假日的新聞算下一個交易日，回測時不會用到收盤後才知道的消息。
+- 每則的權重＝關聯權重 × 重要度（沒有重要度的作者標記貼文以 3 計）；同事件的重複報導只算第一則。範圍：`news`、`announcement`、各論壇來源代碼、`all`。
+- `aggregate_sentiment`（`etl-daily` 也會跑）重算最近 5 天，整段刪除再寫入，可重跑；同時刪除超過 30 天的論壇原始檔（`RawStore.delete`）。
+
+### D-147 通知通道實作（2026-10-25）
+- `NOTIFIER` 改成清單（`line,telegram,email`），只有一個時行為與以前相同。info（例如任務恢復通知）只寄 Email，不推播。LINE 的當月剩餘額度直接問 Messaging API（`/message/quota` 與 `/quota/consumption`，快取 10 分鐘），不另外記帳。
+- `alerts.channels` 記錄實際收下的通道。`make notify-test` 逐一測試每個通道。
+
+### D-148 測試資料庫的 M6 初始資料（2026-10-25）
+- `news_sources`、`llm_providers`、`slang_terms` 有初始資料，測試會改到它們。`clean_db` 每次從遷移檔取出這三張表的 INSERT 重新寫入，而不是讀測試資料庫當下的內容（前一輪測試可能留下改過的資料）。
