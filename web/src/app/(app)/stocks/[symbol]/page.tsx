@@ -91,10 +91,10 @@ async function StockContent({
     tab === "chart" ? getIntraday(db, stock.id).catch(() => null) : null,
   ]);
 
-  // Futu's order: section tabs on top, then the quote header, then the section.
+  // The quote header stays put above the section tabs, so switching sections keeps the
+  // price in view (D-127).
   return (
     <div className="space-y-4">
-      <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
       <Card>
         <CardContent className="space-y-4">
           <header className="flex items-start justify-between gap-3">
@@ -144,7 +144,8 @@ async function StockContent({
         </CardContent>
       </Card>
 
-      <div className="pt-2">
+      <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
+      <div>
         {tab === "chart" ? (
           <div className="space-y-4">
             <IntradayChart symbol={stock.symbol} initial={intraday} latest={bars[0]} />
