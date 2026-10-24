@@ -3,7 +3,7 @@
 個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選器與回測。單人使用，全端專案。
 
 - 完整規劃摘要：`docs/PLAN.md`
-- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）、`docs/M5.md`（總經、國際市場、熱力圖、題材）
+- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）、`docs/M5.md`（總經、國際市場、熱力圖、題材）、`docs/M6.md`（新聞、社群情緒、LLM、通知）
 - 與規劃有偏離時，記錄在 `docs/DECISIONS.md`（日期、原因、取捨），不要默默改。
 
 ## 技術棧
@@ -61,11 +61,14 @@ make etl-chips                # 籌碼：補近 10 個交易日缺的表、集�
 make etl-chips-history        # 籌碼歷史（2012-05-02 起，約 11 小時，可續跑）
 make etl-markets              # 市場與總經：指數、匯率、商品、美債、國發會、美國總經、總經警示（07:30 排程）
 make etl-markets-history      # 市場序列歷史（2004 起；series=SPX,TAIEX start= end=，可續跑）
+make etl-news                 # 新聞、重大訊息、PTT／同學會：07:00～23:00 每分鐘一輪（關聯、LLM 摘要、警示）；once=true 只跑一輪（06:55 排程）
+make etl-sentiment            # 重算每日情緒 sentiment_daily（days=5 或 start= end=；etl-daily 也會跑）並清 30 天前的論壇原始檔
+make etl-llm-check            # 檢查 llm_providers 的金鑰與模型名稱
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
 make db-cluster               # 依股票重排大表（CLUSTER，會鎖表；平日 07:00～22:30 跳過，force=true 例外；週六排程）
 stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）＋自動更新：程式碼改完靜置 15 秒就建置到另一個資料夾（web/.next ↔ .next-b），成功才切換，只中斷幾秒（D-131）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
 stockhub-stop.bat             # 雙擊＝關閉網站與資料庫（同 stockhub.bat stop；排程執行時仍會自己啟動資料庫）
-scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
+scripts/register-tasks.ps1    # Windows 工作排程（每天 06:55 新聞、平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -126,3 +129,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 熱力圖：只用收盤資料，市值＝收盤價 × `issued_shares`，漲跌用還原價（`adjustedChange`），群組報酬以期初市值加權；計算在 `web/src/lib/heatmap-data.ts`（純函式），版面在 `lib/treemap.ts`；顏色只用 `heatColor`（`--price-up/down` 混入 `--muted`），不要另寫色碼。
 - 題材：`themes` + `stock_themes`（起訖日，移出時設 `valid_to` 保留歷史，期間不得重疊），讀「某天的成分股」一律用 `valid_from <= d AND (valid_to IS NULL OR valid_to >= d)`；網站的寫入都經 `lib/themes.ts`（寫稽核紀錄）。
 - 總經警示（`business_signal`、`policy_rate`）沒有股票：`alerts.stock_id` 為 NULL，讀警示要用 left join。
+- 新聞（M6）：新聞、重大訊息、論壇貼文都在 `news_items`（`channel` 區分，D-142），來源目錄 `news_sources`（`kind`＝adapter；RSS 在 /admin 新增，其他格式寫 `NewsProvider` adapter，抓頁面的 adapter 自己限速並把多頁打包成一個原始檔）。只存標題、短摘要與連結；論壇內文只在處理時用，原始檔 30 天後刪（D-138）；之後要內文就從 RawStore 重新解析。關聯與去重只在 `engine/news.py`（強／弱比對、常見詞排除清單、同事件合併），每日情緒只在 `engine/sentiment.py`（13:30 收盤歸屬），網站只讀 `news_items`、`news_item_stocks`、`sentiment_daily`。
+- LLM（D-137）：一律經 `common/llm.py` 的 `LLMRouter`（`llm_providers` 依優先序、免費優先、冷卻、每日上限、用量寫 `llm_usage`），回答用 pydantic 驗證；不要另外直接呼叫任何 LLM API，也不要把持股送給 LLM。提示詞與輸出模型在 `etl/news_analysis.py`（`EVENT_LABELS` 與 `web/src/lib/news-format.ts` 的 `EVENT_LABEL` 對應）。金鑰名稱存在資料表、值只在 `.env`（Python 用 `common/settings.environment()` 讀）。
+- 通知（D-141、D-147）：`NOTIFIER` 是通道清單（console、email、line、telegram）；新警示用 `notifier.deliver()` 取得實際收下的通道寫進 `alerts.channels`。嚴重度決定通道：critical 全部、warning 第一個推播通道、info 只寄 Email；社群熱度等站內警示不送通知。
+- 新聞相關設定在 `settings` 的 `news`（camelCase JSON），Python `jobs/news.py` 的 `NewsSettings` 與 `web/src/lib/news-admin-input.ts` 的 `NEWS_SETTINGS_DEFAULT` 兩邊預設值要一致。

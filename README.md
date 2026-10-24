@@ -109,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1          # �
 powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # 移除
 ```
 
-會建立六個工作（目前使用者，不需系統管理員）：平日 07:30 國際市場與總經（美股收盤後）、平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收、籌碼）、平日 21:30 籌碼（融資融券晚上才公布）、週六 10:00 依股票重排大表（`make db-cluster`），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
+會建立七個工作（目前使用者，不需系統管理員）：每天 06:55 新聞與社群（跑到 23:00）、平日 07:30 國際市場與總經（美股收盤後）、平日 08:55 盤中報價、平日 18:00 每日更新（日線、除權息、財報、月營收、籌碼、每日情緒）、平日 21:30 籌碼（融資融券晚上才公布）、週六 10:00 依股票重排大表（`make db-cluster`），以及登入時啟動本機資料庫的「StockHub database」。排程任務需要資料庫時會透過「StockHub database」啟動它，資料庫因此不會被排程任務的時間上限一起關掉。log 在 `.local/logs`，非交易日會自動略過（`skipped`）。
 
 ## 常用指令
 
@@ -129,6 +129,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # �
 | `make etl-compute-fundamentals` | 重算基本面與變化提示（`all=true` 全部重算） |
 | `make etl-chips` / `etl-chips-history` | 籌碼（補近 10 個交易日、集保、摘要、法人警示）／籌碼歷史 |
 | `make etl-markets` / `etl-markets-history` | 市場與總經（近 10 天補缺、國發會、美國總經、總經警示）／市場序列歷史 |
+| `make etl-news` / `etl-sentiment` / `etl-llm-check` | 新聞、公告與社群（07:00～23:00 每分鐘，`once=true` 只跑一輪）／重算每日情緒／檢查 LLM 服務 |
 | `make etl-requests` | 執行網站排入的任務 |
 | `make etl-list` / `etl-heartbeat` | ETL CLI |
 | `make web-dev` / `web-build` / `web-check` | 網站開發、建置、檢查 |
@@ -183,6 +184,33 @@ ETL CLI 的結束碼：0 成功或略過、1 任務失敗、2 用法或設定錯
 4. 排程任務每次執行都會重新讀 `.env`，不用重新註冊。
 
 其他郵件服務：port 465 用 `SMTP_STARTTLS=false`（直接 TLS），587 用 `true`。
+
+### LINE 與 Telegram 通知（M6）
+
+`NOTIFIER` 可以列多個通道，依序是你的偏好，例如 `NOTIFIER=line,telegram,email`。重大訊息（critical）送到全部通道；持股大漲大跌、法人、新聞情緒等警示（warning）只送第一個可用的推播通道；LINE 當月剩不到 10% 額度時改走下一個；一般訊息（info）只寄 Email（D-141）。
+
+**LINE**（LINE Notify 已在 2025 年停止服務，改用官方帳號的 Messaging API）：
+
+1. 到 LINE Official Account Manager 建立官方帳號，在「設定 → Messaging API」啟用，連到 LINE Developers 的 channel。
+2. 在 LINE Developers 的 channel 頁：「Messaging API」分頁發一組 Channel access token（long-lived）；「Basic settings」分頁最下方的 Your user ID（U 開頭）就是你自己的 userId。
+3. 用手機加這個官方帳號為好友（沒加好友收不到 push）。
+4. `.env`：`LINE_CHANNEL_ACCESS_TOKEN=…`、`LINE_USER_ID=U…`，`NOTIFIER` 加上 `line`。
+5. 免費方案每月有則數上限（約 200 則，以後台為準）；`/admin` 不另外記帳，程式直接問 LINE 剩多少。
+
+**Telegram**（免費、沒有則數上限）：
+
+1. 在 Telegram 找 @BotFather，`/newbot` 建立機器人，取得 token。
+2. 跟你的機器人說一句話，再開 `https://api.telegram.org/bot<token>/getUpdates`，回應裡的 `chat.id` 就是 chat id。
+3. `.env`：`TELEGRAM_BOT_TOKEN=…`、`TELEGRAM_CHAT_ID=…`，`NOTIFIER` 加上 `telegram`。
+
+`make notify-test` 會對每個通道各送一則測試訊息。
+
+### 新聞、社群與 AI 摘要（M6）
+
+- 來源在 `/admin → 新聞與 AI`：重大訊息（證交所、櫃買 OpenAPI）、Yahoo 股市、經濟日報、工商時報、鉅亨網、PTT 股票板 [標的]、CMoney 股市爆料同學會熱門頁；RSS 可以自己新增（抓取前會先查 robots.txt）。
+- AI 摘要與情緒依序使用免費的 OpenAI 相容服務：Google AI Studio、Groq、OpenRouter、NVIDIA NIM。到各家網站申請金鑰後放進 `.env`（`GEMINI_API_KEY`、`GROQ_API_KEY`、`OPENROUTER_API_KEY`、`NVIDIA_API_KEY`），不用全部都有；`make etl-llm-check` 檢查金鑰與模型名稱。沒有任何金鑰時新聞照常收集，只是沒有摘要與情緒。
+- 只送公開的新聞與貼文給 AI，不送持股。免費層的模型名稱常改，失效時在 `/admin` 改模型名稱即可。
+- `make etl-news` 從 07:00 跑到 23:00（排程每天 06:55 啟動）；`make etl-news once=true` 立刻跑一輪。
 
 ## 部署
 
