@@ -369,7 +369,7 @@ export function StockChart({
       />
       <div
         ref={containerRef}
-        className={cn("w-full touch-pan-y", isIndex ? "h-[380px] md:h-[460px]" : "h-[440px] md:h-[560px]")}
+        className={cn("w-full touch-pan-y", isIndex ? "h-[300px] md:h-[360px]" : "h-[440px] md:h-[560px]")}
       />
       <Legend
         items={computed.indicator.map((line, i) => ({

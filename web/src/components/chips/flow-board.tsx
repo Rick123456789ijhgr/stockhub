@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { SEGMENTED_GROUP, segmentedOption } from "@/components/segmented-links";
 import { directionClass } from "@/components/price-change";
+import { Card, CardContent } from "@/components/ui/card";
 import type { MarketFlow, RankedFlow, RankingGroup } from "@/lib/chips";
 import { barPercent, flowScale, formatYi } from "@/lib/flow-chart";
 import { cn } from "@/lib/utils";
@@ -151,45 +152,51 @@ export function FlowBoard({
   // Buys and sells share one scale, so the longest bar on either side is the day's largest.
   const scale = flowScale([...buys, ...sells].map((r) => r.netValue));
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {flows.length > 0 ? (
-        <div className="grid gap-x-10 gap-y-5 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {flows.map((flow) => (
-            <MarketFlows key={flow.market} flow={flow} />
+            <Card key={flow.market} size="sm">
+              <CardContent>
+                <MarketFlows flow={flow} />
+              </CardContent>
+            </Card>
           ))}
         </div>
       ) : null}
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div role="radiogroup" aria-label="法人" className={cn(SEGMENTED_GROUP, "text-xs")}>
-            {(Object.keys(GROUP_LABEL) as RankingGroup[]).map((key) => (
-              <button
-                key={key}
-                type="button"
-                role="radio"
-                aria-checked={group === key}
-                className={segmentedOption(group === key)}
-                onClick={() => setGroup(key)}
-              >
-                {GROUP_LABEL[key]}
-              </button>
-            ))}
+      <Card size="sm">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div role="radiogroup" aria-label="法人" className={cn(SEGMENTED_GROUP, "text-xs")}>
+              {(Object.keys(GROUP_LABEL) as RankingGroup[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="radio"
+                  aria-checked={group === key}
+                  className={segmentedOption(group === key)}
+                  onClick={() => setGroup(key)}
+                >
+                  {GROUP_LABEL[key]}
+                </button>
+              ))}
+            </div>
+            {tradeDate ? (
+              <span className="text-xs text-muted-foreground tabular-nums">個股排行 {shortDate(tradeDate)}，估計金額（億）</span>
+            ) : null}
           </div>
-          {tradeDate ? (
-            <span className="text-xs text-muted-foreground tabular-nums">個股排行 {shortDate(tradeDate)}，估計金額（億）</span>
-          ) : null}
-        </div>
-        {/* The border between the columns is the zero line both sides grow from. */}
-        <div className="grid gap-y-4 sm:grid-cols-2">
-          <div className="sm:border-r sm:pr-2">
-            <RankColumn title={`${GROUP_LABEL[group]}賣超`} rows={sells} scale={scale} side="sell" />
+          {/* The border between the columns is the zero line both sides grow from. */}
+          <div className="grid gap-y-4 sm:grid-cols-2">
+            <div className="sm:border-r sm:pr-2">
+              <RankColumn title={`${GROUP_LABEL[group]}賣超`} rows={sells} scale={scale} side="sell" />
+            </div>
+            <div className="sm:pl-2">
+              <RankColumn title={`${GROUP_LABEL[group]}買超`} rows={buys} scale={scale} side="buy" />
+            </div>
           </div>
-          <div className="sm:pl-2">
-            <RankColumn title={`${GROUP_LABEL[group]}買超`} rows={buys} scale={scale} side="buy" />
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
