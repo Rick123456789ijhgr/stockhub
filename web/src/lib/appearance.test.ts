@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPEARANCE_SCRIPT,
   applyAppearance,
+  BRAND_KEY,
   isDark,
   NAV_KEY,
   nextTheme,
@@ -26,6 +27,7 @@ describe("appearance preferences", () => {
     localStorage.clear();
     document.documentElement.className = "";
     delete document.documentElement.dataset.priceColors;
+    document.documentElement.style.removeProperty("--brand-base");
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -69,11 +71,26 @@ describe("appearance preferences", () => {
     expect(document.documentElement.dataset.nav).toBe("collapsed");
   });
 
+  it("sets and resets the interface color", () => {
+    mockSystemDark(false);
+    const base = () => document.documentElement.style.getPropertyValue("--brand-base");
+    applyAppearance({ brand: "#2563EB" });
+    expect(localStorage.getItem(BRAND_KEY)).toBe("#2563EB");
+    expect(base()).toBe("#2563eb");
+    applyAppearance({ theme: "dark" }); // other changes keep it
+    expect(base()).toBe("#2563eb");
+    applyAppearance({ brand: null });
+    expect(localStorage.getItem(BRAND_KEY)).toBeNull();
+    expect(base()).toBe("");
+  });
+
   it("the inline head script applies the same preferences", () => {
     mockSystemDark(true);
     localStorage.setItem(PRICE_COLORS_KEY, "intl");
     localStorage.setItem(NAV_KEY, "collapsed");
+    localStorage.setItem(BRAND_KEY, "#0891b2");
     new Function(APPEARANCE_SCRIPT)();
+    expect(document.documentElement.style.getPropertyValue("--brand-base")).toBe("#0891b2");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(document.documentElement.dataset.priceColors).toBe("intl");
     expect(document.documentElement.dataset.nav).toBe("collapsed");
