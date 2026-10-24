@@ -277,3 +277,23 @@ def test_router_lands_news_in_rawstore(engine: Engine, tmp_path: Path) -> None:
     )
     assert feed.provider == "rss"
     assert len(feed.items) == 2
+
+
+def test_rss_respects_robots_txt() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            if request.url.host == "down.example":
+                return httpx.Response(503)
+            return httpx.Response(200, text="User-agent: *\nDisallow: /private/\n")
+        return httpx.Response(200, content=fixture("rss_ctee_stock.xml"))
+
+    rss = RssProvider(make_client(httpx.MockTransport(handler)))
+    ok = NewsRequest(source="a", kind="rss", url="https://feeds.example/rss/stock")
+    assert len(rss.parse_news(rss.fetch_news(ok))) == 2
+    blocked = NewsRequest(source="b", kind="rss", url="https://feeds.example/private/rss")
+    with pytest.raises(PermanentProviderError, match="robots"):
+        rss.fetch_news(blocked)
+    from stockhub.etl.providers.base import TransientProviderError
+
+    with pytest.raises(TransientProviderError):
+        rss.fetch_news(NewsRequest(source="c", kind="rss", url="https://down.example/rss"))

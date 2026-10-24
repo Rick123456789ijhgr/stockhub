@@ -1,5 +1,6 @@
 """Any RSS 2.0 or Atom feed (news_sources.kind = 'rss'): Yahoo 股市, 經濟日報, 工商時報 and
-whatever the user adds on /admin (D-135).
+whatever the user adds on /admin (D-135). The site's robots.txt is read first (cached per
+host for 12 hours); a feed it disallows fails with a permanent error shown on /admin.
 
 Only what the feed itself carries is used: title, link, date and the description, which is
 clipped to a snippet. Article pages are never fetched (D-138). Feeds disagree on dates
@@ -26,7 +27,7 @@ from stockhub.etl.providers.base import (
     PermanentProviderError,
     RawResponse,
 )
-from stockhub.etl.providers.http import get_bytes, make_client
+from stockhub.etl.providers.http import RobotsCache, get_bytes, make_client
 from stockhub.etl.providers.registry import register_provider
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -114,10 +115,14 @@ class RssProvider(NewsProvider):
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or make_client()
+        self.robots = RobotsCache(self.client)
 
     def fetch_news(self, request: NewsRequest) -> RawResponse:
         if not request.url:
             raise PermanentProviderError(f"rss source {request.source} has no URL")
+        # Feeds can be added on /admin: check the site's rules before reading (rule 12).
+        if not self.robots.allowed(request.url):
+            raise PermanentProviderError(f"robots.txt 不允許抓取 {request.url}")
         body = get_bytes(self.client, request.url)
         return RawResponse(
             "feed",

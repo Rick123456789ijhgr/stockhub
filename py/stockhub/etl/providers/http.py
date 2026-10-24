@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
 import httpx
 
@@ -112,3 +116,33 @@ def roc_date(value: str) -> date:
     else:
         raise ValueError(f"unrecognized date {value!r}")
     return date(year + 1911 if year < 1000 else year, month, day)
+
+
+ROBOTS_TTL = 12 * 3600.0
+
+
+class RobotsCache:
+    """robots.txt per host, read once per ROBOTS_TTL (rule 12). A missing robots.txt (4xx)
+    allows everything; one that cannot be read (5xx, network) is transient."""
+
+    def __init__(self, client: httpx.Client, clock: Callable[[], float] = time.monotonic) -> None:
+        self.client, self._clock = client, clock
+        self._parsers: dict[str, tuple[float, RobotFileParser]] = {}
+
+    def allowed(self, url: str, agent: str = "StockHub") -> bool:
+        parts = urlsplit(url)
+        host = f"{parts.scheme}://{parts.netloc}"
+        cached = self._parsers.get(host)
+        if cached is None or self._clock() - cached[0] > ROBOTS_TTL:
+            parser = RobotFileParser()
+            try:
+                response = self.client.get(f"{host}/robots.txt")
+            except httpx.TransportError as exc:
+                raise TransientProviderError(f"robots.txt of {host}: {exc}") from exc
+            if response.status_code >= 500:
+                raise TransientProviderError(f"robots.txt of {host}: HTTP {response.status_code}")
+            lines = response.text.splitlines() if response.status_code < 400 else []
+            parser.parse(lines)
+            cached = (self._clock(), parser)
+            self._parsers[host] = cached
+        return cached[1].can_fetch(agent, url)
