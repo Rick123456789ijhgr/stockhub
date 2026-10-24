@@ -739,3 +739,50 @@
 - 第一次渲染（含伺服器）一律用原本的網址，掛載後才換成記住的網址（`useSyncExternalStore`），避免 hydration 不一致。只接受同一頁的網址（`/stocks` 或 `/stocks?…`），storage 被封鎖、內容壞掉時退回原網址。
 - 實測：成交量＋股票與 ETF → 友達 → 「個股」返回、或從市場頁點側邊欄「個股」，都回到 `/stocks?type=all&tab=volume`；重新整理後仍記得；市場頁的熱力圖分頁同樣記得。
 - 未做：個股頁的分頁（走勢、基本面、估值、籌碼）換股票時不沿用，每檔都從走勢開始。要沿用的話，榜單裡的個股連結都要帶上分頁，或改由伺服器讀偏好決定預設分頁。
+
+### D-123 盤中報價改成「串流＋輪詢備援」的行情層（參考 GPT 的 Quote Provider 規劃，2026-10-24）
+- 背景：使用者提供 GPT 的 Quote Provider 規劃書。採用它的方向：來源可替換、長連線、每 30 秒寫入、斷線重連並重新訂閱、冷卻時間防止來回切換、斷流判斷。不採用的部分列在下面。Shioaji 仍在等開戶與 API Key（D-080），這次只做不需要 Key 的部分（階段 A）。
+- 介面：新增 `QuoteStreamProvider`（`connect`／`disconnect`／`is_connected`／`subscribe`／`unsubscribe`／純函式 `parse_message`）與 `QuoteUpdate`、`StreamMessage`；原本輪詢式的 `QuoteProvider` 不變。adapter 不保存訂閱狀態，由 `QuoteStreamSession`（`etl/quote_stream.py`）持有要訂閱的清單，每次重連後重新訂閱。
+- 設定：`PROVIDERS_QUOTE_STREAM`（順序就是主來源與備援，空的＝只輪詢）。另有 `QUOTE_STREAM_RECONNECT_ATTEMPTS`（5）、`QUOTE_STREAM_RECONNECT_MAX_DELAY`（30 秒）、`QUOTE_STREAM_FALLBACK_COOLDOWN`（300 秒）、`QUOTE_STREAM_STALE_AFTER`（120 秒）。沿用 `PROVIDERS_*` 的慣例，不另訂 `QUOTE_PRIMARY`／`QUOTE_FALLBACK`。
+- 任務：沿用 `poll_quotes`，所以排程、`make etl-quotes`、`/status` 的健康檢查都不用改。有串流來源時，開盤後連線一次，每輪（30 秒）依序：
+  - 把收到的訊息整批存進 RawStore（資料集 `quote_stream`，一輪一個原始檔，不逐筆存）；
+  - 解析後合併進記憶體快取 `LatestQuotes`；
+  - 有變動的寫入 `quotes_latest`。
+- 輪詢補位：第一輪一律也輪詢一次，補開盤價與參考價（串流中途加入可能不會送）。超過訂閱上限的股票、以及所有串流都失敗時，改用 `PROVIDERS_QUOTE` 輪詢。`once=true` 與 `mode=poll` 一律輪詢。
+- 重連：斷線（由 callback 或 `is_connected()` 發現）→ 同一來源以指數退避重試（1、2、4… 秒，最長 30 秒）→ 用盡換下一個串流來源 → 都不行就輪詢。帳密被拒（`PermanentProviderError`）不重試。
+- 防止來回切換：離開主來源後，冷卻時間（300 秒）內不試主來源；到期只試一次，失敗再等一個冷卻。主來源連上之後才關掉備援串流，中間不會斷資料。
+- 斷流判斷：只看整個來源的最後一則訊息，不逐檔看；只在連續交易時段 09:00～13:25 判斷（試撮與收盤集合競價本來就沒有成交）。超過 120 秒沒有訊息就重連；重連後仍完全沒有訊息、又判定斷流，就改用備援，不會每兩分鐘重連一次。
+- 快取合併：
+  - 成交訊息只更新它帶的欄位；
+  - 買賣價訊息只換 bid／ask（None 代表那一側沒有掛單，例如漲跌停）；
+  - 較舊的訊息只補缺的欄位；
+  - 跨日就重新開始。
+- `store_quotes`：同一天的快照缺開盤、最高、最低或參考價時，保留資料庫已有的值（原本只保留成交價）。
+- 每 10 輪（5 分鐘）重新讀一次自選與持股，當天新加入的股票不必等到隔天（輪詢模式也適用）。
+- 第一次改用輪詢備援時寄一次通知（warning）；任務結束的訊息會列出串流輪數、重新連線次數、改用備援次數。
+- 不採用：
+  - 所有來源共用一個 async 介面：MIS 是 HTTP 輪詢，Shioaji SDK 是 callback 加執行緒，專案其他部分全是同步的。
+  - GPT 的 `QuoteEvent`：只有價量與買賣價，網站還需要參考價、開高低與交易日。
+  - 每筆 tick 都存 RawStore。
+  - 時間戳存台北時間：規則 2 不變。
+  - Fubon Neo：要另開帳戶，而且 MIS 已經是可用的備援；需要時介面可以直接加。
+  - Redis、Kafka。
+- 未做：
+  - Shioaji adapter（階段 B，等 API Key）：要確認訂閱上限、使用條款、SDK 是否支援 Windows 與 Python 3.12；SDK 放在 uv 的選用依賴，只在 adapter 裡 import。
+  - 盤中歷史表（階段 D）：見 D-124。
+
+### D-124 盤中抽樣與當日走勢圖（使用者決定保留約一週，2026-10-24）
+- 使用者原本想保留一週，採用「5 個交易日」：按日曆天算，遇到春節這類長假會整週都是空的。可用 `QUOTE_INTRADAY_KEEP_DAYS` 調整。
+- 表 `quotes_intraday`：每輪（30 秒）每檔一筆，欄位有抽樣時間 `sampled_at`、最後成交時間 `quote_time`、價、累計量、買賣價、來源。
+  - 主鍵 `(stock_id, sampled_at)`，重跑不會重複；設 `CLUSTER ON`，週六的 `make db-cluster` 會依股票重排（D-117）。
+  - 抽樣時間是固定的 30 秒格線，圖表比較整齊；最後成交時間另外保留，沒有成交時會一直重複。
+- 寫入：取自每輪結束時記憶體快取裡的報價（串流或輪詢都一樣），只寫今天已經有成交的股票；`once=true` 的手動快照不算抽樣。
+- 清理：`poll_quotes` 每次開始時刪掉最近 5 個交易日以前的資料（依 `trading_calendar`），不另外排程。
+- 份量：30 檔、一天約 540 輪，大約 1.6 萬列，5 天不到 10 萬列；保留期間短是因為只有當日走勢與近幾天的研究用得到，不是為了省空間。每輪的原始訊息仍在 RawStore，刪掉的日子之後需要時可以重建。
+- 網站：個股頁「走勢」分頁的 K 線上方加「當日走勢」（`components/stock-chart/intraday-chart.tsx`）。
+  - 用 lightweight-charts 的 baseline 圖，以昨收為基準：上方用 `--price-up`、下方用 `--price-down`，虛線標出昨收。
+  - 開盤時間每 30 秒重新讀取，只換資料，不重建圖表。
+  - 只顯示最新的抽樣日，而且那天不能比最新日線舊。
+  - 昨收優先用同一天的 `quotes_latest`；收盤後那一列換成隔天的，就改用同一天日線的前收，和報價頭一致。
+  - 時間軸加 8 小時，讓 UTC 軸直接顯示台北時間（`lib/intraday.ts`，有測試）。
+- 未做：近 5 日的盤中走勢切換、成交量柱（30 秒抽樣只能算出每段的量差，之後真的需要再加）。

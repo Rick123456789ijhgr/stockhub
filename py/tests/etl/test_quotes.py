@@ -100,6 +100,28 @@ def test_store_quotes_keeps_last_price_and_never_goes_back(clean_db: Engine, tsm
     assert (price, volume) == (D("2420.0000"), first.volume + 1000)
 
 
+def test_store_quotes_keeps_same_day_reference_when_a_snapshot_lacks_it(
+    clean_db: Engine, tsmc: int
+) -> None:
+    first = _mis().parse_quotes(_mis().fetch_quotes([("2330", "twse")]))[0]
+    partial = first.model_copy(
+        update={"open": None, "prev_close": None, "at": first.at + timedelta(seconds=5)}
+    )
+    next_day = partial.model_copy(
+        update={
+            "trade_date": first.trade_date + timedelta(days=3),
+            "at": first.at + timedelta(days=3),
+        }
+    )
+    query = text("SELECT open, prev_close FROM quotes_latest")
+    with clean_db.begin() as conn:
+        store_quotes(conn, [first], {"2330": tsmc}, "twse_mis", None)
+        store_quotes(conn, [partial], {"2330": tsmc}, "fake_stream", None)
+        assert tuple(conn.execute(query).one()) == (D("2430.0000"), D("2440.0000"))
+        store_quotes(conn, [next_day], {"2330": tsmc}, "fake_stream", None)
+        assert tuple(conn.execute(query).one()) == (None, None)  # not carried across days
+
+
 # ----------------------------------------------------------------------------- job
 
 
@@ -149,6 +171,28 @@ def test_poll_waits_for_the_open_then_polls_until_the_close(
     assert _latest(clean_db)[0] == D("2420.0000")
 
 
+def test_poll_samples_each_round_and_prunes_old_days(
+    clean_db: Engine, tmp_path: Path, tsmc: int
+) -> None:
+    sample = text(
+        "INSERT INTO quotes_intraday (stock_id, sampled_at, trade_date, quote_time, price, "
+        "volume, source) VALUES (:id, :at, :day, :at, 100, 1, 'test')"
+    )
+    with clean_db.begin() as conn:
+        conn.execute(text("INSERT INTO watchlist (stock_id) VALUES (:id)"), {"id": tsmc})
+        # 2026-10-16 is a Friday: the latest five trading days start on Monday 10-12.
+        for day in ("2026-10-09", "2026-10-12"):
+            conn.execute(sample, {"id": tsmc, "day": day, "at": f"{day} 02:00:00+00"})
+    clock = FakeClock(_taipei(9, 0))
+    result = _run(clean_db, tmp_path, clock, interval=60, until="09:01")
+    assert result.status == "succeeded"
+    with clean_db.connect() as conn:
+        days = conn.execute(
+            text("SELECT trade_date, count(*) FROM quotes_intraday GROUP BY 1 ORDER BY 1")
+        ).all()
+    assert [(str(d), n) for d, n in days] == [("2026-10-12", 1), ("2026-10-16", 2)]
+
+
 def test_poll_once_with_explicit_symbols(clean_db: Engine, tmp_path: Path, tsmc: int) -> None:
     clock = FakeClock(_taipei(20, 0))
     result = _run(clean_db, tmp_path, clock, symbols="2330", once="true")
@@ -158,3 +202,5 @@ def test_poll_once_with_explicit_symbols(clean_db: Engine, tmp_path: Path, tsmc:
         1,
     )
     assert clock.sleeps == []
+    with clean_db.connect() as conn:  # a manual snapshot is not a sample
+        assert conn.execute(text("SELECT count(*) FROM quotes_intraday")).scalar_one() == 0

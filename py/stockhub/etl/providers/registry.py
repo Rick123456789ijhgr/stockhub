@@ -93,6 +93,7 @@ class ProviderRegistry:
                 "price": settings.providers_price,
                 "financial": settings.providers_financial,
                 "quote": settings.providers_quote,
+                "quote_stream": settings.providers_quote_stream,
                 "calendar": settings.providers_calendar,
                 "securities": settings.providers_securities,
                 "delistings": settings.providers_delistings,

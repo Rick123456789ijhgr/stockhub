@@ -905,6 +905,36 @@ export interface PricesDailyQuarantine {
   trade_date: string;
 }
 
+export interface QuotesIntraday {
+  ask: Numeric | null;
+  bid: Numeric | null;
+  /**
+   * Last trade at sampling time (samples before the first trade of the day are not stored).
+   */
+  price: Numeric;
+  /**
+   * Exchange time of the last update in the sample (UTC); repeats while nothing trades.
+   */
+  quote_time: Timestamp;
+  /**
+   * When the round took the sample (UTC): a regular 30 s grid, unlike quote_time.
+   */
+  sampled_at: Timestamp;
+  /**
+   * Provider of the last update (e.g. twse_mis, shioaji).
+   */
+  source: string;
+  stock_id: Int8;
+  /**
+   * Taipei trading date the sample belongs to; pruning goes by it.
+   */
+  trade_date: string;
+  /**
+   * Cumulative regular-session volume in shares.
+   */
+  volume: Int8;
+}
+
 export interface QuotesLatest {
   ask: Numeric | null;
   bid: Numeric | null;
@@ -1123,6 +1153,7 @@ export interface DB {
   prices_daily: PricesDaily;
   prices_daily_coverage: PricesDailyCoverage;
   prices_daily_quarantine: PricesDailyQuarantine;
+  quotes_intraday: QuotesIntraday;
   quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
   settings: Settings;

@@ -29,4 +29,4 @@ def test_cluster_tables_rewrites_marked_tables(clean_db: Engine, tmp_path: Path)
         notifier=ConsoleNotifier(),
     )
     assert result.status == "succeeded"
-    assert result.message == "clustered 8 tables"
+    assert result.message == "clustered 9 tables"

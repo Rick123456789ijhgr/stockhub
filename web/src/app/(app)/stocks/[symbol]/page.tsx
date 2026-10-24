@@ -9,6 +9,7 @@ import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { RememberedLink } from "@/components/nav/remembered-link";
 import { PriceChange } from "@/components/price-change";
 import { ShowMoreRows } from "@/components/show-more";
+import { IntradayChart } from "@/components/stock-chart/intraday-chart";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
 import { StockChart } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
@@ -29,6 +30,7 @@ import { getQuoteFundamentals } from "@/lib/fundamentals";
 import { stockThemes } from "@/lib/heatmap";
 import { taipeiToday } from "@/lib/market-hours";
 import { priceChange } from "@/lib/price";
+import { getIntraday } from "@/lib/quotes";
 import {
   CHART_RECENT_MONTHS,
   type DailyBarRow,
@@ -82,10 +84,11 @@ async function StockContent({
   // Not awaited: the chart's bars stream in with the page instead of being fetched after it.
   const chartBars =
     tab === "chart" ? getChartBars(db, stock.id, CHART_RECENT_MONTHS).catch(() => null) : null;
-  const [bars, fundamentals, themes] = await Promise.all([
+  const [bars, fundamentals, themes, intraday] = await Promise.all([
     getRecentBars(db, stock.id),
     getQuoteFundamentals(db, stock.id, taipeiToday()),
     stockThemes(db, stock.id, taipeiToday()),
+    tab === "chart" ? getIntraday(db, stock.id).catch(() => null) : null,
   ]);
 
   // Futu's order: section tabs on top, then the quote header, then the section.
@@ -147,6 +150,7 @@ async function StockContent({
       <div className="pt-2">
         {tab === "chart" ? (
           <div className="space-y-4">
+            <IntradayChart symbol={stock.symbol} initial={intraday} latest={bars[0]} />
             {bars.length > 0 && chartBars ? (
               <StockChart symbol={stock.symbol} initial={chartBars} />
             ) : null}

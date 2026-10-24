@@ -64,7 +64,7 @@ make etl-daily                        # 休市表、主檔、下市、除權息�
 make etl-daily date=2026-10-16        # 指定某一天
 make etl-backfill                     # 回填過去一年的日線（約 25 分鐘；中斷後重跑會接續）
 make etl-history                      # 完整歷史：下市清單 + 2004-02-11 起的日線 + 除權息 + 還原因子（約 7～8 小時，可續跑）
-make etl-quotes                       # 盤中：自選股與持股每 30 秒更新到 13:35（symbols=2330,0050 可另外指定）
+make etl-quotes                       # 盤中：自選股與持股每 30 秒更新到 13:35（symbols=2330,0050 可另外指定；設了 PROVIDERS_QUOTE_STREAM 就用長連線，失敗退回輪詢，D-123）
 make etl-quotes symbols=2330 once=1   # 只抓一次
 make etl-fundamentals                 # 財報與月營收歷史（2013 年起，FinMind；約 17 小時，可續跑）
 make etl-fundamentals symbols=2330    # 只抓某幾檔（refetch=true 重抓已抓過的）
@@ -95,7 +95,7 @@ make web-dev          # 改程式時：開發模式，http://localhost:3000（�
 ```
 
 - `/stocks`：最新交易日的榜單（成交金額、成交量、漲幅、跌幅、市值），以及搜尋股票與 ETF（搜尋時也會列出已下市公司）
-- `/stocks/2330`：K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價；基本面（月營收、獲利率、EPS、現金流、ROE 與杜邦、變化提示、單季財報）；估值（本益比、股價淨值比、殖利率的歷史百分位、河流圖、同業比較）；籌碼（三大法人買賣超與連買天數、融資融券、外資持股比、集保大戶持股比）；近 120 日表格
+- `/stocks/2330`：當日走勢（自選與持股，每 30 秒取樣，保留近 5 個交易日）、K 線（還原／原始、MA、KD／MACD／RSI）、加入自選、盤中報價；基本面（月營收、獲利率、EPS、現金流、ROE 與杜邦、變化提示、單季財報）；估值（本益比、股價淨值比、殖利率的歷史百分位、河流圖、同業比較）；籌碼（三大法人買賣超與連買天數、融資融券、外資持股比、集保大戶持股比）；近 120 日表格
 - `/`（首頁）：持股損益、大盤與國際市場、警示（持股、法人、總經）、三大法人買賣超排行（全市場金額與個股前 10 名）
 - `/market`：大盤與國際（各序列最新值與一年走勢）、產業與題材熱力圖（方塊＝市值、顏色＝1／5／20 日漲跌）、總經（景氣燈號、領先與同時指標、美債殖利率與利差、Fed 利率、美國通膨與失業率、事件行事曆）
 - `/admin`：題材與成分股（有起訖日）、總經事件行事曆、各種隔離資料的確認、手續費與顯示設定、稽核紀錄
@@ -124,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-tasks.ps1 -Remove  # �
 | `make db-types` | 遷移後重新產生 `web/src/lib/db/types.gen.ts` |
 | `make py-test` / `py-fmt` | Python 檢查／自動修正格式 |
 | `make etl-daily` / `etl-backfill` / `etl-history` | 每日更新／回填日線／完整歷史 |
-| `make etl-quotes` | 盤中報價輪詢 |
+| `make etl-quotes` | 盤中報價（串流或輪詢） |
 | `make etl-fundamentals` / `etl-financials` | 財報與月營收歷史／最新一季與月營收 |
 | `make etl-compute-fundamentals` | 重算基本面與變化提示（`all=true` 全部重算） |
 | `make etl-chips` / `etl-chips-history` | 籌碼（補近 10 個交易日、集保、摘要、法人警示）／籌碼歷史 |
