@@ -16,6 +16,7 @@ export const REMEMBERED_PAGES = [
   "/portfolio",
   "/stocks",
   "/watchlist",
+  "/news",
   "/market",
   "/screener",
   "/backtest",

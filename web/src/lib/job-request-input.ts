@@ -33,6 +33,7 @@ export const JOB_LABEL: Record<RequestableJob, string> = {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SYMBOL = /^[0-9A-Z]{4,6}$/;
+const SOURCES = /^[a-z0-9_]{1,40}(,[a-z0-9_]{1,40}){0,19}$/;
 const FIRST_PRICE_DATE = "2004-02-11";
 
 function isRealDate(value: string): boolean {
@@ -63,9 +64,15 @@ export function parseJobRequest(body: unknown, today: string): JobRequestInput |
     case "sync_chips":
     case "sync_markets":
     case "sync_macro":
-    case "sync_news":
     case "check_llm_providers":
       return { job: job as RequestableJob, params: {} };
+    case "sync_news": {
+      // force=true fetches every source now; sources= limits the round to some of them.
+      const out: Record<string, string> = {};
+      if (raw.force === "true" || raw.force === true) out.force = "true";
+      if (typeof raw.sources === "string" && SOURCES.test(raw.sources)) out.sources = raw.sources;
+      return { job: "sync_news", params: out };
+    }
     case "refetch_stock_prices":
     case "refresh_stock_fundamentals": {
       const symbol = typeof raw.symbol === "string" ? raw.symbol.trim().toUpperCase() : "";

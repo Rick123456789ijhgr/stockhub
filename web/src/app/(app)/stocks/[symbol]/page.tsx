@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ChipsSection } from "@/components/chips/chips-section";
 import { FundamentalsSection } from "@/components/fundamentals/fundamentals-section";
 import { ValuationSection } from "@/components/fundamentals/valuation-section";
+import { StockNewsSection } from "@/components/news/stock-news-section";
 import { activeTab, type PageTab, PageTabs } from "@/components/page-tabs";
 import { RememberedLink } from "@/components/nav/remembered-link";
 import { PriceChange } from "@/components/price-change";
@@ -43,12 +44,13 @@ import {
   MARKET_LABEL,
 } from "@/lib/stocks";
 
-type Tab = "chart" | "fundamentals" | "valuation" | "chips" | "daily";
+type Tab = "chart" | "fundamentals" | "valuation" | "chips" | "news" | "daily";
 const STOCK_TABS: PageTab<Tab>[] = [
   { key: "chart", label: "走勢" },
   { key: "fundamentals", label: "基本面" },
   { key: "valuation", label: "估值" },
   { key: "chips", label: "籌碼" },
+  { key: "news", label: "新聞" },
   { key: "daily", label: "歷史日線" },
 ];
 /** ETFs have no statements. */
@@ -170,6 +172,7 @@ async function StockContent({
           {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
           {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
           {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
+          {tab === "news" ? <StockNewsSection db={db} stock={stock} /> : null}
           {tab === "daily" ? (
             bars.length > 0 ? (
               <BarsTable bars={bars} />

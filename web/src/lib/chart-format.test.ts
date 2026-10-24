@@ -21,5 +21,9 @@ describe("chart-format", () => {
     expect(formatValue(-22_371_830, "lots")).toBe("-22,372 張");
     expect(axisFormat(-22_371_830, "lots")).toBe("-2.2萬");
     expect(axisFormat(4_500_000, "lots")).toBe("4500");
+    expect(formatValue(0.456, "score")).toBe("+0.46");
+    expect(formatValue(-0.4, "score")).toBe("-0.40");
+    expect(axisFormat(-0.5, "score")).toBe("-0.5");
+    expect(formatValue(1234, "count")).toBe("1,234 則");
   });
 });

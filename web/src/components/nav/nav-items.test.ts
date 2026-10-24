@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { isActive, isMoreActive, NAV_GROUPS, NAV_ITEMS } from "./nav-items";
 
 describe("navigation", () => {
-  it("has nine sections, four of them in the mobile bar", () => {
+  it("has ten sections, four of them in the mobile bar", () => {
     expect(NAV_ITEMS.map((i) => i.label)).toEqual([
       "首頁",
       "持股",
       "個股",
       "自選",
+      "新聞",
       "國際",
       "篩選器",
       "回測",
