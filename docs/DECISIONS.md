@@ -913,3 +913,38 @@
 - 持股摘要從首頁拿掉（持股頁本來就有）；警示清單移到持股頁（`#alerts`），總經警示仍連到 `/market?tab=macro`。
 - 調整（同日，使用者要求）：熱力圖改為 `/stocks` 的「熱力圖」分頁（`?tab=heatmap&by=&period=`，接在榜單分頁之後；只含普通股，所以不顯示股票／ETF 切換），舊的 `/market?tab=heatmap` 轉到這裡，個股頁的產業與題材標籤也連到這裡。大盤走勢改用個股頁同一個 K 線元件（`StockChart` 的 `index` 模式：期間 6 個月～全部、MA5/20/60、KD/MACD/RSI，沒有成交量窗格與還原／原始切換；資料來自 `GET /api/markets/[code]/bars`，只接受有 OHLC 的序列），加權（左）與櫃買（右）兩張圖並排（`xl` 以下上下排列，與下方法人的上市／上櫃同一順序）；原本 `TimeChart` 的 K 棒種類與首頁的 `?range=` 拿掉，首頁不再有網址狀態，也不在 `REMEMBERED_PAGES`。
 - 調整（同日，使用者要求）：首頁的指數 K 線高度降為 300／360 px（原 380／460），兩張並排時不再偏直式。三大法人改為卡片：上市、上櫃各一張，個股排行一張；國際市場改為每個序列一張小卡（手機兩欄、寬螢幕四欄）。
+
+## M6 新聞、社群情緒、LLM 與警示（2026-10-24）
+
+### D-135 新聞與公告來源（實測）
+- Google News RSS 不用：`news.google.com/robots.txt` 對所有爬蟲 `Disallow: /`，只開放首頁、`/topics/` 等，`/rss` 不在其中（規則 12）。
+- 重大訊息不爬 MOPS（舊站 robots 全擋，D-082）：證交所 OpenAPI `t187ap04_L`、櫃買 `mopsfin_t187ap04_O` 就是當日重大訊息（主旨、符合條款、事實發生日、說明），實測 79、30 筆。
+- 新聞（使用者指定）：Yahoo 股市（RSS，有個股版）、經濟日報（RSS）、工商時報（RSS）、鉅亨網（非官方 JSON，robots 允許）、CMoney 投資網誌（沒有 RSS，實作時找列表）。財經 M 平方在本機 DNS 解析不到，無法確認 robots 與條款，列範圍外。
+- 社群（使用者指定）：PTT 股票板（沒有 robots.txt；只取 [標的]）、CMoney 股市爆料同學會（robots 允許 `/forum`，伺服器渲染；條款禁止的是轉售、轉載他人資訊，我們只存摘要與連結、自用）。
+- 來源可增加：RSS 在 /admin 填網址就能加；其他格式（JSON、網頁、論壇）每個站寫一個 adapter（`news_sources.kind`）。
+
+### D-136 經濟日報、工商時報的 AI 爬蟲限制
+- 兩站的 robots 對一般爬蟲允許，但點名擋 GPTBot、ClaudeBot 等 AI 爬蟲。我們用一般 User-Agent、只讀 RSS 的標題與摘要（不抓文章頁），由使用者自用的 LLM 產生摘要，不拿去訓練模型。這兩個來源在 /admin 可個別關閉。
+
+### D-137 LLM：多個免費服務、OpenAI 相容、優先序
+- 使用者決定：免費優先，先接 Google AI Studio、Groq、OpenRouter、NVIDIA NIM，之後可隨時增加。四家都提供 OpenAI 相容的 chat completions，所以只寫一個 adapter（`httpx`，不加 `openai` 套件）。原計畫的 Anthropic（Haiku）先不接。
+- 服務清單在 `llm_providers`（端點、模型、金鑰的環境變數名稱、優先序、每分鐘與每日上限、是否付費），/admin 可新增與排序；金鑰只在 `.env`（規則 8）。付費服務預設不用，啟用後受每日費用上限限制。
+- 429 或當日額度用完就冷卻、換下一家；輸出一律用 pydantic 驗證，不合格式換下一家。每筆結果記錄服務與模型（不同模型的情緒尺度可能不同，頁面可看出來源）。
+- 免費層可能拿輸入改進產品，所以只送公開內容，不送持股。
+
+### D-138 社群內文的保存
+- PLAN 說社群「內文只在處理時使用，不存全文」，規則 5 要求先存原始回應。折衷：資料表只存標題、互動數、作者多空、連結與 LLM 結果；RawStore 裡的貼文頁 30 天後由 `aggregate_sentiment` 刪除（`raw_objects` 一併刪）。
+- 新聞只用 RSS／API 給的標題與摘要，摘要截到 500 字；不抓文章頁。
+
+### D-139 去重不用向量嵌入
+- 免費服務的嵌入模型各家不同、額度另計，本機 PostgreSQL 也沒有 pgvector。改用三層：網址正規化（去追蹤參數）、標題字元 bigram 的 Jaccard 相似度、同一檔股票 48 小時內。重複的項目指向第一則（`duplicate_of`），不另送 LLM、沿用它的結果。看到漏合併再考慮嵌入。
+
+### D-140 情緒先存 `sentiment_daily`
+- `stock_features_daily` 是 M7 的寬表，現在還沒有。每日情緒先存窄表 `sentiment_daily`（股票、交易日、範圍：news／ptt／cmoney_forum／all），M7 建寬表時併入。情緒從上線日開始累積，不回填。
+
+### D-141 通知通道：LINE → Telegram → Email
+- LINE Notify 已在 2025-03-31 停止服務，改用 LINE 官方帳號的 Messaging API（push）；免費方案每月約 200 則（以 LINE 後台為準）。使用者指定優先序 LINE、Telegram，申請好之前用 Email。
+- `NOTIFIER=line,telegram,email`（依序；舊設定 `console`、`email` 照樣可用）。嚴重度分派：critical 送全部已設定的通道；warning 送第一個可用的推播通道（LINE 當月剩餘不足 10% 時改走下一個）；info 只記在站內。任務失敗通知維持 critical。
+
+### D-142 新聞、公告、社群共用一張表
+- `news_items` 以 `channel`（news／announcement／social）區分，LLM 欄位、關聯、去重、頁面列表都只寫一套；各來源特有的欄位（推噓、作者多空、公告條款）放 `meta`。
