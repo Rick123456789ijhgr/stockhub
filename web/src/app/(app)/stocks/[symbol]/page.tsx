@@ -100,7 +100,7 @@ async function StockContent({
         : null,
   ]);
   const peersTitle =
-    stock.type === "etf" ? "ETF 成交金額排行" : stock.industry ? `${stock.industry}漲跌排行` : null;
+    stock.type === "etf" ? "ETF 成交金額排行" : stock.industry ? `${stock.industry}成交量排行` : null;
 
   // The quote header stays put above the section tabs, so switching sections keeps the
   // price in view (D-127).

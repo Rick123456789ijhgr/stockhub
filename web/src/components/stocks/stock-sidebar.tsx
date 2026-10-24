@@ -13,7 +13,7 @@ const PEERS_SHOWN = 10;
 
 /**
  * The right-hand column of a stock's page: search, then the same industry (or, for an
- * ETF, the most traded ETFs) on the latest close, the current stock marked.
+ * ETF, the most traded ETFs) on the latest close, most traded first, the current stock marked.
  */
 export function StockSidebar({
   symbol,
@@ -41,7 +41,7 @@ export function StockSidebar({
             <ShowMoreList
               className="divide-y"
               initial={PEERS_SHOWN}
-              step={20}
+              step={PEERS_SHOWN}
               items={peers.map((p) => (
                 <PeerRow key={p.symbol} stock={p} current={p.symbol === symbol} />
               ))}

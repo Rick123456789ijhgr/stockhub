@@ -141,8 +141,8 @@ export async function getRanking(
 }
 
 /**
- * Listed common stocks of `industry` on the latest trading day, the biggest gain first
- * (the right-hand list on a stock's page). Same rebased previous close as the rankings.
+ * Listed common stocks of `industry` on the latest trading day, the most shares traded
+ * first (the right-hand list on a stock's page). Same rebased previous close as the rankings.
  */
 export async function getIndustryPeers(
   db: Kysely<DB>,
@@ -164,7 +164,7 @@ export async function getIndustryPeers(
       WHERE p.stock_id = s.id AND p.trade_date = ${date} AND p.close IS NOT NULL
     ) l ON true
     WHERE s.industry = ${industry} AND s.type = 'stock' AND s.delisted_date IS NULL
-    ORDER BY l.close / nullif(l.prev_close, 0) DESC NULLS LAST, s.symbol
+    ORDER BY l.volume::bigint DESC, s.symbol
   `.execute(db);
   return { date, rows: result.rows };
 }
