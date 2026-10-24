@@ -644,3 +644,151 @@ def test_quotes_intraday_key_checks_and_comments(pg: psycopg.Connection) -> None
     comment = pg.execute("SELECT obj_description('quotes_intraday'::regclass)").fetchone()
     assert comment
     assert comment[0]
+
+
+M6_TABLES = (
+    "news_sources",
+    "news_items",
+    "news_item_stocks",
+    "stock_aliases",
+    "slang_terms",
+    "llm_providers",
+    "llm_usage",
+    "sentiment_daily",
+)
+
+
+def test_m6_tables_are_commented_and_seeded(pg: psycopg.Connection) -> None:
+    for table in M6_TABLES:
+        comment = pg.execute("SELECT obj_description(%s::regclass)", (table,)).fetchone()
+        assert comment
+        assert comment[0], table
+    kinds = dict(pg.execute("SELECT code, kind FROM news_sources").fetchall())
+    assert kinds["mops_twse"] == "mops"
+    assert kinds["ptt_stock"] == "ptt"
+    providers = pg.execute("SELECT code FROM llm_providers ORDER BY priority").fetchall()
+    assert [p[0] for p in providers] == ["google_ai_studio", "groq", "openrouter", "nvidia_nim"]
+    slang = pg.execute("SELECT count(*) FROM slang_terms").fetchone()
+    assert slang
+    assert slang[0] >= 20
+
+
+def _news_source(pg: psycopg.Connection, code: str = "mops_twse") -> int:
+    row = pg.execute("SELECT id FROM news_sources WHERE code = %s", (code,)).fetchone()
+    assert row
+    return int(row[0])
+
+
+def test_news_sources_url_rules(pg: psycopg.Connection) -> None:
+    sql = (
+        "INSERT INTO news_sources (code, name, kind, channel, url, per_stock) "
+        "VALUES (%s, 'x', %s, 'news', %s, %s)"
+    )
+    _expect(pg, errors.CheckViolation, sql, ("feed_a", "rss", None, False))
+    _expect(pg, errors.CheckViolation, sql, ("feed_b", "rss", "https://a.example/rss", True))
+    _expect(pg, errors.CheckViolation, sql, ("Feed C", "rss", "https://a.example/rss", False))
+    _expect(pg, errors.CheckViolation, sql, ("feed_d", "rss", "ftp://a.example/rss", False))
+    pg.execute(sql, ("feed_e", "rss", "https://a.example/rss?s={symbol}", True))
+
+
+def test_news_items_key_checks_and_links(pg: psycopg.Connection) -> None:
+    stock = _insert_stock(pg)
+    source = _news_source(pg)
+    sql = (
+        "INSERT INTO news_items (source_id, channel, external_id, url, title, published_at, "
+        "sentiment, sentiment_source, importance) "
+        "VALUES (%s, 'announcement', %s, 'https://x', 't', now(), %s, %s, %s) RETURNING id"
+    )
+    row = pg.execute(sql, (source, "a", 0.5, "llm", 3)).fetchone()
+    assert row
+    item = int(row[0])
+    _expect(pg, errors.UniqueViolation, sql, (source, "a", None, None, None))
+    _expect(pg, errors.CheckViolation, sql, (source, "b", 1.5, "llm", None))
+    _expect(pg, errors.CheckViolation, sql, (source, "c", 0.5, None, None))
+    _expect(pg, errors.CheckViolation, sql, (source, "d", None, None, 6))
+    _expect(
+        pg,
+        errors.CheckViolation,
+        "UPDATE news_items SET event_type = 'gossip' WHERE id = %s",
+        (item,),
+    )
+    _expect(
+        pg,
+        errors.CheckViolation,
+        "UPDATE news_items SET duplicate_of = id WHERE id = %s",
+        (item,),
+    )
+    link = (
+        "INSERT INTO news_item_stocks (item_id, stock_id, relation, weight) VALUES (%s, %s, %s, %s)"
+    )
+    _expect(pg, errors.CheckViolation, link, (item, stock, "direct", 0))
+    _expect(pg, errors.CheckViolation, link, (item, stock, "mention", 1))
+    pg.execute(link, (item, stock, "direct", 1))
+    pg.execute("DELETE FROM news_items WHERE id = %s", (item,))
+    left = pg.execute("SELECT count(*) FROM news_item_stocks").fetchone()
+    assert left == (0,)
+
+
+def test_llm_providers_checks_and_usage(pg: psycopg.Connection) -> None:
+    sql = (
+        "INSERT INTO llm_providers (code, name, base_url, model, api_key_env, priority, paid, "
+        "input_usd_per_mtok, output_usd_per_mtok) VALUES (%s, 'x', %s, 'm', %s, 50, %s, %s, %s)"
+    )
+    _expect(pg, errors.CheckViolation, sql, ("p1", "http://a", "KEY", False, None, None))
+    _expect(pg, errors.CheckViolation, sql, ("p2", "https://a", "key", False, None, None))
+    _expect(pg, errors.CheckViolation, sql, ("p3", "https://a", "KEY", True, None, None))
+    pg.execute(sql, ("p4", "https://a", "KEY", True, 0.1, 0.5))
+    provider = pg.execute("SELECT id FROM llm_providers WHERE code = 'p4'").fetchone()
+    assert provider
+    pg.execute(
+        "INSERT INTO llm_usage (provider_id, usage_date, requests) VALUES (%s, '2026-10-24', 1)",
+        (provider[0],),
+    )
+    _expect(
+        pg,
+        errors.UniqueViolation,
+        "INSERT INTO llm_usage (provider_id, usage_date) VALUES (%s, '2026-10-24')",
+        (provider[0],),
+    )
+
+
+def test_sentiment_daily_checks_and_cluster(pg: psycopg.Connection) -> None:
+    stock = _insert_stock(pg)
+    sql = (
+        "INSERT INTO sentiment_daily (stock_id, trade_date, scope, items, scored, sentiment) "
+        "VALUES (%s, '2026-10-23', %s, %s, %s, %s)"
+    )
+    pg.execute(sql, (stock, "all", 3, 2, 0.25))
+    _expect(pg, errors.UniqueViolation, sql, (stock, "all", 3, 2, 0.25))
+    _expect(pg, errors.CheckViolation, sql, (stock, "news", 1, 2, 0.1))
+    _expect(pg, errors.CheckViolation, sql, (stock, "ptt_stock", 2, 0, 0.1))
+    _expect(pg, errors.CheckViolation, sql, (stock, "PTT", 2, 1, 0.1))
+    clustered = pg.execute(
+        "SELECT a.attname FROM pg_index x JOIN pg_attribute a "
+        "ON a.attrelid = x.indrelid AND a.attnum = x.indkey[0] "
+        "WHERE x.indisclustered AND x.indrelid = 'sentiment_daily'::regclass"
+    ).fetchone()
+    assert clustered == ("stock_id",)
+
+
+def test_m6_alert_kinds_channels_and_job_requests(pg: psycopg.Connection) -> None:
+    stock = _insert_stock(pg)
+    for kind in ("announcement", "news_sentiment", "social_buzz"):
+        pg.execute(
+            "INSERT INTO alerts (kind, stock_id, trade_date, severity, title) "
+            "VALUES (%s, %s, '2026-10-23', 'warning', 't')",
+            (kind, stock),
+        )
+    _expect(
+        pg,
+        errors.CheckViolation,
+        "INSERT INTO alerts (kind, stock_id, trade_date, severity, title) "
+        "VALUES ('announcement', NULL, '2026-10-23', 'warning', 't')",
+    )
+    channels = pg.execute("SELECT DISTINCT channels FROM alerts").fetchall()
+    assert channels == [([],)]
+    for job in ("sync_news", "check_llm_providers"):
+        pg.execute(
+            "INSERT INTO job_requests (job_name, requested_by) VALUES (%s, 'me@example.com')",
+            (job,),
+        )

@@ -11,6 +11,8 @@ export const REQUESTABLE_JOBS = [
   "sync_chips",
   "sync_markets",
   "sync_macro",
+  "sync_news",
+  "check_llm_providers",
 ] as const;
 
 export type RequestableJob = (typeof REQUESTABLE_JOBS)[number];
@@ -25,6 +27,8 @@ export const JOB_LABEL: Record<RequestableJob, string> = {
   sync_chips: "籌碼更新到今天",
   sync_markets: "市場更新到今天",
   sync_macro: "總經指標更新",
+  sync_news: "新聞與社群更新",
+  check_llm_providers: "檢查 LLM 服務",
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -59,6 +63,8 @@ export function parseJobRequest(body: unknown, today: string): JobRequestInput |
     case "sync_chips":
     case "sync_markets":
     case "sync_macro":
+    case "sync_news":
+    case "check_llm_providers":
       return { job: job as RequestableJob, params: {} };
     case "refetch_stock_prices":
     case "refresh_stock_fundamentals": {
