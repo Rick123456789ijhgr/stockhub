@@ -948,3 +948,9 @@
 
 ### D-142 新聞、公告、社群共用一張表
 - `news_items` 以 `channel`（news／announcement／social）區分，LLM 欄位、關聯、去重、頁面列表都只寫一套；各來源特有的欄位（推噓、作者多空、公告條款）放 `meta`。
+
+### D-143 社群與網誌來源的實作方式（2026-10-25）
+- 股市爆料同學會：個股頁的貼文由前端呼叫內部 API（`/mach/api/Article/Stocks/...`，需特殊標頭）載入，沒有公開文件，不用。改讀伺服器渲染的熱門頁（使用者指定的 `forum/popular/buzz?tab=popular`）取文章編號，再只讀還沒存過的文章頁（`forum/article/{id}`）：發文時間在 `article:published_time`，個股標籤與作者的看多／看空在 `stockTagLabel__stance--bull|bear`。每輪最多 15 篇、每秒 1 次。代價是只涵蓋熱門貼文，不是每檔股票的全部討論。
+- PTT：用看板搜尋 `[標的]`（最多 3 頁、3 天內），只讀原文（`Re:`、`Fw:` 不讀）且發文滿 2 小時的文章，讓推噓數大致穩定；文章編號 `M.{epoch}` 就是發文時間。每輪最多 20 篇、每秒 1 次。美股標的（SOXS 等）也會抓到，關聯不到台股就不送 LLM。
+- CMoney 投資網誌：`www.cmoney.tw/notes/` 要登入，網誌網域 `cmnews.com.tw` 的憑證已被撤銷（CRYPT_E_REVOKED），列範圍外；`news_sources.kind` 保留 `cmoney_notes`，之後有可用來源再寫 adapter。
+- 重大訊息沒有單則網址，連到公開資訊觀測站該公司的重大訊息頁（`mops.twse.com.tw/mops/#/web/t05st01?companyId=代號`），只給人點，程式不抓。

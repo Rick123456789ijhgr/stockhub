@@ -49,9 +49,8 @@ INSERT INTO news_sources (code, name, kind, channel, url, per_stock, market, int
   ('udn_stock',       '經濟日報 證券',        'rss',          'news',         'https://money.udn.com/rssfeed/news/1001/5590?ch=money',     false, NULL,   15, true),
   ('ctee_stock',      '工商時報 證券',        'rss',          'news',         'https://www.ctee.com.tw/rss_web/livenews/stock',            false, NULL,   15, true),
   ('cnyes_tw_stock',  '鉅亨網 台股新聞',      'cnyes',        'news',         'https://news.cnyes.com/api/v3/news/category/tw_stock',      false, NULL,   15, true),
-  ('cmoney_notes',    'CMoney 投資網誌',      'cmoney_notes', 'news',         'https://www.cmoney.tw/notes/',                               false, NULL,   30, false),
   ('ptt_stock',       'PTT 股票板 [標的]',    'ptt',          'social',       'https://www.ptt.cc/bbs/Stock/index.html',                   false, NULL,   30, true),
-  ('cmoney_forum',    'CMoney 股市爆料同學會', 'cmoney_forum', 'social',       'https://www.cmoney.tw/forum/stock/{symbol}',                true,  NULL,   30, true);
+  ('cmoney_forum',    'CMoney 股市爆料同學會 熱門', 'cmoney_forum', 'social',  'https://www.cmoney.tw/forum/popular/buzz?tab=popular',      false, NULL,   30, true);
 
 CREATE TABLE news_items (
   id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -54,6 +54,9 @@ from stockhub.etl.providers.base import (
     MonthlyRevenue,
     MonthlyRevenueProvider,
     MonthlyRevenueSnapshotProvider,
+    NewsItem,
+    NewsProvider,
+    NewsRequest,
     PermanentProviderError,
     PriceProvider,
     Provider,
@@ -392,6 +395,17 @@ class ProviderRouter:
             MacroReleaseProvider,
             lambda p: p.fetch_macro_release(),
             lambda p, raw: p.parse_macro_release(raw),
+        )
+
+    # ------------------------------------------------------------------ news
+
+    def news(self, request: NewsRequest) -> Fetched[NewsItem]:
+        return self._call(
+            "news",
+            NewsProvider,
+            lambda p: p.fetch_news(request),
+            lambda p, raw: p.parse_news(raw),
+            accepts=lambda p: p.serves(request),
         )
 
     def quotes(self, symbols: Sequence[tuple[str, Market]]) -> Fetched[Quote]:

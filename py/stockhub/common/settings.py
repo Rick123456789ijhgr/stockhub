@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     )
     """Each series uses the listed sources that serve it, in this order (D-105)."""
     providers_macro_release: CommaList = Field(default_factory=lambda: ["ndc"])
+    providers_news: CommaList = Field(
+        default_factory=lambda: ["twse", "tpex", "rss", "cnyes", "ptt", "cmoney"]
+    )
+    """Adapters for news_sources; each source goes to the listed adapter that reads its kind."""
 
     @field_validator(
         "alert_email_to",
@@ -115,6 +119,7 @@ class Settings(BaseSettings):
         "providers_shareholding_distribution",
         "providers_market_series",
         "providers_macro_release",
+        "providers_news",
         mode="before",
     )
     @classmethod

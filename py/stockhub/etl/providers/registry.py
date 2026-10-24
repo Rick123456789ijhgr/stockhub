@@ -23,6 +23,10 @@ BUILTIN_MODULES = (
     "stockhub.etl.providers.yahoo",
     "stockhub.etl.providers.fred",
     "stockhub.etl.providers.ndc",
+    "stockhub.etl.providers.rss",
+    "stockhub.etl.providers.cnyes",
+    "stockhub.etl.providers.ptt",
+    "stockhub.etl.providers.cmoney",
 )
 
 _REGISTRY: dict[str, type[Provider]] = {}
@@ -111,5 +115,6 @@ class ProviderRegistry:
                 "shareholding_distribution": settings.providers_shareholding_distribution,
                 "market_series": settings.providers_market_series,
                 "macro_release": settings.providers_macro_release,
+                "news": settings.providers_news,
             }
         )

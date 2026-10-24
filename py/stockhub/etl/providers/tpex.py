@@ -102,6 +102,7 @@ class TpexProvider(
         "BS": f"{OPENAPI}/mopsfin_t187ap07_O_ci",
         "revenue": f"{OPENAPI}/mopsfin_t187ap05_O",
         "profiles": f"{OPENAPI}/mopsfin_t187ap03_O",
+        "announcements": f"{OPENAPI}/mopsfin_t187ap04_O",
     }
 
     def __init__(self, client: httpx.Client | None = None) -> None:

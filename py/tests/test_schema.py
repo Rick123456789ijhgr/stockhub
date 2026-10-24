@@ -627,6 +627,7 @@ def test_per_stock_tables_cluster_by_stock(pg: psycopg.Connection) -> None:
         "fundamental_signals",
         "monthly_revenue",
         "quotes_intraday",
+        "sentiment_daily",
     ):
         assert clustered.get(table) == "stock_id", table
 
@@ -663,7 +664,7 @@ def test_m6_tables_are_commented_and_seeded(pg: psycopg.Connection) -> None:
         comment = pg.execute("SELECT obj_description(%s::regclass)", (table,)).fetchone()
         assert comment
         assert comment[0], table
-    kinds = dict(pg.execute("SELECT code, kind FROM news_sources").fetchall())
+    kinds: dict[str, str] = dict(pg.execute("SELECT code, kind FROM news_sources").fetchall())
     assert kinds["mops_twse"] == "mops"
     assert kinds["ptt_stock"] == "ptt"
     providers = pg.execute("SELECT code FROM llm_providers ORDER BY priority").fetchall()
