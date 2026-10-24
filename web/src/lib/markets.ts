@@ -61,6 +61,32 @@ export async function loadSeries(
   }));
 }
 
+export type IndexBar = { date: string; open: number; high: number; low: number; close: number };
+
+/**
+ * Daily bars of an OHLC series since `since`, oldest first. Days stored with only a close
+ * (older history from a fallback source) get a flat bar at the close.
+ */
+export async function loadIndexBars(db: Kysely<DB>, code: string, since: string): Promise<IndexBar[]> {
+  const rows = await db
+    .selectFrom("market_series_values")
+    .select(["obs_date", "open", "high", "low", "value"])
+    .where("series_code", "=", code)
+    .where("obs_date", ">=", since)
+    .orderBy("obs_date")
+    .execute();
+  return rows.map((r) => {
+    const close = Number(r.value);
+    return {
+      date: String(r.obs_date),
+      open: r.open === null ? close : Number(r.open),
+      high: r.high === null ? close : Number(r.high),
+      low: r.low === null ? close : Number(r.low),
+      close,
+    };
+  });
+}
+
 export type MacroEvent = {
   id: number;
   date: string;

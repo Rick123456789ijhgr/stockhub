@@ -122,6 +122,7 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
 - 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。
 - 市場與總經：每條線是 `market_series` 的一個序列，值在 `market_series_values`（國際市場存交易所當地日期，月資料存月初）；provider 以 `series_symbols` 宣告服務哪些序列，`PROVIDERS_MARKET_SERIES` 的順序就是主來源與備援，一次只服務一個月的來源設 `series_monthly`。新增序列＝遷移加一列目錄＋在 provider 的 `series_symbols` 加代號。寫入一律經 `jobs/markets.py` 的 `store_observations`（品質檢查、隔離、取代隔離）；沒有 `has_ohlc` 的序列只存收盤值。涵蓋讀 `market_series_status` 檢視表。Yahoo 是非官方來源，只經 `YahooProvider`。
+- 頁面分工（D-134）：首頁＝台股總覽（大盤、法人、熱力圖，國際市場只當輔助）；`/market`（選單「國際」）只放國際市場與總經；警示在持股頁。台股的新區塊放首頁，不要放回 `/market`。
 - 熱力圖：只用收盤資料，市值＝收盤價 × `issued_shares`，漲跌用還原價（`adjustedChange`），群組報酬以期初市值加權；計算在 `web/src/lib/heatmap-data.ts`（純函式），版面在 `lib/treemap.ts`；顏色只用 `heatColor`（`--price-up/down` 混入 `--muted`），不要另寫色碼。
 - 題材：`themes` + `stock_themes`（起訖日，移出時設 `valid_to` 保留歷史，期間不得重疊），讀「某天的成分股」一律用 `valid_from <= d AND (valid_to IS NULL OR valid_to >= d)`；網站的寫入都經 `lib/themes.ts`（寫稽核紀錄）。
 - 總經警示（`business_signal`、`policy_rate`）沒有股票：`alerts.stock_id` 為 NULL，讀警示要用 left join。

@@ -13,6 +13,7 @@ type Memory = Record<string, string>;
 
 /** Pages whose state is remembered: the top-level pages (exact path, not sub-pages). */
 export const REMEMBERED_PAGES = [
+  "/",
   "/portfolio",
   "/stocks",
   "/watchlist",

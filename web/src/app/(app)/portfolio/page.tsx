@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/coming-soon";
 import { InfoNote } from "@/components/disclosure";
+import { AlertsList } from "@/components/portfolio/alerts-list";
 import { DividendList } from "@/components/portfolio/dividend-list";
 import { HoldingsTable, Pnl, RealizedList, UpcomingList } from "@/components/portfolio/holdings";
 import { PortfolioSummary } from "@/components/portfolio/summary";
@@ -42,7 +43,8 @@ async function PortfolioContent({
 }) {
   await requireUser();
   const all = (await searchParams).all === "1";
-  const view = await loadPortfolio(getDb());
+  const db = getDb();
+  const view = await loadPortfolio(db);
   const cut = <T,>(items: T[], n: number) => (all ? items : items.slice(0, n));
   const dividends = [...view.ledger.dividends].sort(byDateDesc((d) => d.exDate));
   const realized = [...view.ledger.realized].sort(byDateDesc((r) => r.date));
@@ -90,6 +92,19 @@ async function PortfolioContent({
         </CardHeader>
         <CardContent>
           <HoldingsTable positions={open} stocks={stocks} marks={marks} />
+        </CardContent>
+      </Card>
+
+      <Card size="sm" id="alerts" className="scroll-mt-4">
+        <CardHeader>
+          <CardTitle className="text-sm">警示</CardTitle>
+          <InfoNote>
+            持股單日漲跌超過近 20 日報酬標準差 × 2.5（最低 3%）時，盤中輪詢與收盤後各檢查一次；外資、投信或自營商單日買賣超達持股成交量
+            10%（成交金額 5,000 萬以上）時，抓完籌碼後檢查；景氣燈號變色或 Fed 調整利率時也會提醒。
+          </InfoNote>
+        </CardHeader>
+        <CardContent>
+          <AlertsList db={db} />
         </CardContent>
       </Card>
 

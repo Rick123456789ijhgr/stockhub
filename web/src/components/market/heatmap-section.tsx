@@ -36,13 +36,15 @@ export async function HeatmapSection({
   db,
   by,
   period,
+  href,
 }: {
   db: Kysely<DB>;
   by: HeatmapBy;
   period: HeatmapPeriod;
+  /** The page URL with this grouping and period (the rest of the page's state kept). */
+  href: (by: HeatmapBy, period: HeatmapPeriod) => string;
 }) {
   const data = await loadHeatmap(db, by, period);
-  const href = (b: HeatmapBy, p: HeatmapPeriod) => `/market?tab=heatmap&by=${b}&period=${p}`;
   const days = HEATMAP_PERIODS[period];
   return (
     <div className="space-y-3">

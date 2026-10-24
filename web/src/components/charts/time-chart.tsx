@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CandlestickSeries,
   ColorType,
   createChart,
   CrosshairMode,
@@ -23,7 +24,8 @@ export type ColorToken = "--series-1" | "--series-2" | "--series-3" | "--foregro
 
 export type ChartSeries = {
   name: string;
-  kind: "line" | "histogram";
+  /** Candles take the price colors (`ohlc`); the legend shows `data`, their closes. */
+  kind: "line" | "histogram" | "candle";
   color: ColorToken;
   /** 0..1 opacity, e.g. river bands as one hue in light-to-dark steps. */
   alpha?: number;
@@ -34,6 +36,8 @@ export type ChartSeries = {
   /** Histogram bars take the price colors by sign (buying up, selling down) instead of `color`. */
   signed?: boolean;
   data: { time: string; value: number | null }[];
+  /** Bars of a "candle" series. */
+  ohlc?: { time: string; open: number; high: number; low: number; close: number }[];
 };
 
 /** Swatch classes; using the utilities keeps the tokens in Tailwind's output. */
@@ -118,7 +122,22 @@ export function TimeChart({
     for (const s of series) {
       const data = s.data.flatMap((p) => (p.value === null ? [] : [{ time: p.time as Time, value: p.value }]));
       const tint = color(s.color, s.alpha ?? 1);
-      if (s.kind === "histogram") {
+      if (s.kind === "candle") {
+        const up = color("--price-up");
+        const down = color("--price-down");
+        chart
+          .addSeries(CandlestickSeries, {
+            upColor: up,
+            downColor: down,
+            borderUpColor: up,
+            borderDownColor: down,
+            wickUpColor: up,
+            wickDownColor: down,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+          .setData((s.ohlc ?? []).map((b) => ({ ...b, time: b.time as Time })));
+      } else if (s.kind === "histogram") {
         const up = color("--price-up");
         const down = color("--price-down");
         const bars = s.signed ? data.map((p) => ({ ...p, color: p.value >= 0 ? up : down })) : data;
@@ -159,7 +178,7 @@ export function TimeChart({
         {at ? <span className="text-muted-foreground tabular-nums">{periodLabel(at, period)}</span> : null}
         {legend.map(({ s, value }) => (
           <span key={s.name} className="inline-flex items-center gap-1 text-muted-foreground">
-            {s.signed ? (
+            {s.signed || s.kind === "candle" ? (
               <span className="inline-flex h-2 w-3 overflow-hidden rounded-sm" aria-hidden>
                 <span className="w-1/2 bg-up" />
                 <span className="w-1/2 bg-down" />

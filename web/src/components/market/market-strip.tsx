@@ -5,9 +5,10 @@ import type { DB } from "@/lib/db";
 import { changesInPoints, formatSeriesValue, latestChange, PRICE_LIKE } from "@/lib/market-series";
 import { loadSeries, shiftDate } from "@/lib/markets";
 
-const HOME_SERIES = ["TAIEX", "TPEX", "SPX", "NASDAQ", "SOX", "N225", "USDTWD", "UST10Y"];
+/** International markets on the home page, beside Taiwan's (the indexes have their own charts). */
+const HOME_SERIES = ["SPX", "NASDAQ", "SOX", "N225", "USDTWD", "DXY", "UST10Y", "VIX"];
 
-/** Home page: latest value and change of the headline series, two columns of rows. */
+/** Home page: latest value and change of the headline international series. */
 export async function MarketStrip({ db, today }: { db: Kysely<DB>; today: string }) {
   const series = await loadSeries(db, shiftDate(today, -14), HOME_SERIES);
   const rows = series

@@ -27,7 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/portfolio", label: "持股", icon: Wallet, group: "main", primary: true },
   { href: "/stocks", label: "個股", icon: ChartCandlestick, group: "main", primary: true },
   { href: "/watchlist", label: "自選", icon: Star, group: "main" },
-  { href: "/market", label: "市場", icon: Globe, group: "main", primary: true },
+  { href: "/market", label: "國際", icon: Globe, group: "main", primary: true },
   { href: "/screener", label: "篩選器", icon: ListFilter, group: "tools" },
   { href: "/backtest", label: "回測", icon: History, group: "tools" },
   { href: "/status", label: "狀態", icon: Activity, group: "system" },
