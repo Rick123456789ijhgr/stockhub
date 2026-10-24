@@ -9,11 +9,11 @@ describe("memoryEntry", () => {
       "/stocks?tab=volume&type=all",
     ]);
     expect(memoryEntry("/market", "")).toEqual(["/market", "/market"]);
-    expect(memoryEntry("/", "range=1y")).toEqual(["/", "/?range=1y"]);
   });
 
   it("ignores sub-pages and pages without state", () => {
     expect(memoryEntry("/stocks/2330", "tab=chips")).toBeNull();
+    expect(memoryEntry("/", "")).toBeNull();
     expect(memoryEntry("/more", "")).toBeNull();
   });
 

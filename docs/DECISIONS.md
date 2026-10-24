@@ -911,4 +911,4 @@
 - 大盤用收盤資料（`market_series_values` 的 OHLC，早期只有收盤的日子畫成平的 K 棒）；沒有盤中指數來源，所以不做盤中走勢。`TimeChart` 新增 `candle` 種類（顏色用 `--price-up/down`）。
 - `/market` 只剩「國際市場」（不含台股指數）與「總經」兩個分頁；總經含台灣景氣燈號，屬總經不搬到首頁。舊的 `/market?tab=heatmap` 轉到首頁的熱力圖。
 - 持股摘要從首頁拿掉（持股頁本來就有）；警示清單移到持股頁（`#alerts`），總經警示仍連到 `/market?tab=macro`。
-- 調整（同日，使用者要求）：熱力圖改為 `/stocks` 的「熱力圖」分頁（`?tab=heatmap&by=&period=`，接在榜單分頁之後；只含普通股，所以不顯示股票／ETF 切換），舊的 `/market?tab=heatmap` 轉到這裡，個股頁的產業與題材標籤也連到這裡。大盤走勢改用個股頁同一個 K 線元件（`StockChart` 的 `index` 模式：期間 6 個月～全部、MA5/20/60、KD/MACD/RSI，沒有成交量窗格與還原／原始切換；資料來自 `GET /api/markets/[code]/bars`，只接受有 OHLC 的序列），加權與櫃買用 `?index=TPEX` 切換；原本 `TimeChart` 的 K 棒種類與首頁的 `?range=` 拿掉。
+- 調整（同日，使用者要求）：熱力圖改為 `/stocks` 的「熱力圖」分頁（`?tab=heatmap&by=&period=`，接在榜單分頁之後；只含普通股，所以不顯示股票／ETF 切換），舊的 `/market?tab=heatmap` 轉到這裡，個股頁的產業與題材標籤也連到這裡。大盤走勢改用個股頁同一個 K 線元件（`StockChart` 的 `index` 模式：期間 6 個月～全部、MA5/20/60、KD/MACD/RSI，沒有成交量窗格與還原／原始切換；資料來自 `GET /api/markets/[code]/bars`，只接受有 OHLC 的序列），加權（左）與櫃買（右）兩張圖並排（`xl` 以下上下排列，與下方法人的上市／上櫃同一順序）；原本 `TimeChart` 的 K 棒種類與首頁的 `?range=` 拿掉，首頁不再有網址狀態，也不在 `REMEMBERED_PAGES`。

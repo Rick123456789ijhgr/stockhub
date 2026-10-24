@@ -14,7 +14,7 @@ import {
   TickMarkType,
   type Time,
 } from "lightweight-charts";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { cssColor, useThemeVersion } from "@/components/charts/chart-theme";
 import { PriceChange } from "@/components/price-change";
@@ -124,6 +124,8 @@ export function StockChart({
   const [indicator, setIndicator] = useState<IndicatorKey>("KD");
   const [hovered, setHovered] = useState<number | null>(null);
   const theme = useThemeVersion();
+  // Unique per chart: the home page shows two side by side.
+  const titleId = useId();
 
   // The recent years first (small and fast on phones); the whole history only once a
   // longer range is chosen, then it replaces the recent bars.
@@ -310,8 +312,8 @@ export function StockChart({
   const change = adjustedChangePercent(bars, index);
 
   return (
-    <section aria-labelledby="chart-title">
-      <h2 id="chart-title" className="sr-only">
+    <section aria-labelledby={titleId}>
+      <h2 id={titleId} className="sr-only">
         K 線圖
       </h2>
       <div className="mb-2 flex flex-wrap items-center gap-2">
