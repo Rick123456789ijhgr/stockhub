@@ -19,6 +19,7 @@ import {
   SessionRing,
 } from "@/components/nav/session-rail";
 import { NavMemoryRecorder } from "@/components/nav/remembered-link";
+import { StockHoverPreview } from "@/components/stocks/stock-hover-preview";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
@@ -47,6 +48,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       <Suspense fallback={null}>
         <NavProgress />
         <NavMemoryRecorder />
+        <StockHoverPreview />
       </Suspense>
       <aside className="sticky top-0 z-30 hidden h-dvh md:block">
         <div className="nav-panel absolute inset-y-0 left-0 flex flex-col gap-4 overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-4">

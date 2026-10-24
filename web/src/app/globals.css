@@ -364,6 +364,17 @@ details[open] > :not(summary) {
 .nav-panel:has(:focus-visible) .nav-conceal {
   opacity: 0;
 }
+/* Stock hover preview (D-132): grows in from the corner next to the link. */
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.stock-preview {
+  animation: preview-in 140ms var(--ease-out-soft);
+}
+
 /* The current-page highlight slides to the clicked item (sidebar and bottom bar). */
 .nav-highlight {
   transition:
@@ -375,6 +386,7 @@ details[open] > :not(summary) {
 @media (prefers-reduced-motion: reduce) {
   details[open] > :not(summary),
   .tab-underline::after,
+  .stock-preview,
   .flash-up,
   .flash-down {
     animation: none;
