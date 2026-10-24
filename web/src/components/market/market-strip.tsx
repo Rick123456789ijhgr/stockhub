@@ -1,13 +1,15 @@
 import type { Kysely } from "kysely";
 
 import { PriceChange } from "@/components/price-change";
+import { Card, CardContent } from "@/components/ui/card";
 import type { DB } from "@/lib/db";
 import { changesInPoints, formatSeriesValue, latestChange, PRICE_LIKE } from "@/lib/market-series";
 import { loadSeries, shiftDate } from "@/lib/markets";
 
-const HOME_SERIES = ["TAIEX", "TPEX", "SPX", "NASDAQ", "SOX", "N225", "USDTWD", "UST10Y"];
+/** International markets on the home page, beside Taiwan's (the indexes have their own charts). */
+const HOME_SERIES = ["SPX", "NASDAQ", "SOX", "N225", "USDTWD", "DXY", "UST10Y", "VIX"];
 
-/** Home page: latest value and change of the headline series, two columns of rows. */
+/** Home page: latest value and change of the headline international series. */
 export async function MarketStrip({ db, today }: { db: Kysely<DB>; today: string }) {
   const series = await loadSeries(db, shiftDate(today, -14), HOME_SERIES);
   const rows = series
@@ -16,31 +18,35 @@ export async function MarketStrip({ db, today }: { db: Kysely<DB>; today: string
   if (!rows.length) {
     return <p className="text-sm text-muted-foreground">還沒有市場資料（make etl-markets）。</p>;
   }
-  // One row of figures, like a quote board (D-126): scrolls sideways on phones, four even
-  // columns on wide screens. Name and date above, the value, then the signed change.
+  // A small card per series (D-134): two columns on phones, four on wide screens. Name and
+  // date above, the value, then the signed change.
   return (
-    <ul className="-mx-4 flex gap-x-7 overflow-x-auto px-4 pb-1 text-sm [scrollbar-width:none] md:mx-0 md:px-0 lg:grid lg:grid-cols-4 lg:gap-y-4 lg:overflow-visible">
+    <ul className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
       {rows.map(({ s, latest }) => (
-        <li key={s.code} className="shrink-0">
-          <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
-            <span>{s.name}</span>
-            <span className="tabular-nums">{latest!.date.slice(5).replace("-", "/")}</span>
-          </div>
-          <div className="mt-0.5 flex items-baseline gap-2">
-            <span className="text-lg font-semibold tracking-tight">
-              {formatSeriesValue(latest!.value, s.unit)}
-            </span>
-            {latest!.change === null ? null : PRICE_LIKE.has(s.category) ? (
-              <PriceChange value={latest!.change * 100} suffix="%" className="text-xs font-medium" />
-            ) : (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {latest!.change >= 0 ? "+" : "−"}
-                {changesInPoints(s)
-                  ? Math.abs(latest!.change).toFixed(2)
-                  : `${Math.abs(latest!.change * 100).toFixed(2)}%`}
-              </span>
-            )}
-          </div>
+        <li key={s.code}>
+          <Card size="sm" className="h-full">
+            <CardContent>
+              <div className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                <span className="truncate">{s.name}</span>
+                <span className="shrink-0 tabular-nums">{latest!.date.slice(5).replace("-", "/")}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+                <span className="text-lg font-semibold tracking-tight tabular-nums">
+                  {formatSeriesValue(latest!.value, s.unit)}
+                </span>
+                {latest!.change === null ? null : PRICE_LIKE.has(s.category) ? (
+                  <PriceChange value={latest!.change * 100} suffix="%" className="text-xs font-medium" />
+                ) : (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {latest!.change >= 0 ? "+" : "−"}
+                    {changesInPoints(s)
+                      ? Math.abs(latest!.change).toFixed(2)
+                      : `${Math.abs(latest!.change * 100).toFixed(2)}%`}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </li>
       ))}
     </ul>

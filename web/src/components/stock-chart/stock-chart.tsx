@@ -14,7 +14,7 @@ import {
   TickMarkType,
   type Time,
 } from "lightweight-charts";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { cssColor, useThemeVersion } from "@/components/charts/chart-theme";
 import { PriceChange } from "@/components/price-change";
@@ -94,9 +94,10 @@ export function StockChartSkeleton() {
   return <Skeleton className="h-[440px] w-full md:h-[560px]" />;
 }
 
-async function fetchBars(symbol: string, recent: boolean): Promise<BarsResponse> {
+async function fetchBars(symbol: string, index: boolean, recent: boolean): Promise<BarsResponse> {
   const query = recent ? "?period=recent" : "";
-  const response = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/bars${query}`);
+  const base = index ? "/api/markets" : "/api/stocks";
+  const response = await fetch(`${base}/${encodeURIComponent(symbol)}/bars${query}`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return (await response.json()) as BarsResponse;
 }
@@ -104,14 +105,18 @@ async function fetchBars(symbol: string, recent: boolean): Promise<BarsResponse>
 /**
  * `initial`: the recent bars, queried by the page together with the rest of it, so the
  * chart does not wait for a request of its own after the page loads (null when that query
- * failed; the chart then fetches them itself).
+ * failed; the chart then fetches them itself). With `index`, `symbol` is a market series
+ * code (TAIEX, TPEX): same chart without the volume pane and price modes, since an index
+ * has neither (D-134).
  */
 export function StockChart({
   symbol,
   initial,
+  index: isIndex = false,
 }: {
   symbol: string;
   initial?: Promise<BarsResponse | null>;
+  index?: boolean;
 }) {
   const initialData = (initial ? use(initial) : null) ?? undefined;
   const [mode, setMode] = useState<PriceMode>("adjusted");
@@ -119,18 +124,20 @@ export function StockChart({
   const [indicator, setIndicator] = useState<IndicatorKey>("KD");
   const [hovered, setHovered] = useState<number | null>(null);
   const theme = useThemeVersion();
+  // Unique per chart: the home page shows two side by side.
+  const titleId = useId();
 
   // The recent years first (small and fast on phones); the whole history only once a
   // longer range is chosen, then it replaces the recent bars.
   const recent = useQuery({
-    queryKey: ["bars", symbol, "recent"],
-    queryFn: () => fetchBars(symbol, true),
+    queryKey: ["bars", isIndex ? "index" : "stock", symbol, "recent"],
+    queryFn: () => fetchBars(symbol, isIndex, true),
     staleTime: 60_000,
     initialData,
   });
   const full = useQuery({
-    queryKey: ["bars", symbol, "all"],
-    queryFn: () => fetchBars(symbol, false),
+    queryKey: ["bars", isIndex ? "index" : "stock", symbol, "all"],
+    queryFn: () => fetchBars(symbol, isIndex, false),
     staleTime: 60_000,
     enabled: needsFullHistory(range) && recent.data?.complete === false,
   });
@@ -210,23 +217,26 @@ export function StockChart({
         .setData(toLine(times, values));
     });
 
-    const volume = chart.addSeries(
-      HistogramSeries,
-      { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false },
-      1,
-    );
-    volume.setData(
-      bars.map(([time, open, , , close, shares]) => ({
-        time,
-        value: shares / 1000,
-        color: close >= open ? color("--price-up", 0.55) : color("--price-down", 0.55),
-      })),
-    );
+    if (!isIndex) {
+      const volume = chart.addSeries(
+        HistogramSeries,
+        { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false },
+        1,
+      );
+      volume.setData(
+        bars.map(([time, open, , , close, shares]) => ({
+          time,
+          value: shares / 1000,
+          color: close >= open ? color("--price-up", 0.55) : color("--price-down", 0.55),
+        })),
+      );
+    }
+    const indicatorPane = isIndex ? 1 : 2;
 
     computed.indicator.forEach((line, i) => {
       if (line.kind === "histogram") {
         chart
-          .addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, 2)
+          .addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, indicatorPane)
           .setData(
             toLine(times, line.values).map((p) => ({
               ...p,
@@ -238,7 +248,7 @@ export function StockChart({
       const s = chart.addSeries(
         LineSeries,
         { color: series[i], lineWidth: 2, priceLineVisible: false, lastValueVisible: false },
-        2,
+        indicatorPane,
       );
       s.setData(toLine(times, line.values));
       if (indicator !== "MACD") {
@@ -256,8 +266,12 @@ export function StockChart({
 
     const panes = chart.panes();
     panes[0]?.setStretchFactor(3);
-    panes[1]?.setStretchFactor(0.8);
-    panes[2]?.setStretchFactor(1.2);
+    if (isIndex) {
+      panes[1]?.setStretchFactor(1.2);
+    } else {
+      panes[1]?.setStretchFactor(0.8);
+      panes[2]?.setStretchFactor(1.2);
+    }
 
     chart.timeScale().setVisibleLogicalRange({
       from: rangeStartIndex(bars, rangeRef.current),
@@ -274,7 +288,7 @@ export function StockChart({
       chart.remove();
       chartRef.current = null;
     };
-  }, [bars, computed, indicator, theme]);
+  }, [bars, computed, indicator, theme, isIndex]);
 
   // Range buttons only move the visible window.
   useEffect(() => {
@@ -298,8 +312,8 @@ export function StockChart({
   const change = adjustedChangePercent(bars, index);
 
   return (
-    <section aria-labelledby="chart-title">
-      <h2 id="chart-title" className="sr-only">
+    <section aria-labelledby={titleId}>
+      <h2 id={titleId} className="sr-only">
         K 線圖
       </h2>
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -309,15 +323,17 @@ export function StockChart({
           value={range}
           onChange={setRange}
         />
-        <Toggle
-          label="價格"
-          options={[
-            { key: "adjusted", label: "還原" },
-            { key: "raw", label: "原始" },
-          ]}
-          value={mode}
-          onChange={setMode}
-        />
+        {isIndex ? null : (
+          <Toggle
+            label="價格"
+            options={[
+              { key: "adjusted", label: "還原" },
+              { key: "raw", label: "原始" },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+        )}
         <Toggle
           label="指標"
           options={INDICATORS.map((key) => ({ key, label: key }))}
@@ -342,7 +358,7 @@ export function StockChart({
         <Value label="低" value={bar.low} />
         <Value label="收" value={bar.close} />
         {change !== null ? <PriceChange value={change} suffix="%" /> : null}
-        <Value label="量（張）" value={bars[index][5] / 1000} digits={0} />
+        {isIndex ? null : <Value label="量（張）" value={bars[index][5] / 1000} digits={0} />}
       </div>
       <Legend
         items={MA_PERIODS.map((n, i) => ({
@@ -351,7 +367,10 @@ export function StockChart({
           value: computed.ma[i][index],
         }))}
       />
-      <div ref={containerRef} className="h-[440px] w-full touch-pan-y md:h-[560px]" />
+      <div
+        ref={containerRef}
+        className={cn("w-full touch-pan-y", isIndex ? "h-[300px] md:h-[360px]" : "h-[440px] md:h-[560px]")}
+      />
       <Legend
         items={computed.indicator.map((line, i) => ({
           name: line.name,
@@ -360,10 +379,16 @@ export function StockChart({
         }))}
       />
       <p className="mt-1 text-xs text-muted-foreground">
-        {mode === "adjusted"
-          ? "還原價：舊價格乘上還原因子，換算成今天的股數基礎，除權息與分割不會造成跳空。"
-          : "原始價：交易所公布的成交價，除權息日會出現跳空。"}
-        成交量為原始股數。均線與指標依目前選擇的價格計算。
+        {isIndex ? (
+          "證交所與櫃買中心公布的每日指數（2004 年起），收盤後更新。"
+        ) : (
+          <>
+            {mode === "adjusted"
+              ? "還原價：舊價格乘上還原因子，換算成今天的股數基礎，除權息與分割不會造成跳空。"
+              : "原始價：交易所公布的成交價，除權息日會出現跳空。"}
+            成交量為原始股數。均線與指標依目前選擇的價格計算。
+          </>
+        )}
       </p>
     </section>
   );

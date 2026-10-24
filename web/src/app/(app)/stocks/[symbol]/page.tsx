@@ -13,6 +13,7 @@ import { IntradayChart } from "@/components/stock-chart/intraday-chart";
 import { QuotePanel, QuoteStatus, WatchButton } from "@/components/stock-chart/live-quote";
 import { StockChart } from "@/components/stock-chart/stock-chart";
 import { StockDataRepair } from "@/components/stock-chart/stock-data-repair";
+import { StockSidebar } from "@/components/stocks/stock-sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -36,6 +37,8 @@ import {
   type DailyBarRow,
   findStock,
   getChartBars,
+  getIndustryPeers,
+  getRanking,
   getRecentBars,
   MARKET_LABEL,
 } from "@/lib/stocks";
@@ -84,87 +87,104 @@ async function StockContent({
   // Not awaited: the chart's bars stream in with the page instead of being fetched after it.
   const chartBars =
     tab === "chart" ? getChartBars(db, stock.id, CHART_RECENT_MONTHS).catch(() => null) : null;
-  const [bars, fundamentals, themes, intraday] = await Promise.all([
+  const [bars, fundamentals, themes, intraday, peers] = await Promise.all([
     getRecentBars(db, stock.id),
     getQuoteFundamentals(db, stock.id, taipeiToday()),
     stockThemes(db, stock.id, taipeiToday()),
     tab === "chart" ? getIntraday(db, stock.id).catch(() => null) : null,
+    // ETFs have no industry: the most traded ETFs instead.
+    stock.type === "etf"
+      ? getRanking(db, "turnover", "etf", 20)
+      : stock.industry
+        ? getIndustryPeers(db, stock.industry)
+        : null,
   ]);
+  const peersTitle =
+    stock.type === "etf" ? "ETF 成交金額排行" : stock.industry ? `${stock.industry}成交量排行` : null;
 
-  // Futu's order: section tabs on top, then the quote header, then the section.
+  // The quote header stays put above the section tabs, so switching sections keeps the
+  // price in view (D-127).
   return (
-    <div className="space-y-4">
-      <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
-      <Card>
-        <CardContent className="space-y-4">
-          <header className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="text-lg font-semibold tabular-nums">{stock.symbol}</span>
-                <h1 className="text-lg font-semibold tracking-tight md:text-xl">{stock.name}</h1>
-                <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
-                {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
-                {stock.delistedDate ? (
-                  <Badge variant="outline" className="text-muted-foreground">
-                    已下市
-                  </Badge>
-                ) : null}
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] xl:gap-8">
+      <div className="min-w-0 space-y-4">
+        <Card>
+          <CardContent className="space-y-4">
+            <header className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-lg font-semibold tabular-nums">{stock.symbol}</span>
+                  <h1 className="text-lg font-semibold tracking-tight md:text-xl">{stock.name}</h1>
+                  <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
+                  {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
+                  {stock.delistedDate ? (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      已下市
+                    </Badge>
+                  ) : null}
+                </div>
+                {/* Separate items spaced apart, not joined with middle dots (D-126). */}
+                <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
+                  <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
+                  {stock.industry ? (
+                    <Link href="/stocks?tab=heatmap" className="hover:text-foreground hover:underline">
+                      {stock.industry}
+                    </Link>
+                  ) : null}
+                  {themes.map((t) => (
+                    <Link
+                      key={t.id}
+                      href="/stocks?tab=heatmap&by=theme"
+                      className="hover:text-foreground hover:underline"
+                    >
+                      #{t.name}
+                    </Link>
+                  ))}
+                  <span className="hidden sm:inline">
+                    {stock.listedDateEstimated ? `最早資料 ${stock.listedDate}` : `上市（櫃）日 ${stock.listedDate}`}
+                  </span>
+                  {stock.delistedDate ? <span>終止上市（櫃）日 {stock.delistedDate}</span> : null}
+                </p>
               </div>
-              {/* Separate items spaced apart, not joined with middle dots (D-126). */}
-              <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
-                <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
-                {stock.industry ? (
-                  <Link href="/market?tab=heatmap" className="hover:text-foreground hover:underline">
-                    {stock.industry}
-                  </Link>
-                ) : null}
-                {themes.map((t) => (
-                  <Link
-                    key={t.id}
-                    href="/market?tab=heatmap&by=theme"
-                    className="hover:text-foreground hover:underline"
-                  >
-                    #{t.name}
-                  </Link>
-                ))}
-                <span className="hidden sm:inline">
-                  {stock.listedDateEstimated ? `最早資料 ${stock.listedDate}` : `上市（櫃）日 ${stock.listedDate}`}
-                </span>
-                {stock.delistedDate ? <span>終止上市（櫃）日 {stock.delistedDate}</span> : null}
-              </p>
-            </div>
-            {stock.delistedDate === null ? <WatchButton symbol={stock.symbol} /> : null}
-          </header>
-          <QuotePanel
-            symbol={stock.symbol}
-            latest={bars[0]}
-            fundamentals={fundamentals}
-            isEtf={stock.type === "etf"}
-          />
-        </CardContent>
-      </Card>
+              {stock.delistedDate === null ? <WatchButton symbol={stock.symbol} /> : null}
+            </header>
+            <QuotePanel
+              symbol={stock.symbol}
+              latest={bars[0]}
+              fundamentals={fundamentals}
+              isEtf={stock.type === "etf"}
+            />
+          </CardContent>
+        </Card>
 
-      <div className="pt-2">
-        {tab === "chart" ? (
-          <div className="space-y-4">
-            <IntradayChart symbol={stock.symbol} initial={intraday} latest={bars[0]} />
-            {bars.length > 0 && chartBars ? (
-              <StockChart symbol={stock.symbol} initial={chartBars} />
-            ) : null}
-            <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
-          </div>
-        ) : null}
-        {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
-        {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
-        {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
-        {tab === "daily" ? (
-          bars.length > 0 ? (
-            <BarsTable bars={bars} />
-          ) : (
-            <p className="text-sm text-muted-foreground">尚無日線資料。</p>
-          )
-        ) : null}
+        <PageTabs tabs={tabs} active={tab} basePath={`/stocks/${stock.symbol}`} />
+        <div>
+          {tab === "chart" ? (
+            <div className="space-y-4">
+              <IntradayChart symbol={stock.symbol} initial={intraday} latest={bars[0]} />
+              {bars.length > 0 && chartBars ? (
+                <StockChart symbol={stock.symbol} initial={chartBars} />
+              ) : null}
+              <StockDataRepair db={db} stockId={stock.id} symbol={stock.symbol} />
+            </div>
+          ) : null}
+          {tab === "fundamentals" ? <FundamentalsSection db={db} stock={stock} /> : null}
+          {tab === "valuation" ? <ValuationSection db={db} stock={stock} /> : null}
+          {tab === "chips" ? <ChipsSection db={db} stock={stock} /> : null}
+          {tab === "daily" ? (
+            bars.length > 0 ? (
+              <BarsTable bars={bars} />
+            ) : (
+              <p className="text-sm text-muted-foreground">尚無日線資料。</p>
+            )
+          ) : null}
+        </div>
       </div>
+      <StockSidebar
+        symbol={stock.symbol}
+        title={peersTitle}
+        note={peers?.date ? `${peers.date} 收盤，漲跌以參考價（還原後的前收）計算。` : null}
+        peers={peers?.rows ?? []}
+      />
     </div>
   );
 }

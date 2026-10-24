@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isActive, isMoreActive, NAV_ITEMS } from "./nav-items";
+import { isActive, isMoreActive, NAV_GROUPS, NAV_ITEMS } from "./nav-items";
 
 describe("navigation", () => {
   it("has nine sections, four of them in the mobile bar", () => {
@@ -9,13 +9,20 @@ describe("navigation", () => {
       "持股",
       "個股",
       "自選",
-      "市場",
+      "國際",
       "篩選器",
       "回測",
       "狀態",
       "設定",
     ]);
     expect(NAV_ITEMS.filter((i) => i.primary)).toHaveLength(4);
+  });
+
+  it("keeps each sidebar group together, in the order of NAV_GROUPS", () => {
+    const order = NAV_GROUPS.map((g) => g.key);
+    const groups = NAV_ITEMS.map((i) => order.indexOf(i.group));
+    expect(groups).toEqual([...groups].sort((a, b) => a - b));
+    expect(new Set(groups).size).toBe(NAV_GROUPS.length);
   });
 
   it("matches the active section by path prefix", () => {

@@ -23,12 +23,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // data-price-colors: "tw" = red up / green down (default), "intl" swaps them. The head
-    // script applies the stored theme and colors before first paint, so <html> differs
-    // from the server render on purpose.
+    // data-price-colors: "tw" = red up / green down (default), "intl" swaps them; data-nav:
+    // sidebar pinned or collapsed (D-128). The head script applies the stored preferences
+    // before first paint, so <html> differs from the server render on purpose.
     <html
       lang="zh-Hant-TW"
       data-price-colors="tw"
+      data-nav="pinned"
       className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >

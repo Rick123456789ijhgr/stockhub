@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Second production build folder of the local launcher (D-131).
+    ".next-b/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

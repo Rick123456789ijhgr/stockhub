@@ -9,6 +9,7 @@ import {
   PHASE_LABEL,
   RAIL_END,
   RAIL_START,
+  type SessionPhase,
   sessionPhase,
   taipeiToday,
 } from "@/lib/market-hours";
@@ -38,75 +39,145 @@ function shortDate(date: string): string {
   return `${m}/${d}（${WEEKDAY[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}）`;
 }
 
-/**
- * The Taiwan session at a glance, on every page (D-126): trial match, open, closing auction
- * and close on one rail, a dot at the current time, and how fresh the numbers below are.
- * The dot is the one piece of motion nobody triggers: it moves every 30 s.
- */
-export function SessionRail({ status, serverNow }: { status: SessionStatus; serverNow: string }) {
+type SessionView = {
+  phase: SessionPhase;
+  progress: number;
+  live: boolean;
+  label: string;
+  /** Clock time, or the next trading day on a holiday. */
+  detail: string;
+  /** Clock time only ("" on a holiday): the short form for the collapsed rail. */
+  time: string;
+  freshness: string | null;
+};
+
+export type SessionProps = { status: SessionStatus; serverNow: string };
+
+function useSession({ status, serverNow }: SessionProps): SessionView {
   const now = useNow(serverNow);
   const { phase, progress } = sessionPhase(now, status);
   const live = phase === "continuous" || phase === "closingAuction" || phase === "trial";
   // The status is today's quotes only; a page left open overnight falls back to the close.
   const quoteToday = status.lastQuoteAt !== null && taipeiToday(now) === status.date;
-  const freshness = status.lastQuoteAt && quoteToday
-    ? `報價更新 ${formatTaipeiDateTime(status.lastQuoteAt).slice(11)}`
-    : status.lastCloseDate
-      ? `最新收盤 ${status.lastCloseDate.slice(5).replace("-", "/")}`
-      : null;
+  const freshness =
+    status.lastQuoteAt && quoteToday
+      ? `報價更新 ${formatTaipeiDateTime(status.lastQuoteAt).slice(11)}`
+      : status.lastCloseDate
+        ? `最新收盤 ${status.lastCloseDate.slice(5).replace("-", "/")}`
+        : null;
+  const time = phase === "holiday" ? "" : formatTaipeiDateTime(now).slice(11, 16);
+  const detail =
+    phase === "holiday"
+      ? status.nextTradingDay
+        ? `下個交易日 ${shortDate(status.nextTradingDay)}`
+        : ""
+      : time;
+  return { phase, progress, live, label: PHASE_LABEL[phase], detail, time, freshness };
+}
 
+/**
+ * The session as a ring around the brand mark (D-128): the arc fills from 08:30 to 13:30 in
+ * the brand color while the market is live, stays grey before and after, and is dashed on
+ * holidays. With the timeline in the sidebar, this arc is the one piece of motion nobody
+ * triggers: it moves every 30 s.
+ */
+export function SessionRing({ children, ...props }: SessionProps & { children: React.ReactNode }) {
+  const s = useSession(props);
+  const filled = s.phase === "closed" ? 100 : s.phase === "holiday" ? 0 : s.progress * 100;
   return (
-    <section
-      aria-label="交易時段"
-      className="mb-6 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 text-xs md:mb-8"
+    <span
+      className="relative grid size-9 shrink-0 place-items-center"
+      title={[s.label, s.detail, s.freshness].filter(Boolean).join("，")}
     >
-      <p className="flex items-baseline gap-2">
-        <span className={cn("text-sm font-semibold", live ? "text-foreground" : "text-muted-foreground")}>
-          {PHASE_LABEL[phase]}
+      <svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle
+          cx="18"
+          cy="18"
+          r="16.5"
+          fill="none"
+          strokeWidth="2"
+          className="stroke-border"
+          strokeDasharray={s.phase === "holiday" ? "2 3.2" : undefined}
+        />
+        {filled > 0 ? (
+          <circle
+            cx="18"
+            cy="18"
+            r="16.5"
+            fill="none"
+            strokeWidth="2"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${filled} 100`}
+            className={cn(
+              "transition-[stroke-dasharray] duration-1000 ease-linear",
+              s.live ? "stroke-brand" : "stroke-muted-foreground/50",
+            )}
+          />
+        ) : null}
+      </svg>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The Taiwan session in the sidebar (D-128): phase and time, a rail from the trial match to
+ * the close with the elapsed part filled, and how fresh the numbers on the page are. In the
+ * collapsed rail only the phase and time show, stacked.
+ */
+export function SessionClock(props: SessionProps) {
+  const s = useSession(props);
+  return (
+    <section aria-label="交易時段" className="relative h-[3.25rem] text-xs">
+      {/* Collapsed rail: two short lines centered in the 3.5rem column. */}
+      <p className="nav-conceal absolute inset-y-0 left-0 flex w-10 flex-col items-center justify-center text-[10px] leading-tight tabular-nums">
+        <span className={cn("font-semibold", s.live ? "text-brand" : "text-muted-foreground")}>
+          {s.phase === "closingAuction" ? "收盤" : s.label}
         </span>
-        <span className="text-muted-foreground tabular-nums">
-          {phase === "holiday"
-            ? status.nextTradingDay
-              ? `下一個交易日 ${shortDate(status.nextTradingDay)}`
-              : ""
-            : formatTaipeiDateTime(now).slice(11, 16)}
-        </span>
+        <span className="text-muted-foreground">{s.time}</span>
       </p>
 
-      <div className={cn("relative h-5", phase === "holiday" && "opacity-40")} aria-hidden>
-        {/* Track, the elapsed part, and the closing auction as a darker tail. */}
-        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-border" />
-        <div
-          className="absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full bg-muted-foreground/35 transition-[width] duration-1000 ease-linear"
-          style={{ width: `${progress * 100}%` }}
-        />
-        <div
-          className="absolute top-1/2 h-1 -translate-y-1/2 rounded-r-full bg-muted-foreground/60"
-          style={{ left: at(CLOSING_AUCTION_AT), right: 0 }}
-          title="13:25–13:30 收盤集合競價"
-        />
-        <div className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-muted-foreground/60" style={{ left: at(OPEN_AT) }} />
-        {phase === "holiday" ? null : (
+      <div className="nav-reveal absolute inset-0 flex flex-col justify-center gap-1.5 px-3">
+        <p className="flex items-baseline gap-2 whitespace-nowrap">
+          <span className={cn("text-sm font-semibold", s.live ? "text-foreground" : "text-muted-foreground")}>
+            {s.label}
+          </span>
+          <span className="truncate text-muted-foreground tabular-nums">{s.detail}</span>
+        </p>
+        <div className={cn("relative h-1.5", s.phase === "holiday" && "opacity-40")} aria-hidden>
+          <div className="absolute inset-0 rounded-full bg-border" />
           <div
             className={cn(
-              "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background transition-[left] duration-1000 ease-linear",
-              live ? "bg-brand" : "border-2 border-muted-foreground bg-background",
+              "absolute inset-y-0 left-0 rounded-full transition-[width] duration-1000 ease-linear",
+              s.live ? "bg-brand" : "bg-muted-foreground/40",
             )}
-            style={{ left: `${progress * 100}%` }}
+            style={{ width: `${(s.phase === "closed" ? 1 : s.progress) * 100}%` }}
           />
-        )}
-      </div>
-
-      <p className="text-right text-muted-foreground tabular-nums">{freshness}</p>
-
-      {/* Times under the rail; too crowded on phones. */}
-      <div className="relative col-start-2 hidden h-4 text-[11px] text-muted-foreground tabular-nums sm:block" aria-hidden>
-        <span className="absolute left-0" title="08:30–09:00 試撮">08:30</span>
-        <span className="absolute -translate-x-1/2" style={{ left: at(OPEN_AT) }}>
-          09:00 開盤
-        </span>
-        <span className="absolute right-0">13:30 收盤</span>
+          <div
+            className="absolute inset-y-0 right-0 rounded-r-full bg-muted-foreground/45"
+            style={{ left: at(CLOSING_AUCTION_AT) }}
+            title="13:25–13:30 收盤集合競價"
+          />
+          <div className="absolute -inset-y-0.5 w-px bg-muted-foreground/70" style={{ left: at(OPEN_AT) }} title="09:00 開盤" />
+        </div>
+        <p className="truncate text-[11px] text-muted-foreground tabular-nums">{s.freshness}</p>
       </div>
     </section>
+  );
+}
+
+/** Phones: the phase and time next to the brand in the top bar. */
+export function SessionPill(props: SessionProps) {
+  const s = useSession(props);
+  return (
+    <p
+      aria-label="交易時段"
+      className="flex items-baseline gap-1.5 text-xs tabular-nums"
+      title={s.freshness ?? undefined}
+    >
+      <span className={cn("font-semibold", s.live ? "text-brand" : "text-muted-foreground")}>{s.label}</span>
+      <span className="text-muted-foreground">{s.phase === "holiday" ? s.detail : s.time}</span>
+    </p>
   );
 }

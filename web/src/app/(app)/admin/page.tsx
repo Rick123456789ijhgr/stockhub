@@ -207,7 +207,7 @@ function General() {
         <Card size="sm">
           <CardHeader>
             <CardTitle className="text-sm">顯示</CardTitle>
-            <CardDescription>深色模式與漲跌配色；圖表會跟著切換。</CardDescription>
+            <CardDescription>深色模式、漲跌配色與介面主色；圖表會跟著切換。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <AppearanceSettings />
