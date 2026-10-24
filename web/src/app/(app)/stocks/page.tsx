@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { PageHeader } from "@/components/coming-soon";
+import { RememberedLink } from "@/components/nav/remembered-link";
 import { activeTab, type PageTab, PageTabs, tabHref } from "@/components/page-tabs";
 import { ToggleLinks } from "@/components/segmented-links";
 import { StockList } from "@/components/stocks/stock-list";
@@ -152,9 +152,9 @@ async function SearchResults({ q }: { q: string }) {
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
         「{q}」的搜尋結果：代號或名稱含「{q}」，最接近、成交最多的在前（最多 100 筆）·{" "}
-        <Link href="/stocks" className="hover:text-foreground hover:underline">
+        <RememberedLink href="/stocks" className="hover:text-foreground hover:underline">
           回到榜單
-        </Link>
+        </RememberedLink>
       </p>
       {groups.map(([label, rows]) =>
         rows.length ? (
