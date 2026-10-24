@@ -1,4 +1,3 @@
-import { Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -6,6 +5,7 @@ import { PageHeader } from "@/components/coming-soon";
 import { activeTab, type PageTab, PageTabs, tabHref } from "@/components/page-tabs";
 import { ToggleLinks } from "@/components/segmented-links";
 import { StockList } from "@/components/stocks/stock-list";
+import { StockSearchForm } from "@/components/stocks/stock-search-form";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -37,26 +37,7 @@ async function StockSearch({ searchParams }: { searchParams: PageProps<"/stocks"
 
   return (
     <>
-      <form action="/stocks" className="mb-4 flex gap-2" role="search">
-        <label className="relative flex-1">
-          <span className="sr-only">代號或名稱</span>
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <input
-            name="q"
-            defaultValue={q}
-            placeholder="例如 2330、台積電、0050"
-            inputMode="search"
-            autoComplete="off"
-            className="h-10 w-full rounded-lg border bg-background pr-3 pl-9 text-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          搜尋
-        </button>
-      </form>
+      <StockSearchForm defaultValue={q} className="mb-4" />
 
       {q ? <SearchResults q={q} /> : <RankingView kind={kind} ranking={tab} />}
     </>
