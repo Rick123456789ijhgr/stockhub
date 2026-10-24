@@ -6,6 +6,7 @@ variable, so a misconfigured Cloud Run Job dies on start instead of halfway thro
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -18,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = PROJECT_ROOT / ".env"
 
 CommaList = Annotated[list[str], NoDecode]
+NOTIFIER_CHANNELS = ("console", "email", "line", "telegram")
 
 
 class ConfigError(RuntimeError):
@@ -40,8 +42,15 @@ class Settings(BaseSettings):
     rawstore_local_dir: Path = Path(".local/rawstore")
     rawstore_gcs_bucket: str | None = None
 
-    notifier: Literal["console", "email"] = "console"
+    notifier: CommaList = Field(default_factory=lambda: ["console"])
+    """Channels in order: console, email, line, telegram (D-141)."""
     alert_email_to: CommaList = Field(default_factory=list)
+    line_channel_access_token: SecretStr | None = None
+    """LINE Official Account (Messaging API) channel access token."""
+    line_user_id: str | None = None
+    """Your own LINE userId (U...), shown on the channel's Basic settings page."""
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -97,6 +106,7 @@ class Settings(BaseSettings):
     """Adapters for news_sources; each source goes to the listed adapter that reads its kind."""
 
     @field_validator(
+        "notifier",
         "alert_email_to",
         "providers_price",
         "providers_financial",
@@ -134,6 +144,10 @@ class Settings(BaseSettings):
         "smtp_username",
         "smtp_from",
         "finmind_token",
+        "line_channel_access_token",
+        "line_user_id",
+        "telegram_bot_token",
+        "telegram_chat_id",
         mode="before",
     )
     @classmethod
@@ -155,12 +169,21 @@ class Settings(BaseSettings):
         missing: list[str] = []
         if self.rawstore_backend == "gcs" and not self.rawstore_gcs_bucket:
             missing.append("RAWSTORE_GCS_BUCKET (required when RAWSTORE_BACKEND=gcs)")
-        if self.notifier == "email":
-            for name in ("smtp_host", "smtp_from"):
+        unknown = [n for n in self.notifier if n not in NOTIFIER_CHANNELS]
+        if unknown or not self.notifier:
+            raise ValueError(
+                f"NOTIFIER: unknown channel(s) {', '.join(unknown) or '(none)'}; "
+                f"use {', '.join(NOTIFIER_CHANNELS)}"
+            )
+        needs = {
+            "email": ("smtp_host", "smtp_from", "alert_email_to"),
+            "line": ("line_channel_access_token", "line_user_id"),
+            "telegram": ("telegram_bot_token", "telegram_chat_id"),
+        }
+        for channel in self.notifier:
+            for name in needs.get(channel, ()):
                 if not getattr(self, name):
-                    missing.append(f"{name.upper()} (required when NOTIFIER=email)")
-            if not self.alert_email_to:
-                missing.append("ALERT_EMAIL_TO (required when NOTIFIER=email)")
+                    missing.append(f"{name.upper()} (required when NOTIFIER has {channel})")
         if missing:
             raise ValueError("missing settings: " + "; ".join(missing))
         return self
@@ -187,3 +210,17 @@ def load_settings(**overrides: object) -> Settings:
 def get_settings() -> Settings:
     """Process-wide settings singleton."""
     return load_settings()
+
+
+def environment() -> dict[str, str]:
+    """The process environment over the repo-root .env (for variables named at run time,
+    such as the LLM key names in llm_providers); real environment variables win."""
+    values: dict[str, str] = {}
+    if _ENV_FILE.is_file():
+        for line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+            name, sep, value = line.partition("=")
+            name = name.strip()
+            if sep and name and not name.startswith("#"):
+                values[name.removeprefix("export ").strip()] = value.strip().strip("\"'")
+    values.update(os.environ)
+    return values

@@ -300,7 +300,7 @@ def test_notify_test_reports_smtp_failures(capsys: pytest.CaptureFixture[str]) -
 
     settings = Settings(
         database_url="postgresql://x@localhost/x",
-        notifier="email",
+        notifier=["email"],
         smtp_host="127.0.0.1",
         smtp_port=1,  # nothing listens here
         smtp_from="me@example.com",

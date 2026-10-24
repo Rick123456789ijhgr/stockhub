@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from datetime import date
 
 from stockhub.common.db import get_engine
-from stockhub.common.notifier import build_notifier
+from stockhub.common.notifier import RoutingNotifier, build_notifier
 from stockhub.common.rawstore import build_rawstore
 from stockhub.common.settings import ConfigError, Settings, get_settings
 from stockhub.etl.job_requests import drain
@@ -127,23 +127,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def notify_test(settings: Settings) -> int:
-    """Send one message through NOTIFIER (console or email) to check the setup."""
-    target = (
-        f"email {', '.join(settings.alert_email_to)} via {settings.smtp_host}:{settings.smtp_port}"
-        if settings.notifier == "email"
-        else "console"
-    )
+    """Send one message through every NOTIFIER channel (console, email, LINE, Telegram)."""
     try:
-        build_notifier(settings).send(
-            "[StockHub] 通知測試",
-            "這是一封測試通知。收到代表持股警示與任務失敗通知的寄送設定正確。",
-            "info",
-        )
-    except Exception as exc:  # SMTP auth / TLS / network errors: show them plainly
-        print(f"notify-test failed ({target}): {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
-    print(f"notify-test sent ({target})")
-    return 0
+        notifier = build_notifier(settings)
+    except ValueError as exc:
+        print(f"notify-test: {exc}", file=sys.stderr)
+        return 2
+    channels = notifier.channels if isinstance(notifier, RoutingNotifier) else [notifier]
+    failed = 0
+    for channel in channels:
+        target = channel.channel
+        if target == "email":
+            server = f"{settings.smtp_host}:{settings.smtp_port}"
+            target += f" {', '.join(settings.alert_email_to)} via {server}"
+        try:
+            channel.send(
+                "[StockHub] 通知測試",
+                "這是一則測試通知。收到代表持股警示與任務失敗通知的寄送設定正確。",
+                "info",
+            )
+        except Exception as exc:  # auth / TLS / network errors: show them plainly
+            print(f"notify-test failed ({target}): {type(exc).__name__}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        print(f"notify-test sent ({target})")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
