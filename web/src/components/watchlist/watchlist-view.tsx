@@ -156,7 +156,7 @@ export function WatchlistView({ items }: { items: WatchItem[] }) {
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <Link href={`/stocks/${item.symbol}`} className="truncate font-medium hover:underline">
-                    <span className="font-mono">{item.symbol}</span> {item.name}
+                    <span className="font-semibold tabular-nums">{item.symbol}</span> {item.name}
                     {item.type === "etf" ? <span className="ml-1 text-xs text-muted-foreground">ETF</span> : null}
                   </Link>
                   <span className="shrink-0 text-right tabular-nums">

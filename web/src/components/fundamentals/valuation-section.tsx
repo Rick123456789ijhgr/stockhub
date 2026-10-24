@@ -215,7 +215,7 @@ function PeerTable({
                 <TableRow key={p.stockId} className={cn(p.stockId === stockId && "bg-muted/60")}>
                   <TableCell className={cn("sticky left-0", p.stockId === stockId ? "bg-muted" : "bg-background")}>
                     <Link href={`/stocks/${p.symbol}`} className="hover:underline">
-                      <span className="font-mono">{p.symbol}</span> {p.name}
+                      <span className="font-semibold tabular-nums">{p.symbol}</span> {p.name}
                     </Link>
                   </TableCell>
                   {columns.map((c) => (

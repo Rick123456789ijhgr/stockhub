@@ -57,7 +57,7 @@ export function ScheduleHealthCard({ items }: { items: ScheduleHealth[] }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{h.schedule.label}</span>
                   <span className="text-muted-foreground">
-                    平日 {h.schedule.time} · <code className="font-mono">{h.schedule.command}</code>
+                    平日 {h.schedule.time}，<code className="font-mono">{h.schedule.command}</code>
                   </span>
                   <Badge variant={variant} className="ml-auto">
                     <Icon aria-hidden className={h.state === "running" ? "animate-spin" : undefined} />

@@ -16,19 +16,17 @@ export async function MarketStrip({ db, today }: { db: Kysely<DB>; today: string
   if (!rows.length) {
     return <p className="text-sm text-muted-foreground">還沒有市場資料（make etl-markets）。</p>;
   }
-  // Stat tiles (D-125): label, the value as the headline, then the signed change and date.
+  // One row of figures, like a quote board (D-126): scrolls sideways on phones, four even
+  // columns on wide screens. Name and date above, the value, then the signed change.
   return (
-    <ul className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+    <ul className="-mx-4 flex gap-x-7 overflow-x-auto px-4 pb-1 text-sm [scrollbar-width:none] md:mx-0 md:px-0 lg:grid lg:grid-cols-4 lg:gap-y-4 lg:overflow-visible">
       {rows.map(({ s, latest }) => (
-        <li
-          key={s.code}
-          className="rounded-lg bg-muted/60 px-3 py-2.5 transition-colors duration-150 hover:bg-muted"
-        >
-          <div className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
-            <span className="truncate">{s.name}</span>
-            <span className="shrink-0 tabular-nums">{latest!.date.slice(5)}</span>
+        <li key={s.code} className="shrink-0">
+          <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
+            <span>{s.name}</span>
+            <span className="tabular-nums">{latest!.date.slice(5).replace("-", "/")}</span>
           </div>
-          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2">
+          <div className="mt-0.5 flex items-baseline gap-2">
             <span className="text-lg font-semibold tracking-tight">
               {formatSeriesValue(latest!.value, s.unit)}
             </span>

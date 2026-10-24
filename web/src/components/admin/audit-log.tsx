@@ -52,7 +52,7 @@ export function AuditLogList({ entries }: { entries: AuditEntry[] }) {
                 {formatTaipeiDateTime(e.at)}
               </span>
               <span className="font-medium">{ACTION_LABEL[e.action] ?? e.action}</span>
-              {e.target ? <span className="font-mono text-xs">{e.target}</span> : null}
+              {e.target ? <span className="font-semibold tabular-nums text-xs">{e.target}</span> : null}
               <span className="text-xs text-muted-foreground">{e.actor}</span>
               <span className="ml-auto text-xs text-muted-foreground group-open/audit:hidden">內容</span>
             </summary>

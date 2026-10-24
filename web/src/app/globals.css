@@ -115,7 +115,8 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.75rem;
+  /* Radius by rank (D-126): panels ~11px (rounded-xl), tiles 8px (lg), controls 6px (md). */
+  --radius: 0.5rem;
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.3 0.02 262);
   --sidebar-primary: var(--brand);
@@ -251,20 +252,9 @@
   }
 }
 
-/* ---------------------------------------------------------------- motion (D-125)
-   Subtle and short (120-220 ms), only on a change of state; everything is switched off
-   under prefers-reduced-motion at the end. */
-
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-/* app/(app)/template.tsx: remounts on every page (not on ?tab= changes). */
-.page-enter {
-  animation: page-enter 220ms var(--ease-out-soft) both;
-}
+/* ---------------------------------------------------------------- motion (D-125, D-126)
+   Only in answer to an action or a change of data (120-220 ms); the session rail's dot is
+   the one thing that moves on its own. Everything is off under prefers-reduced-motion. */
 
 @keyframes fade-down {
   from {
@@ -313,7 +303,6 @@ details[open] > :not(summary) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-enter,
   details[open] > :not(summary),
   .tab-underline::after,
   .flash-up,

@@ -28,7 +28,7 @@ export function JobRequestList({ rows, empty }: { rows: JobRequestRow[]; empty?:
             <Badge variant={STATUS[r.status].variant}>{STATUS[r.status].label}</Badge>
             <span className="font-medium">{JOB_LABEL[r.job] ?? r.job}</span>
             {r.params.date || r.params.symbol ? (
-              <span className="font-mono text-xs">{r.params.date ?? r.params.symbol}</span>
+              <span className="font-semibold tabular-nums text-xs">{r.params.date ?? r.params.symbol}</span>
             ) : null}
             <span className="text-xs text-muted-foreground tabular-nums">
               {formatTaipeiDateTime(r.requestedAt)}

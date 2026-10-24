@@ -100,7 +100,7 @@ async function StockContent({
           <header className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-mono text-lg font-semibold">{stock.symbol}</span>
+                <span className="text-lg font-semibold tabular-nums">{stock.symbol}</span>
                 <h1 className="text-lg font-semibold tracking-tight md:text-xl">{stock.name}</h1>
                 <Badge variant="outline">{MARKET_LABEL[stock.market]}</Badge>
                 {stock.type === "etf" ? <Badge variant="secondary">ETF</Badge> : null}
@@ -110,30 +110,27 @@ async function StockContent({
                   </Badge>
                 ) : null}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
+              {/* Separate items spaced apart, not joined with middle dots (D-126). */}
+              <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
                 <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
                 {stock.industry ? (
-                  <>
-                    {" · "}
-                    <Link href="/market?tab=heatmap" className="hover:text-foreground hover:underline">
-                      {stock.industry}
-                    </Link>
-                  </>
+                  <Link href="/market?tab=heatmap" className="hover:text-foreground hover:underline">
+                    {stock.industry}
+                  </Link>
                 ) : null}
                 {themes.map((t) => (
-                  <span key={t.id}>
-                    {" · "}
-                    <Link href="/market?tab=heatmap&by=theme" className="hover:text-foreground hover:underline">
-                      #{t.name}
-                    </Link>
-                  </span>
+                  <Link
+                    key={t.id}
+                    href="/market?tab=heatmap&by=theme"
+                    className="hover:text-foreground hover:underline"
+                  >
+                    #{t.name}
+                  </Link>
                 ))}
                 <span className="hidden sm:inline">
-                  {stock.listedDateEstimated
-                    ? ` · 最早資料 ${stock.listedDate}`
-                    : ` · 上市（櫃）日 ${stock.listedDate}`}
+                  {stock.listedDateEstimated ? `最早資料 ${stock.listedDate}` : `上市（櫃）日 ${stock.listedDate}`}
                 </span>
-                {stock.delistedDate ? ` · 終止上市（櫃）日 ${stock.delistedDate}` : ""}
+                {stock.delistedDate ? <span>終止上市（櫃）日 {stock.delistedDate}</span> : null}
               </p>
             </div>
             {stock.delistedDate === null ? <WatchButton symbol={stock.symbol} /> : null}

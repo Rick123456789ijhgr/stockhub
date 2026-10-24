@@ -251,7 +251,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
                 <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
                   <span>{formatTaipeiDateTime(run.startedAt)}</span>
                   <span>
-                    {formatDuration(run.durationMs)} · {formatInteger(run.rowsWritten)} 筆
+                    {formatDuration(run.durationMs)}，{formatInteger(run.rowsWritten)} 筆
                   </span>
                 </div>
                 {run.errorSummary ? (

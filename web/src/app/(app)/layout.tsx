@@ -10,10 +10,14 @@ import {
   SidebarNavList,
 } from "@/components/nav/nav-links";
 import { NavProgress } from "@/components/nav/nav-progress";
+import { SessionRail } from "@/components/nav/session-rail";
 import { NavMemoryRecorder } from "@/components/nav/remembered-link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserMenu } from "@/components/user-menu";
 import { requireUser } from "@/lib/auth/session";
+import { getDb } from "@/lib/db";
+import { taipeiToday } from "@/lib/market-hours";
+import { getSessionStatus } from "@/lib/session-status";
 
 /**
  * Navigations between pages block until the new page is ready (30–150 ms locally) instead
@@ -54,6 +58,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
           <ThemeToggle />
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 pt-5 pb-24 md:px-8 md:py-8">
+          <Suspense fallback={<div className="mb-6 h-5 md:mb-8" />}>
+            <Session />
+          </Suspense>
           <Suspense fallback={<PageSkeleton />}>
             <AuthGate>{children}</AuthGate>
           </Suspense>
@@ -72,6 +79,13 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
 async function AuthGate({ children }: { children: React.ReactNode }) {
   await requireUser();
   return children;
+}
+
+/** The session rail above every page (D-126); refreshed with router.refresh(). */
+async function Session() {
+  await requireUser();
+  const status = await getSessionStatus(getDb(), taipeiToday());
+  return <SessionRail status={status} serverNow={new Date().toISOString()} />;
 }
 
 function Brand() {

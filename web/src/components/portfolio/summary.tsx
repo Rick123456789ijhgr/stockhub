@@ -38,7 +38,7 @@ export function PortfolioSummary({ totals }: { totals: Totals }) {
   return (
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {items.map((item) => (
-        <div key={item.label} className="rounded-lg bg-muted/60 p-3 transition-colors duration-150 hover:bg-muted">
+        <div key={item.label} className="rounded-lg bg-muted/60 p-3">
           <dt className="text-xs text-muted-foreground">{item.label}</dt>
           <dd className="mt-1 text-lg font-semibold">{item.value}</dd>
           <dd className="text-xs text-muted-foreground">{item.sub}</dd>
