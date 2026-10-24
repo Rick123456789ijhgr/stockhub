@@ -252,9 +252,9 @@
   }
 }
 
-/* ---------------------------------------------------------------- motion (D-125, D-126)
-   Only in answer to an action or a change of data (120-220 ms); the session rail's dot is
-   the one thing that moves on its own. Everything is off under prefers-reduced-motion. */
+/* ---------------------------------------------------------- motion (D-125, D-126, D-128)
+   Only in answer to an action or a change of data (120-220 ms); the session ring around the
+   brand mark (and the sidebar's session rail) is the one thing that moves on its own. Everything is off under prefers-reduced-motion. */
 
 @keyframes fade-down {
   from {
@@ -300,6 +300,73 @@ details[open] > :not(summary) {
 }
 .flash-down {
   animation: flash-down 900ms ease-out;
+}
+
+/* Sidebar (D-128): pinned open (14rem) or an icon rail (3.5rem) that opens over the page on
+   hover, after a short delay so passing the pointer by does nothing, or on keyboard focus.
+   Labels fade in once there is room for them. `.nav-reveal` shows only while open,
+   `.nav-conceal` only while folded; both apply inside the panel only. */
+.app-shell {
+  --nav-rail: 3.5rem;
+  --nav-open: 14rem;
+}
+@media (width >= 48rem) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: var(--nav-rail) minmax(0, 1fr);
+    transition: grid-template-columns 200ms var(--ease-out-soft);
+  }
+  :root[data-nav="pinned"] .app-shell {
+    grid-template-columns: var(--nav-open) minmax(0, 1fr);
+  }
+}
+.nav-panel {
+  width: var(--nav-rail);
+  transition:
+    width 200ms var(--ease-out-soft),
+    box-shadow 200ms var(--ease-out-soft);
+}
+.nav-panel .nav-reveal {
+  opacity: 0;
+  transform: translateX(-4px);
+  pointer-events: none;
+  transition:
+    opacity 160ms ease-out,
+    transform 200ms var(--ease-out-soft);
+}
+.nav-panel .nav-conceal {
+  transition: opacity 120ms ease-out;
+}
+:root[data-nav="pinned"] .nav-panel,
+.nav-panel:hover,
+.nav-panel:has(:focus-visible) {
+  width: var(--nav-open);
+}
+:root[data-nav="collapsed"] .nav-panel:is(:hover, :has(:focus-visible)) {
+  box-shadow: var(--card-shadow-hover);
+}
+:root[data-nav="collapsed"] .nav-panel:hover,
+:root[data-nav="collapsed"] .nav-panel:hover .nav-reveal {
+  transition-delay: 120ms;
+}
+:root[data-nav="pinned"] .nav-panel .nav-reveal,
+.nav-panel:hover .nav-reveal,
+.nav-panel:has(:focus-visible) .nav-reveal {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+:root[data-nav="pinned"] .nav-panel .nav-conceal,
+.nav-panel:hover .nav-conceal,
+.nav-panel:has(:focus-visible) .nav-conceal {
+  opacity: 0;
+}
+/* The current-page highlight slides to the clicked item (sidebar and bottom bar). */
+.nav-highlight {
+  transition:
+    transform 220ms var(--ease-out-soft),
+    left 220ms var(--ease-out-soft),
+    height 220ms var(--ease-out-soft);
 }
 
 @media (prefers-reduced-motion: reduce) {

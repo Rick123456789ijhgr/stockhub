@@ -4,7 +4,9 @@ import {
   APPEARANCE_SCRIPT,
   applyAppearance,
   isDark,
+  NAV_KEY,
   nextTheme,
+  parseNavMode,
   parsePriceColors,
   parseTheme,
   PRICE_COLORS_KEY,
@@ -33,6 +35,8 @@ describe("appearance preferences", () => {
     expect(parseTheme(null)).toBe("system");
     expect(parsePriceColors("intl")).toBe("intl");
     expect(parsePriceColors("x")).toBe("tw");
+    expect(parseNavMode("collapsed")).toBe("collapsed");
+    expect(parseNavMode(null)).toBe("pinned");
   });
 
   it("resolves dark mode from the preference and the OS", () => {
@@ -59,14 +63,20 @@ describe("appearance preferences", () => {
     expect(document.documentElement.dataset.priceColors).toBe("intl");
     applyAppearance({ theme: "system" });
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.dataset.nav).toBe("pinned");
+    applyAppearance({ nav: "collapsed" });
+    expect(localStorage.getItem(NAV_KEY)).toBe("collapsed");
+    expect(document.documentElement.dataset.nav).toBe("collapsed");
   });
 
   it("the inline head script applies the same preferences", () => {
     mockSystemDark(true);
     localStorage.setItem(PRICE_COLORS_KEY, "intl");
+    localStorage.setItem(NAV_KEY, "collapsed");
     new Function(APPEARANCE_SCRIPT)();
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(document.documentElement.dataset.priceColors).toBe("intl");
+    expect(document.documentElement.dataset.nav).toBe("collapsed");
     localStorage.setItem(THEME_KEY, "light");
     new Function(APPEARANCE_SCRIPT)();
     expect(document.documentElement.classList.contains("dark")).toBe(false);

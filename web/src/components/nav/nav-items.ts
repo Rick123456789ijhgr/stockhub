@@ -12,22 +12,36 @@ import {
   Wallet,
 } from "lucide-react";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon; primary?: boolean };
+export type NavGroup = "main" | "tools" | "system";
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  group: NavGroup;
+  primary?: boolean;
+};
 
-/** Sidebar shows all items; the mobile bottom bar shows `primary` ones plus "更多". */
+/** Sidebar shows all items by group; the mobile bottom bar shows `primary` ones plus "更多". */
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "首頁", icon: House, primary: true },
-  { href: "/portfolio", label: "持股", icon: Wallet, primary: true },
-  { href: "/stocks", label: "個股", icon: ChartCandlestick, primary: true },
-  { href: "/watchlist", label: "自選", icon: Star },
-  { href: "/market", label: "市場", icon: Globe, primary: true },
-  { href: "/screener", label: "篩選器", icon: ListFilter },
-  { href: "/backtest", label: "回測", icon: History },
-  { href: "/status", label: "狀態", icon: Activity },
-  { href: "/admin", label: "設定", icon: Settings },
+  { href: "/", label: "首頁", icon: House, group: "main", primary: true },
+  { href: "/portfolio", label: "持股", icon: Wallet, group: "main", primary: true },
+  { href: "/stocks", label: "個股", icon: ChartCandlestick, group: "main", primary: true },
+  { href: "/watchlist", label: "自選", icon: Star, group: "main" },
+  { href: "/market", label: "市場", icon: Globe, group: "main", primary: true },
+  { href: "/screener", label: "篩選器", icon: ListFilter, group: "tools" },
+  { href: "/backtest", label: "回測", icon: History, group: "tools" },
+  { href: "/status", label: "狀態", icon: Activity, group: "system" },
+  { href: "/admin", label: "設定", icon: Settings, group: "system" },
 ];
 
-export const MORE_ITEM: NavItem = { href: "/more", label: "更多", icon: Ellipsis };
+/** Group headings in the sidebar; the first group has none. */
+export const NAV_GROUPS: { key: NavGroup; label: string | null }[] = [
+  { key: "main", label: null },
+  { key: "tools", label: "工具" },
+  { key: "system", label: "系統" },
+];
+
+export const MORE_ITEM: NavItem = { href: "/more", label: "更多", icon: Ellipsis, group: "main" };
 
 export const SECONDARY_ITEMS = NAV_ITEMS.filter((item) => !item.primary);
 

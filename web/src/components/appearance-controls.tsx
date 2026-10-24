@@ -5,12 +5,12 @@ import { useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  APPEARANCE_EVENT,
   applyAppearance,
   nextTheme,
   type PriceColors,
   readPriceColors,
   readTheme,
+  subscribeAppearance,
   type Theme,
 } from "@/lib/appearance";
 import { cn } from "@/lib/utils";
@@ -23,21 +23,12 @@ const PRICE_COLORS_LABEL: Record<PriceColors, string> = {
   intl: "綠漲紅跌（國際）",
 };
 
-function subscribe(onChange: () => void): () => void {
-  window.addEventListener(APPEARANCE_EVENT, onChange);
-  window.addEventListener("storage", onChange); // other tabs
-  return () => {
-    window.removeEventListener(APPEARANCE_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
-
 function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, readTheme, () => "system");
+  return useSyncExternalStore(subscribeAppearance, readTheme, () => "system");
 }
 
 function usePriceColors(): PriceColors {
-  return useSyncExternalStore(subscribe, readPriceColors, () => "tw");
+  return useSyncExternalStore(subscribeAppearance, readPriceColors, () => "tw");
 }
 
 /** Compact one-button theme switch for the sidebar and the mobile header. */
@@ -56,6 +47,25 @@ export function ThemeToggle({ className }: { className?: string }) {
     >
       <Icon aria-hidden />
     </Button>
+  );
+}
+
+/** The theme switch as a sidebar row: icon in the rail, label when the sidebar is open. */
+export function ThemeNavButton({ className }: { className?: string }) {
+  const theme = useTheme();
+  const Icon = THEME_ICON[theme];
+  const next = nextTheme(theme);
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={`主題：${THEME_LABEL[theme]}（切換為${THEME_LABEL[next]}）`}
+      title={`主題：${THEME_LABEL[theme]}`}
+      onClick={() => applyAppearance({ theme: next })}
+    >
+      <Icon className="size-4 shrink-0" aria-hidden />
+      <span className="nav-reveal">主題：{THEME_LABEL[theme]}</span>
+    </button>
   );
 }
 
