@@ -874,3 +874,17 @@
   - 張數與收盤價移到滑過提示，畫面只留代號、名稱、金額。
 - 顏色只用 `--price-up/down`（台股慣例：買超紅、賣超綠），金額文字照網站慣例同色並帶正負號，所以不靠顏色也讀得出方向。條的資料端 4px 圓角、貼著零線。
 - 比例尺與長度是純函式（`lib/flow-chart.ts`），有測試。區段標題改成「三大法人買賣超」。
+
+### D-131 正式建置自動更新（使用者要求，2026-10-24）
+- 問題：D-117 起日常用正式建置，改了程式要手動 `stockhub.bat restart`，而且它先關網站再建置，網站停 1～2 分鐘。
+- 做法（只改 `scripts/stockhub.ps1` 與 `next.config.ts`，不加套件）：
+  - 兩個建置資料夾輪流用：`web/.next` 與 `web/.next-b`（`next.config.ts` 的 `distDir` 讀 `NEXT_DIST_DIR`，沒設就是 `.next`，Vercel 與 `make web-build` 不受影響）。目前用哪個記在 `.local/web-slot`。
+  - 新版本建置到「另一個」資料夾，舊版網站建置期間照常服務；成功才寫入 `web-slot`、重啟到新資料夾，只中斷約 3～7 秒。失敗就維持舊版（不再退回開發模式，除非一個成功的建置都沒有）。
+  - `start`／`restart` 會在背景啟動監看（隱藏的 PowerShell，`stockhub.ps1 watch`，PID 在 `.local/web-watch.pid`）：每 5 秒比對建置輸入的最新修改時間與目前建置；最後一次修改後靜置 15 秒才建置，改到一半不會開始。同一批修改建置失敗只試一次，下次存檔再試。`stop`、`dev` 會關掉監看；網站被關掉監看也會自己結束。記錄在 `.local/logs/web-watch-*.log` 與 `web-build-*.log`。
+  - 建置資料夾裡寫 `stockhub-source-time.txt`（建置「開始」的時間）：建置期間又改的檔案比它新，下一輪會再建置，不會漏掉。
+  - `restart` 也改成先建置、後切換。`status` 會顯示目前資料夾、自動更新是否開啟、程式碼是否比建置新。
+- 順手修正一個原本就有的問題：判斷「程式碼比建置新」時，對檔名（`package.json` 等）用 `Get-ChildItem -Recurse`，PowerShell 會變成在所有子資料夾找同名檔，連建置輸出與 `node_modules` 裡的 `package.json` 都算進去（每次建置都像過期，也很慢）。現在只對資料夾往下找。
+- `tsconfig.json` 先列好 `.next-b/types`，否則 Next 建置到 `.next-b` 時會自己改寫 tsconfig（tsconfig 也是建置輸入，會一直重建）；`.gitignore` 與 ESLint 也忽略 `.next-b`。
+- 不採用：開發模式熱更新當日常用（每頁第一次開要編譯，慢 5～10 倍；這次驗證也遇到 Turbopack 漏抓 Python 改寫的檔案）；仍保留 `stockhub.bat dev` 給大量改程式時用。
+- Python 端本來就不需要：排程每次都是新程序，改了下次執行就生效；只有盤中常駐的報價任務要等下一次啟動。
+- 實測：存檔後約 25 秒切換到新版本（靜置 15 秒＋有快取的建置約 10 秒；沒有快取約 1 分鐘），中斷 2.8～6.6 秒，之後不會再重複建置。

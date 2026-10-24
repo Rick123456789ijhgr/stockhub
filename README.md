@@ -89,7 +89,7 @@ make etl-markets-history              # 市場序列歷史（2004 起；加權�
 ### 6. 開網站
 
 ```bash
-stockhub.bat          # Windows 日常使用：資料庫＋正式建置的網站（程式碼有變先 build，約 1～2 分鐘），只綁 127.0.0.1
+stockhub.bat          # Windows 日常使用：資料庫＋正式建置的網站，只綁 127.0.0.1；程式碼改完約 15 秒自動建置新版本並切換（只中斷幾秒）
 stockhub-stop.bat     # 用完雙擊關閉網站與資料庫
 make web-dev          # 改程式時：開發模式，http://localhost:3000（比正式建置慢 5～10 倍）
 ```

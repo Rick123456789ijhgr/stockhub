@@ -63,7 +63,7 @@ make etl-markets              # 市場與總經：指數、匯率、商品、美
 make etl-markets-history      # 市場序列歷史（2004 起；series=SPX,TAIEX start= end=，可續跑）
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
 make db-cluster               # 依股票重排大表（CLUSTER，會鎖表；平日 07:00～22:30 跳過，force=true 例外；週六排程）
-stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，程式碼有變先 build；只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
+stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）＋自動更新：程式碼改完靜置 15 秒就建置到另一個資料夾（web/.next ↔ .next-b），成功才切換，只中斷幾秒（D-131）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
 stockhub-stop.bat             # 雙擊＝關閉網站與資料庫（同 stockhub.bat stop；排程執行時仍會自己啟動資料庫）
 scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
 ```
