@@ -30,6 +30,18 @@ const ACTION_LABEL: Record<string, string> = {
   "theme.remove_stock": "刪除題材成分股紀錄",
   "macro_event.create": "新增總經事件",
   "macro_event.delete": "刪除總經事件",
+  "news_source.create": "新增新聞來源",
+  "news_source.update": "修改新聞來源",
+  "news_source.delete": "刪除新聞來源",
+  "llm_provider.create": "新增 LLM 服務",
+  "llm_provider.update": "修改 LLM 服務",
+  "llm_provider.delete": "刪除 LLM 服務",
+  "slang.create": "新增用語",
+  "slang.update": "修改用語",
+  "slang.delete": "刪除用語",
+  "alias.create": "新增個股別名",
+  "alias.delete": "刪除個股別名",
+  "settings.news": "修改新聞與警示設定",
 };
 
 const SHOWN = 20;
@@ -52,7 +64,7 @@ export function AuditLogList({ entries }: { entries: AuditEntry[] }) {
                 {formatTaipeiDateTime(e.at)}
               </span>
               <span className="font-medium">{ACTION_LABEL[e.action] ?? e.action}</span>
-              {e.target ? <span className="font-mono text-xs">{e.target}</span> : null}
+              {e.target ? <span className="font-semibold tabular-nums text-xs">{e.target}</span> : null}
               <span className="text-xs text-muted-foreground">{e.actor}</span>
               <span className="ml-auto text-xs text-muted-foreground group-open/audit:hidden">內容</span>
             </summary>

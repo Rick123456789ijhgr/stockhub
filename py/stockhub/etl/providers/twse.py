@@ -115,6 +115,7 @@ class TwseProvider(
         "BS": f"{OPENDATA}/t187ap07_L_ci",
         "revenue": f"{OPENDATA}/t187ap05_L",
         "profiles": f"{OPENDATA}/t187ap03_L",
+        "announcements": f"{OPENDATA}/t187ap04_L",
     }
     detail_since: ClassVar[date] = date(2009, 1, 1)
     """TWT49UDetail answers 無相關資料 for earlier events; their TWT49U rows split 權值/息值."""

@@ -1,0 +1,98 @@
+{
+ "items": {
+  "total": 469,
+  "per_page": 10,
+  "current_page": 1,
+  "last_page": 47,
+  "next_page_url": "/api/v3/news/category/tw_stock?page=2",
+  "prev_page_url": null,
+  "from": 1,
+  "to": 10,
+  "data": [
+   {
+    "content": "",
+    "feature": 0,
+    "hasCoverPhoto": 1,
+    "is24h": 0,
+    "isCategoryHeadline": 1,
+    "isIndex": 1,
+    "isOutsource": 0,
+    "keyword": [
+     "詐騙",
+     "gogolook",
+     "熱門股",
+     "防詐"
+    ],
+    "newsId": 6637127,
+    "otherProduct": [
+     "TWS:6902:STOCK:COMMON"
+    ],
+    "payment": 0,
+    "source": "",
+    "summary": "GOGOLOOK受海外市場擴張與防詐、金融科技布局帶動，本周股價大漲20%，周線連2紅，續戰歷史前高。&#10;公司看好下半年獲利優於上半年，ASI在日本推廣順利，JUJI營收比重可望上看30%。",
+    "title": "〈熱門股〉防詐業務需求強勁 GOGOLOOK股價周漲2成",
+    "video": "",
+    "publishAt": 1792847933,
+    "abTesting": null,
+    "categoryId": 827,
+    "categoryName": "台股新聞",
+    "columnists": null,
+    "magazine": null,
+    "fundCategoryAbbr": [],
+    "etf": [],
+    "fbShare": 0,
+    "fbComment": 0,
+    "fbCommentPluginCount": 0,
+    "market": [
+     {
+      "code": "6902",
+      "name": "GOGOLOOK",
+      "symbol": "TWS:6902:STOCK"
+     }
+    ]
+   },
+   {
+    "content": "",
+    "feature": 0,
+    "hasCoverPhoto": 0,
+    "is24h": 0,
+    "isCategoryHeadline": 0,
+    "isIndex": 0,
+    "isOutsource": 1,
+    "keyword": [
+     "欣興",
+     "尖點",
+     "台郡",
+     "台虹",
+     "南電",
+     "優分析"
+    ],
+    "newsId": 6637225,
+    "otherProduct": [
+     "TWS:3037:STOCK:COMMON",
+     "TWS:8046:STOCK:COMMON",
+     "TWS:3189:STOCK:COMMON"
+    ],
+    "payment": 0,
+    "source": "優分析 Uanalyze",
+    "summary": null,
+    "title": "載板三雄誰最強？杜金龍點名ABF「這檔首選」獲利大調高！外資目標價曝光 還有這檔短多快閃操作！",
+    "video": "",
+    "publishAt": 1792846821,
+    "abTesting": null,
+    "categoryId": 827,
+    "categoryName": "台股新聞",
+    "columnists": null,
+    "magazine": null,
+    "fundCategoryAbbr": [],
+    "etf": [],
+    "fbShare": 0,
+    "fbComment": 0,
+    "fbCommentPluginCount": 0,
+    "market": []
+   }
+  ]
+ },
+ "message": "成功",
+ "statusCode": 200
+}

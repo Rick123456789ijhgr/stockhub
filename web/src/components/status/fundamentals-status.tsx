@@ -22,13 +22,13 @@ export function FundamentalsStatusCard({ status, now }: { status: FundamentalsSt
     {
       label: "最新一季（官方）",
       value: status.latestQuarter
-        ? `${periodLabel(status.latestQuarter, "quarter")} · ${formatInteger(status.latestQuarterCompanies)} 家`
+        ? `${periodLabel(status.latestQuarter, "quarter")}（${formatInteger(status.latestQuarterCompanies)} 家）`
         : "尚無",
     },
     {
       label: "最新月營收",
       value: status.latestRevenueMonth
-        ? `${periodLabel(status.latestRevenueMonth, "month")} · ${formatInteger(status.latestRevenueCompanies)} 家`
+        ? `${periodLabel(status.latestRevenueMonth, "month")}（${formatInteger(status.latestRevenueCompanies)} 家）`
         : "尚無",
     },
     { label: "已計算基本面", value: `${formatInteger(status.computed)} 家` },

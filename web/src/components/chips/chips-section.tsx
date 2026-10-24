@@ -294,7 +294,7 @@ function ChipTable({ rows }: { rows: ChipDay[] }) {
       <h3 id="chip-days" className="text-sm font-medium">
         每日明細（張）
       </h3>
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <Table className="min-w-[40rem] text-xs">
           <TableHeader>
             <TableRow>

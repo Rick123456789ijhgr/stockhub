@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { type ChartSeries, TimeChart } from "@/components/charts/time-chart";
 import { cn } from "@/lib/utils";
+import { SEGMENTED_GROUP, segmentedOption } from "@/components/segmented-links";
 import {
   bandMultiples,
   metricValues,
@@ -26,7 +27,7 @@ function Toggle<T extends string | number>({
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border p-0.5 text-xs">
+    <div role="radiogroup" aria-label={label} className={cn(SEGMENTED_GROUP, "text-xs")}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -34,10 +35,7 @@ function Toggle<T extends string | number>({
           role="radio"
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
-          className={cn(
-            "rounded-md px-2.5 py-1",
-            o.value === value ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-          )}
+          className={segmentedOption(o.value === value)}
         >
           {o.label}
         </button>

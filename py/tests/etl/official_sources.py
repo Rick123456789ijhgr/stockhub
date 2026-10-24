@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
 from stockhub.common.rawstore import RawStore
+from stockhub.etl.providers.cmoney import CmoneyForumProvider
+from stockhub.etl.providers.cnyes import CnyesProvider
 from stockhub.etl.providers.fred import FredProvider
 from stockhub.etl.providers.http import make_client
 from stockhub.etl.providers.mis import TwseMisProvider
 from stockhub.etl.providers.ndc import NdcProvider
+from stockhub.etl.providers.ptt import PttProvider
 from stockhub.etl.providers.registry import ProviderRegistry
 from stockhub.etl.providers.router import ProviderRouter, RateLimiter, RetryPolicy
+from stockhub.etl.providers.rss import RssProvider
 from stockhub.etl.providers.tdcc import TdccProvider
 from stockhub.etl.providers.tpex import TpexProvider
 from stockhub.etl.providers.twse import TwseProvider
@@ -20,6 +25,9 @@ from stockhub.etl.providers.yahoo import YahooProvider
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
+
+PTT_NOW = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
+"""Clock of the offline PTT adapter: the recorded [標的] post M.1792711156 is 12.7 h old."""
 
 FIELDS_TWSE = ["終止上市日期", "公司名稱", "上市編號"]
 FIELDS_TPEX = ["股票代號", "公司名稱", "終止上櫃日期", "終止上櫃原因", "公司資料網址"]
@@ -87,6 +95,8 @@ def official_handler(request: httpx.Request) -> httpx.Response:
         name = "datagov_6099.json"
     elif request.url.host == "ws.ndc.gov.tw":
         name = "ndc_business_indicators.zip"
+    elif (news := news_response(request)) is not None:
+        return news
     elif path.rsplit("/", 1)[-1] in ACTION_FIXTURES:
         # Corporate action tables: recorded rows for 2025 (and 2004 for TWT49U) only.
         year = params["startDate"][:4]
@@ -143,6 +153,34 @@ def chip_response(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"stat": "很抱歉，沒有符合條件的資料!", "total": 0})
 
 
+NEWS_FIXTURES = {
+    ("openapi.twse.com.tw", "/v1/opendata/t187ap04_L"): "mops_t187ap04_L.json",
+    ("www.tpex.org.tw", "/openapi/v1/mopsfin_t187ap04_O"): "mops_t187ap04_O.json",
+    ("tw.stock.yahoo.com", "/rss"): "rss_yahoo_6488.xml",
+    ("money.udn.com", "/rssfeed/news/1001/5590"): "rss_udn_stock.xml",
+    ("www.ctee.com.tw", "/rss_web/livenews/stock"): "rss_ctee_stock.xml",
+    ("news.cnyes.com", "/api/v3/news/category/tw_stock"): "cnyes_tw_stock.json",
+    ("www.ptt.cc", "/bbs/Stock/M.1792711156.A.6AC.html"): "ptt_article.html",
+    ("www.cmoney.tw", "/forum/popular/buzz"): "cmoney_popular.html",
+    ("www.cmoney.tw", "/forum/article/186740658"): "cmoney_article.html",
+}
+"""News sources (M6); other PTT and CMoney post pages answer 404 (deleted)."""
+
+
+def news_response(request: httpx.Request) -> httpx.Response | None:
+    host, path = request.url.host, request.url.path
+    if host == "www.ptt.cc" and path == "/bbs/Stock/search":
+        if request.url.params.get("page", "1") == "1":
+            return httpx.Response(200, content=fixture("ptt_search.html"))
+        return httpx.Response(200, content=b"<div class='r-list-container'></div>")
+    name = NEWS_FIXTURES.get((host, path))
+    if name is not None:
+        return httpx.Response(200, content=fixture(name))
+    if host in ("www.ptt.cc", "www.cmoney.tw"):
+        return httpx.Response(404)
+    return None
+
+
 def index_response(request: httpx.Request) -> httpx.Response:
     """TAIEX and TPEx index months: October 2026 only; other months answer empty."""
     date_ = request.url.params["date"]
@@ -190,6 +228,14 @@ def official_router(rawstore: RawStore, handler=official_handler) -> ProviderRou
             "shareholding_distribution": [TdccProvider(client)],
             "market_series": [twse, tpex, YahooProvider(client), FredProvider(client)],
             "macro_release": [NdcProvider(client)],
+            "news": [
+                twse,
+                tpex,
+                RssProvider(client),
+                CnyesProvider(client),
+                PttProvider(client, sleep=lambda _: None, clock=lambda: PTT_NOW),
+                CmoneyForumProvider(client, sleep=lambda _: None),
+            ],
         }
     )
     no_wait = RateLimiter(clock=lambda: 0.0, sleep=lambda _: None)

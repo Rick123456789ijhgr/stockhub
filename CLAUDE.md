@@ -3,7 +3,7 @@
 個人自用的台股研究平台：基本面、籌碼、總經、新聞與社群情緒、持股追蹤、選股篩選器與回測。單人使用，全端專案。
 
 - 完整規劃摘要：`docs/PLAN.md`
-- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）、`docs/M5.md`（總經、國際市場、熱力圖、題材）
+- 任務檔：`docs/M0.md`（地基）、`docs/M2.md`（持股、費用、配息推算、自選清單）、`docs/M3.md`（基本面與估值、缺漏日線補抓）、`docs/M4.md`（籌碼）、`docs/M5.md`（總經、國際市場、熱力圖、題材）、`docs/M6.md`（新聞、社群情緒、LLM、通知）
 - 與規劃有偏離時，記錄在 `docs/DECISIONS.md`（日期、原因、取捨），不要默默改。
 
 ## 技術棧
@@ -61,11 +61,14 @@ make etl-chips                # 籌碼：補近 10 個交易日缺的表、集�
 make etl-chips-history        # 籌碼歷史（2012-05-02 起，約 11 小時，可續跑）
 make etl-markets              # 市場與總經：指數、匯率、商品、美債、國發會、美國總經、總經警示（07:30 排程）
 make etl-markets-history      # 市場序列歷史（2004 起；series=SPX,TAIEX start= end=，可續跑）
+make etl-news                 # 新聞、重大訊息、PTT／同學會：07:00～23:00 每分鐘一輪（關聯、LLM 摘要、警示）；once=true 只跑一輪（06:55 排程）
+make etl-sentiment            # 重算每日情緒 sentiment_daily（days=5 或 start= end=；etl-daily 也會跑）並清 30 天前的論壇原始檔
+make etl-llm-check            # 檢查 llm_providers 的金鑰與模型名稱
 make etl-requests             # 執行網站排入的任務（JOB_RUNNER=local 時網站會自己啟動）
 make db-cluster               # 依股票重排大表（CLUSTER，會鎖表；平日 07:00～22:30 跳過，force=true 例外；週六排程）
-stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，程式碼有變先 build；只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
+stockhub.bat                  # 雙擊＝啟動資料庫與網站（正式建置，只綁 127.0.0.1；背景執行，記錄在 .local/logs/web-*.log）＋自動更新：程式碼改完靜置 15 秒就建置到另一個資料夾（web/.next ↔ .next-b），成功才切換，只中斷幾秒（D-131）；或 start|stop|restart|status|dev（邏輯在 scripts/stockhub.ps1）
 stockhub-stop.bat             # 雙擊＝關閉網站與資料庫（同 stockhub.bat stop；排程執行時仍會自己啟動資料庫）
-scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
+scripts/register-tasks.ps1    # Windows 工作排程（每天 06:55 新聞、平日 07:30 市場與總經、08:55 報價、18:00 每日、21:30 籌碼、週六 10:00 重排、登入時啟動資料庫）；記錄在 .local/logs
 ```
 
 ## 不可違反的規則
@@ -104,7 +107,9 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 圖表顏色只用 token：漲跌 `--price-up/down`，線 `--series-1..3`（已用 dataviz 驗證，最多三條會交錯的線）；Tailwind v4 會刪掉沒被 utility 用到的變數，新 token 要有對應的 `bg-*` 等用法。
 - 手動確認的事件 `corporate_actions.source = 'manual'`；匯入同一天的官方事件時會刪掉它。`action_type` 保留交易所的標示（它是自然鍵的一部分），事件實際內容看 `cash_dividend`、`stock_dividend_ratio`、`rights_ratio`。
 - `/status` 這類彙總要讀 `prices_daily_coverage`（由觸發器維護），不要直接掃 `prices_daily`。
-- 顯示偏好（主題、漲跌配色）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。
+- 顯示偏好（主題、漲跌配色、側邊欄鎖定 `data-nav`、介面主色 `--brand-base`）存在 localStorage，由 `lib/appearance.ts` 管理，`<head>` 的內嵌腳本負責第一次繪製；不要另外寫一套。品牌色只從 `--brand-base` 推出（`globals.css` 的 relative color，D-129），不要在別處寫死品牌色值。
+- 側邊欄（D-128）：可鎖定或收成圖示欄，展開與收起全是 CSS（`.nav-panel`、只在展開時顯示的 `.nav-reveal`、只在收起時顯示的 `.nav-conceal`）；交易時段在側邊欄（`components/nav/session-rail.tsx`），內容區頂端不放。新的側邊欄列用 `SIDEBAR_ROW`，文字包 `nav-reveal`。
+- 個股連結一律是指向 `/stocks/代號` 的 `<a>`（`Link`），懸浮預覽（D-132）會自動套用；不要用 `onClick` 導頁的列，不想要預覽的區塊加 `data-no-stock-preview`。
 - 連到頂層頁面（側邊欄、返回連結）用 `components/nav/remembered-link.tsx` 的 `RememberedLink`，會回到該頁上次的分頁與選項（`lib/nav-memory.ts`，D-122）；新的頂層頁面要加進 `REMEMBERED_PAGES`。
 - 本機判斷一律用 `lib/auth/mode.ts` 的 `isLocalMachine`（免登入、網站觸發任務都靠它），不要另外檢查 `NODE_ENV`；`STOCKHUB_LOCAL_SERVER` 只由 `stockhub.ps1` 設定，不放 `.env`（D-117）。
 - 新的「每檔一段歷史」大表：遷移裡 `ALTER TABLE … CLUSTER ON` 以 `stock_id` 開頭的索引，`cluster_tables` 才會重排它（D-117）。
@@ -116,9 +121,15 @@ scripts/register-tasks.ps1    # Windows 工作排程（平日 07:30 市場與總
 - 估值公式：`py/stockhub/engine/valuation.py` 與 `web/src/lib/valuation.ts` 逐式對應，改任一邊都要同步另一邊，並用 `py/scripts/gen_valuation_fixture.py` 重產 `testdata/valuation.json`。
 - 網站觸發 Python 任務一律排入 `job_requests`（`POST /api/jobs`，可排的任務在 `lib/job-request-input.ts` 與資料表 CHECK 兩處列舉，新增時兩邊都改），不要在 route handler 直接執行任務。
 - 版面：頁內分頁用 `components/page-tabs.tsx`（`?tab=`，伺服器只渲染目前分頁；要保留其他參數用 `query`）；分段切換（例如股票／ETF、熱力圖期間）用 `components/segmented-links.tsx`；摺疊用 `components/disclosure.tsx`（原生 `<details>`，巢狀時箭頭用 `DISCLOSURE_CHEVRON`）；長列表、長表格用 `components/show-more.tsx` 先顯示一部分；卡片頂端的長說明收進 `InfoNote`。不要另外引入 tabs 或 accordion 套件。
+- 外觀（D-125、D-126）：品牌色 `--brand`／`--brand-soft`（`bg-brand`、`text-brand`）只用在介面本身（選取、焦點、主要按鈕、時段環），不用在資料上。版面分三層：頁面底色、無框的 `Section`（標題加分隔線）、面板 `Card`（只給一個單位：報價頭、表格、圖表），不要每段都裝卡片；圓角依層級（面板 `rounded-xl`、數字區塊 `rounded-lg`、控制項 `rounded-md`）。每頁標題用 `PageHeader`（可放 `actions`）；分段按鈕一律用 `segmented-links.tsx` 的 `SEGMENTED_GROUP`／`segmentedOption`；會即時變動的價格包 `FlashValue`。動畫只寫在 `globals.css` 的 motion 區，只回應操作或資料變化（120～220 ms），唯一自己會動的是品牌標誌外圈的時段環與側邊欄的時段軸；不做進場動畫、不給不能點的東西加滑過效果，`prefers-reduced-motion` 全部關閉，不加動畫套件。代號用 `font-semibold tabular-nums`，不用等寬字（等寬只給 `<code>` 指令）；連結文字不加「→」，並列資訊用間距或逗號，不用「·」串接。
 - 圖表：小型時間序列用 `components/charts/time-chart.tsx`（lightweight-charts，顏色只用 token，數值格式在 `lib/chart-format.ts`）；不要做雙 Y 軸，兩種單位就拆成兩張圖。
 - 籌碼：股數一律存「股」（融資融券以張公布，provider 乘 1000）；外資不含外資自營商，舊格式沒拆分的欄位存 NULL 不填 0。每個資料集、市場、日期抓過就寫 `chip_coverage`，補抓、續跑、`/status` 都讀它，不要掃籌碼表；當天未公布不寫涵蓋。衍生指標（連買天數、5／20 日累計、券資比、大戶比）只在 `engine/chips.py`，網站讀 `chip_summary` 與 `shareholding_concentration` 檢視表，不要在 TS 另算。
 - 市場與總經：每條線是 `market_series` 的一個序列，值在 `market_series_values`（國際市場存交易所當地日期，月資料存月初）；provider 以 `series_symbols` 宣告服務哪些序列，`PROVIDERS_MARKET_SERIES` 的順序就是主來源與備援，一次只服務一個月的來源設 `series_monthly`。新增序列＝遷移加一列目錄＋在 provider 的 `series_symbols` 加代號。寫入一律經 `jobs/markets.py` 的 `store_observations`（品質檢查、隔離、取代隔離）；沒有 `has_ohlc` 的序列只存收盤值。涵蓋讀 `market_series_status` 檢視表。Yahoo 是非官方來源，只經 `YahooProvider`。
+- 頁面分工（D-134）：首頁＝台股總覽（大盤 K 線、法人，國際市場只當輔助）；產業與題材熱力圖是 `/stocks` 的分頁；`/market`（選單「國際」）只放國際市場與總經；警示在持股頁。台股的新區塊不要放回 `/market`。K 線一律用 `StockChart`（指數用 `index` 模式），不要另做一套。
 - 熱力圖：只用收盤資料，市值＝收盤價 × `issued_shares`，漲跌用還原價（`adjustedChange`），群組報酬以期初市值加權；計算在 `web/src/lib/heatmap-data.ts`（純函式），版面在 `lib/treemap.ts`；顏色只用 `heatColor`（`--price-up/down` 混入 `--muted`），不要另寫色碼。
 - 題材：`themes` + `stock_themes`（起訖日，移出時設 `valid_to` 保留歷史，期間不得重疊），讀「某天的成分股」一律用 `valid_from <= d AND (valid_to IS NULL OR valid_to >= d)`；網站的寫入都經 `lib/themes.ts`（寫稽核紀錄）。
 - 總經警示（`business_signal`、`policy_rate`）沒有股票：`alerts.stock_id` 為 NULL，讀警示要用 left join。
+- 新聞（M6）：新聞、重大訊息、論壇貼文都在 `news_items`（`channel` 區分，D-142），來源目錄 `news_sources`（`kind`＝adapter；RSS 在 /admin 新增，其他格式寫 `NewsProvider` adapter，抓頁面的 adapter 自己限速並把多頁打包成一個原始檔）。只存標題、短摘要與連結；論壇內文只在處理時用，原始檔 30 天後刪（D-138）；之後要內文就從 RawStore 重新解析。關聯與去重只在 `engine/news.py`（強／弱比對、常見詞排除清單、同事件合併），每日情緒只在 `engine/sentiment.py`（13:30 收盤歸屬），網站只讀 `news_items`、`news_item_stocks`、`sentiment_daily`。
+- LLM（D-137）：一律經 `common/llm.py` 的 `LLMRouter`（`llm_providers` 依優先序、免費優先、冷卻、每日上限、用量寫 `llm_usage`），回答用 pydantic 驗證；不要另外直接呼叫任何 LLM API，也不要把持股送給 LLM。提示詞與輸出模型在 `etl/news_analysis.py`（`EVENT_LABELS` 與 `web/src/lib/news-format.ts` 的 `EVENT_LABEL` 對應）。金鑰名稱存在資料表、值只在 `.env`（Python 用 `common/settings.environment()` 讀）。
+- 通知（D-141、D-147）：`NOTIFIER` 是通道清單（console、email、line、telegram）；新警示用 `notifier.deliver()` 取得實際收下的通道寫進 `alerts.channels`。嚴重度決定通道：critical 全部、warning 第一個推播通道、info 只寄 Email；社群熱度等站內警示不送通知。
+- 新聞相關設定在 `settings` 的 `news`（camelCase JSON），Python `jobs/news.py` 的 `NewsSettings` 與 `web/src/lib/news-admin-input.ts` 的 `NEWS_SETTINGS_DEFAULT` 兩邊預設值要一致。

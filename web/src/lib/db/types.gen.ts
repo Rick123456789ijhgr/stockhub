@@ -28,6 +28,10 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface Alerts {
+  /**
+   * Notification channels that accepted the alert (line, telegram, email, console); empty = shown on the site only or sending failed.
+   */
+  channels: Generated<string[]>;
   created_at: Generated<Timestamp>;
   /**
    * Inputs of the decision (price, reference, change, threshold, shares, source).
@@ -35,7 +39,7 @@ export interface Alerts {
   detail: Generated<Json>;
   id: Generated<Int8>;
   /**
-   * holding_move = a holding moved beyond its volatility threshold; institutional_flow = an institutional group traded a large share of a holding's volume; business_signal = the 景氣對策信號 light changed colour; policy_rate = the Fed target rate changed (PLAN.md section 5); M6 adds news.
+   * holding_move = a holding moved beyond its volatility threshold; institutional_flow = an institutional group traded a large share of a holding's volume; business_signal = the 景氣對策信號 light changed colour; policy_rate = the Fed target rate changed; announcement = 重大訊息 of a holding or watched stock (one row per stock and day, later ones appended to detail.items); news_sentiment = extreme news sentiment on a holding or watched stock; social_buzz = social post count far above normal (PLAN.md section 5).
    */
   kind: string;
   /**
@@ -580,6 +584,69 @@ export interface JobRuns {
   trigger: string;
 }
 
+export interface LlmProviders {
+  /**
+   * Name of the environment variable that holds the key (e.g. GROQ_API_KEY); a service without its key is skipped.
+   */
+  api_key_env: string;
+  /**
+   * Endpoint root; the client posts to {base_url}/chat/completions.
+   */
+  base_url: string;
+  code: string;
+  /**
+   * Not tried before this time (set after 429, quota or repeated errors).
+   */
+  cooldown_until: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  input_usd_per_mtok: Numeric | null;
+  /**
+   * How to ask for JSON: json_schema (strict schema), json_object, or none (prompt only). Answers are validated either way.
+   */
+  json_mode: Generated<string>;
+  last_error: string | null;
+  last_error_at: Timestamp | null;
+  last_success_at: Timestamp | null;
+  model: string;
+  name: string;
+  output_usd_per_mtok: Numeric | null;
+  /**
+   * Charged per token: used only when the LLM daily cost cap allows (settings llm.daily_usd_cap).
+   */
+  paid: Generated<boolean>;
+  /**
+   * Lower is tried first.
+   */
+  priority: number;
+  /**
+   * Requests per Taipei day before the service rests until tomorrow; NULL = no limit.
+   */
+  requests_per_day: number | null;
+  /**
+   * Our own pacing below the service's free limit; NULL = no pacing.
+   */
+  requests_per_minute: number | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface LlmUsage {
+  /**
+   * Tokens times the service's price (0 for free services).
+   */
+  cost_usd: Generated<Numeric>;
+  /**
+   * Requests that failed (HTTP error, timeout or an invalid answer).
+   */
+  failures: Generated<number>;
+  input_tokens: Generated<Int8>;
+  output_tokens: Generated<Int8>;
+  provider_id: Int8;
+  requests: Generated<number>;
+  usage_date: string;
+}
+
 export interface MacroEvents {
   created_at: Generated<Timestamp>;
   /**
@@ -803,6 +870,138 @@ export interface MonthlyRevenueGrowth {
   ytd_yoy: Numeric | null;
 }
 
+export interface NewsItems {
+  channel: string;
+  /**
+   * The first item of the same event (D-139); duplicates are not sent to the LLM and show its results.
+   */
+  duplicate_of: Int8 | null;
+  event_type: string | null;
+  /**
+   * The source's own id (RSS guid or normalized URL, MOPS symbol+date+time+seq, PTT article id, forum post id).
+   */
+  external_id: string;
+  fetched_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  /**
+   * LLM importance for an investor, 1 (noise) .. 5 (material).
+   */
+  importance: number | null;
+  llm_attempts: Generated<number>;
+  llm_model: string | null;
+  /**
+   * llm_providers.code that answered (results of different models may differ in scale).
+   */
+  llm_provider: string | null;
+  /**
+   * pending = waiting for the LLM; done; skipped = filtered out by the funnel; failed = gave up after retries; duplicate = see duplicate_of.
+   */
+  llm_status: Generated<string>;
+  /**
+   * Source-specific fields: PTT pushes/boos/arrows, forum author stance (bullish/bearish) and likes, announcement clause and fact date.
+   */
+  meta: Generated<Json>;
+  processed_at: Timestamp | null;
+  /**
+   * Publication time (UTC); announcements: the exchange's 發言日期 + 發言時間.
+   */
+  published_at: Timestamp;
+  raw_object_id: Int8 | null;
+  /**
+   * Overall tone for the stocks concerned, -1 (very negative) .. 1 (very positive).
+   */
+  sentiment: Numeric | null;
+  /**
+   * llm = scored by the LLM; author = the forum author's own 看多/看空 tag (+0.8 / -0.8).
+   */
+  sentiment_source: string | null;
+  /**
+   * The source's own short description, at most 500 characters; NULL for social posts (their text is only read while processing).
+   */
+  snippet: string | null;
+  source_id: Int8;
+  /**
+   * LLM summary in Traditional Chinese (marked as AI summary on the site).
+   */
+  summary: string | null;
+  title: string;
+  /**
+   * Industries or themes the LLM named.
+   */
+  topics: Generated<string[]>;
+  /**
+   * Link to the original (normalized: tracking parameters removed).
+   */
+  url: string;
+}
+
+export interface NewsItemStocks {
+  item_id: Int8;
+  /**
+   * direct = symbol, name or alias in the text; industry / theme = related through stocks.industry or a theme the item names.
+   */
+  relation: string;
+  /**
+   * Tone toward this stock when the LLM scored stocks separately; NULL = use the item's.
+   */
+  sentiment: Numeric | null;
+  stock_id: Int8;
+  /**
+   * 1 for direct mentions; lower for industry and theme relations.
+   */
+  weight: Numeric;
+}
+
+export interface NewsSources {
+  /**
+   * news = media articles; announcement = exchange 重大訊息; social = forum posts.
+   */
+  channel: string;
+  /**
+   * Stable key; also the sentiment_daily scope of social sources.
+   */
+  code: string;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  /**
+   * Minimum minutes between two fetches during poll_news.
+   */
+  interval_minutes: Generated<number>;
+  /**
+   * Keep only items whose title contains one of these; empty = keep all.
+   */
+  keywords: Generated<string[]>;
+  /**
+   * Adapter that reads it: rss (any RSS/Atom feed), mops (exchange OpenAPI 重大訊息), cnyes, cmoney_notes, ptt, cmoney_forum.
+   */
+  kind: string;
+  /**
+   * Error of the latest failed fetch; cleared by the next success.
+   */
+  last_error: string | null;
+  last_fetched_at: Timestamp | null;
+  last_success_at: Timestamp | null;
+  /**
+   * Market of a per-market source (mops); NULL otherwise.
+   */
+  market: string | null;
+  name: string;
+  /**
+   * Fetched once per watched stock (holdings and watchlist) instead of once per round.
+   */
+  per_stock: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  /**
+   * Feed or page URL. With per_stock it is a template: {symbol} = 2330, {market_suffix} = TW (上市) or TWO (上櫃).
+   */
+  url: string | null;
+  /**
+   * Whether its items go to the LLM (summary, sentiment, importance).
+   */
+  use_llm: Generated<boolean>;
+}
+
 export interface PortfolioTransactions {
   created_at: Generated<Timestamp>;
   /**
@@ -990,6 +1189,44 @@ export interface RawObjects {
   uri: string;
 }
 
+export interface SentimentDaily {
+  /**
+   * Items with sentiment <= -0.3.
+   */
+  bearish: Generated<number>;
+  /**
+   * PTT 噓 on the day's posts.
+   */
+  boos: Generated<number>;
+  /**
+   * Items with sentiment >= 0.3 (social: includes author tags).
+   */
+  bullish: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  /**
+   * Items linked to the stock (duplicates counted once), weighted links included.
+   */
+  items: number;
+  /**
+   * PTT 推 on the day's posts (0 for other scopes).
+   */
+  pushes: Generated<number>;
+  /**
+   * news, announcement, a social source code (ptt_stock, cmoney_forum), or all.
+   */
+  scope: string;
+  scored: number;
+  /**
+   * Weighted mean sentiment of the scored items (link weight times importance); NULL when none was scored.
+   */
+  sentiment: Numeric | null;
+  stock_id: Int8;
+  /**
+   * Trading day whose close (13:30 Taipei) is the first at or after the item's publication, so a day only counts what was known before it closed.
+   */
+  trade_date: string;
+}
+
 export interface Settings {
   key: string;
   updated_at: Generated<Timestamp>;
@@ -1026,6 +1263,26 @@ export interface ShareholdingDistribution {
    * TDCC data date (資料日期), normally the Friday of the week.
    */
   week_date: string;
+}
+
+export interface SlangTerms {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  meaning: string;
+  note: string | null;
+  /**
+   * Usual direction: 1 bullish, -1 bearish, 0 neutral, NULL depends on context.
+   */
+  polarity: number | null;
+  term: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StockAliases {
+  alias: string;
+  created_at: Generated<Timestamp>;
+  note: string | null;
+  stock_id: Int8;
 }
 
 export interface Stocks {
@@ -1139,6 +1396,8 @@ export interface DB {
   institutional_trades_daily: InstitutionalTradesDaily;
   job_requests: JobRequests;
   job_runs: JobRuns;
+  llm_providers: LlmProviders;
+  llm_usage: LlmUsage;
   macro_events: MacroEvents;
   margin_daily: MarginDaily;
   market_institutional_daily: MarketInstitutionalDaily;
@@ -1149,6 +1408,9 @@ export interface DB {
   market_series_values: MarketSeriesValues;
   monthly_revenue: MonthlyRevenue;
   monthly_revenue_growth: MonthlyRevenueGrowth;
+  news_item_stocks: NewsItemStocks;
+  news_items: NewsItems;
+  news_sources: NewsSources;
   portfolio_transactions: PortfolioTransactions;
   prices_daily: PricesDaily;
   prices_daily_coverage: PricesDailyCoverage;
@@ -1156,9 +1418,12 @@ export interface DB {
   quotes_intraday: QuotesIntraday;
   quotes_latest: QuotesLatest;
   raw_objects: RawObjects;
+  sentiment_daily: SentimentDaily;
   settings: Settings;
   shareholding_concentration: ShareholdingConcentration;
   shareholding_distribution: ShareholdingDistribution;
+  slang_terms: SlangTerms;
+  stock_aliases: StockAliases;
   stock_themes: StockThemes;
   stocks: Stocks;
   themes: Themes;

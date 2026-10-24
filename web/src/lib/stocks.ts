@@ -140,6 +140,35 @@ export async function getRanking(
   return { date, rows: result.rows };
 }
 
+/**
+ * Listed common stocks of `industry` on the latest trading day, the most shares traded
+ * first (the right-hand list on a stock's page). Same rebased previous close as the rankings.
+ */
+export async function getIndustryPeers(
+  db: Kysely<DB>,
+  industry: string,
+): Promise<{ date: string | null; rows: StockListItem[] }> {
+  const [date] = await recentTradingDates(db, 1);
+  if (!date) return { date: null, rows: [] };
+  const result = await sql<StockListItem>`
+    SELECT s.symbol, s.name, s.market, s.type, s.industry, s.delisted_date AS "delistedDate",
+           l.trade_date AS "tradeDate", l.close, l.prev_close AS "prevClose", l.volume,
+           l.turnover, ${MARKET_CAP_SQL} AS "marketCap"
+    FROM stocks s
+    JOIN LATERAL (
+      SELECT p.trade_date, p.close, p.volume::text AS volume, p.turnover,
+             (SELECT round(p2.close * p2.adj_factor / p.adj_factor, 4) FROM prices_daily p2
+               WHERE p2.stock_id = s.id AND p2.trade_date < p.trade_date AND p2.close IS NOT NULL
+               ORDER BY p2.trade_date DESC LIMIT 1) AS prev_close
+      FROM prices_daily p
+      WHERE p.stock_id = s.id AND p.trade_date = ${date} AND p.close IS NOT NULL
+    ) l ON true
+    WHERE s.industry = ${industry} AND s.type = 'stock' AND s.delisted_date IS NULL
+    ORDER BY l.volume::bigint DESC, s.symbol
+  `.execute(db);
+  return { date, rows: result.rows };
+}
+
 export type StockDetail = {
   id: number;
   symbol: string;

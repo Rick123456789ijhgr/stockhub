@@ -4,6 +4,9 @@ import type { NextConfig } from "next";
 // before Next starts (docs/DECISIONS.md D-010); on Vercel they come from project settings.
 
 const nextConfig: NextConfig = {
+  // The local launcher builds into .next and .next-b in turn, so the running site keeps
+  // serving one while the next version builds into the other (docs/DECISIONS.md D-131).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   cacheComponents: true,
   // The floating "N" badge covers the sidebar; build errors still show in the overlay.
   devIndicators: false,

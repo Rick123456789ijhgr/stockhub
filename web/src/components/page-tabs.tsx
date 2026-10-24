@@ -63,18 +63,18 @@ export function PageTabs<K extends string>({
                   scroll={false}
                   aria-current={current ? "page" : undefined}
                   className={cn(
-                    // Inset underline: a negative margin would overflow the scroll box and
-                    // show a vertical scrollbar.
-                    "inline-flex items-center gap-1.5 py-2.5",
+                    // The underline sits inside the link (a negative margin would overflow the
+                    // scroll box and show a vertical scrollbar); it grows in on the active tab.
+                    "relative inline-flex items-center gap-1.5 py-2.5 transition-colors duration-150",
                     current
-                      ? "font-medium text-foreground shadow-[inset_0_-2px_0_var(--foreground)]"
+                      ? "tab-underline font-medium text-foreground"
                       : // Clicked: underline at once while the tab loads (LinkPending).
-                        "text-muted-foreground hover:text-foreground has-data-link-pending:text-foreground has-data-link-pending:shadow-[inset_0_-2px_0_var(--foreground)]",
+                        "text-muted-foreground hover:text-foreground has-data-link-pending:text-foreground has-data-link-pending:shadow-[inset_0_-2px_0_var(--brand)]",
                   )}
                 >
                   {tab.label}
                   {tab.badge ? (
-                    <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
+                    <span className="rounded-full bg-brand-soft px-1.5 text-xs text-brand tabular-nums">
                       {tab.badge.toLocaleString("zh-TW")}
                     </span>
                   ) : null}

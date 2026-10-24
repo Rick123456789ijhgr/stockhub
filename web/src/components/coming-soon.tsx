@@ -1,11 +1,23 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function PageHeader({ title, description }: { title: string; description?: string }) {
+/** Page title, its one-line description and optional actions on the right (D-125). */
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+}) {
   return (
-    <header className="mb-4 md:mb-5">
-      <h1 className="text-lg font-semibold tracking-tight md:text-xl">{title}</h1>
-      {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
+    <header className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 md:mb-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h1>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   );
 }

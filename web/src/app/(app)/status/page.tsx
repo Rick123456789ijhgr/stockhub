@@ -20,6 +20,7 @@ import { AutoRefresh } from "@/components/status/auto-refresh";
 import { ChipsStatusCard } from "@/components/status/chips-status";
 import { FundamentalsStatusCard } from "@/components/status/fundamentals-status";
 import { MarketsStatusCard } from "@/components/status/markets-status";
+import { NewsStatusCard } from "@/components/status/news-status";
 import { ScheduleHealthCard } from "@/components/status/schedule-health";
 import {
   BackfillCard,
@@ -35,6 +36,8 @@ import { formatDuration, formatInteger, formatTaipeiDateTime } from "@/lib/forma
 import { getFundamentalsStatus } from "@/lib/fundamentals-status";
 import { listJobRequests } from "@/lib/job-requests";
 import { getMarketsStatus } from "@/lib/markets";
+import { newsCoverage } from "@/lib/news";
+import { listLlmProviders } from "@/lib/news-admin";
 import { runnerEnabled } from "@/lib/job-runner";
 import { SCHEDULES, scheduleHealth } from "@/lib/schedule-health";
 import { getScheduleRuns, getStatusData, type JobRunRow, type JobRunStatus } from "@/lib/status";
@@ -71,7 +74,7 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
   const db = getDb();
   const today = taipeiToday();
   const thisYear = Number(today.slice(0, 4));
-  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, chips, markets, params] =
+  const [{ jobRuns }, days, totals, backfills, scheduleRuns, requests, fundamentals, chips, markets, news, services, params] =
     await Promise.all([
     getStatusData(db),
     getDayCoverage(db, thisYear),
@@ -82,6 +85,8 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
     getFundamentalsStatus(db),
     getChipsStatus(db),
     getMarketsStatus(db),
+    newsCoverage(db),
+    listLlmProviders(db),
     searchParams,
   ]);
 
@@ -134,6 +139,9 @@ async function StatusContent({ searchParams }: { searchParams: PageProps<"/statu
         </section>
         <section aria-label="市場與總經" className="min-w-0">
           <MarketsStatusCard status={markets} />
+        </section>
+        <section aria-label="新聞與 AI" className="min-w-0">
+          <NewsStatusCard coverage={news} services={services} />
         </section>
       </div>
 
@@ -251,7 +259,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
                 <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
                   <span>{formatTaipeiDateTime(run.startedAt)}</span>
                   <span>
-                    {formatDuration(run.durationMs)} · {formatInteger(run.rowsWritten)} 筆
+                    {formatDuration(run.durationMs)}，{formatInteger(run.rowsWritten)} 筆
                   </span>
                 </div>
                 {run.errorSummary ? (
@@ -269,7 +277,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
 /** Desktop: full table. */
 function JobRunTable({ runs }: { runs: JobRunRow[] }) {
   return (
-    <div className="hidden rounded-lg border md:block">
+    <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
       <Table>
         <TableHeader>
           <TableRow>

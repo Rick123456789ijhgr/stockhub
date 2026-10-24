@@ -71,6 +71,16 @@ export const SCHEDULES: readonly Schedule[] = [
     graceMinutes: 30,
     maxMinutes: 60,
   },
+  {
+    // Registered for every day (news never closes); judged on weekdays like the others.
+    key: "news",
+    label: "新聞與社群",
+    command: "make etl-news",
+    time: "06:55",
+    jobs: ["poll_news"],
+    graceMinutes: 30,
+    maxMinutes: 990,
+  },
 ];
 
 export type ScheduleState = "ok" | "running" | "pending" | "failed" | "missed" | "incomplete";

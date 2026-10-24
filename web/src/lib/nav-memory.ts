@@ -16,6 +16,7 @@ export const REMEMBERED_PAGES = [
   "/portfolio",
   "/stocks",
   "/watchlist",
+  "/news",
   "/market",
   "/screener",
   "/backtest",
@@ -23,9 +24,14 @@ export const REMEMBERED_PAGES = [
   "/admin",
 ] as const;
 
-/** The URL to remember for `pathname` + `search`, under which page; null when none. */
+/**
+ * The URL to remember for `pathname` + `search`, under which page; null when none. Search
+ * results (`q`) are not a place to return to: the menu goes back to the last view without
+ * a search, such as the ranking that was open.
+ */
 export function memoryEntry(pathname: string, search: string): [string, string] | null {
   if (!(REMEMBERED_PAGES as readonly string[]).includes(pathname)) return null;
+  if (new URLSearchParams(search).has("q")) return null;
   return [pathname, search ? `${pathname}?${search}` : pathname];
 }
 

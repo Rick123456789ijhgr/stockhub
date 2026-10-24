@@ -5,6 +5,13 @@ import { FeeSettingsForm } from "@/components/admin/fee-settings-form";
 import { ChipsQuarantineList } from "@/components/admin/chips-quarantine-review";
 import { FinancialsQuarantineList } from "@/components/admin/financials-quarantine-review";
 import { MacroEventEditor } from "@/components/admin/macro-event-editor";
+import {
+  AliasEditor,
+  LlmProvidersEditor,
+  NewsSettingsForm,
+  NewsSourcesEditor,
+  SlangEditor,
+} from "@/components/admin/news-admin";
 import { PriceGapList } from "@/components/admin/price-gap-review";
 import { SeriesQuarantineList } from "@/components/admin/series-quarantine-review";
 import { ThemeEditor } from "@/components/admin/theme-editor";
@@ -24,18 +31,22 @@ import { countQuarantinedStatements, listQuarantinedStatements } from "@/lib/fun
 import { countPendingGaps, listPendingGaps } from "@/lib/price-gaps";
 import { taipeiToday } from "@/lib/market-hours";
 import { listMacroEvents, shiftDate } from "@/lib/markets";
+import {
+  getNewsSettings,
+  listAliases,
+  listLlmProviders,
+  listSlang,
+  listSources,
+} from "@/lib/news-admin";
 import { countQuarantinedObservations, listQuarantinedObservations } from "@/lib/series-quarantine";
 import { getFeeSettings } from "@/lib/settings";
 import { listThemes } from "@/lib/themes";
 
 export const metadata: Metadata = { title: "設定" };
 
-const PLANNED = [
-  { name: "警示規則", milestone: "M6" },
-  { name: "排程管理", milestone: "之後" },
-];
+const PLANNED = [{ name: "排程管理", milestone: "之後" }];
 
-type Tab = "general" | "themes" | "review" | "audit";
+type Tab = "general" | "themes" | "news" | "review" | "audit";
 
 export default function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
@@ -59,6 +70,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
   const tabs: PageTab<Tab>[] = [
     { key: "general", label: "一般" },
     { key: "themes", label: "題材與事件" },
+    { key: "news", label: "新聞與 AI" },
     { key: "review", label: "待確認", badge: gapCount + quarantineCount + chipCount + seriesCount },
     { key: "audit", label: "稽核紀錄" },
   ];
@@ -69,6 +81,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
       <PageTabs tabs={tabs} active={tab} basePath="/admin" />
       {tab === "general" ? <General /> : null}
       {tab === "themes" ? <ThemesAndEvents /> : null}
+      {tab === "news" ? <NewsAndAi /> : null}
       {tab === "review" ? (
         <Card size="sm">
           <CardContent className="divide-y">
@@ -173,6 +186,91 @@ function ThemesAndEvents() {
   );
 }
 
+function NewsAndAi() {
+  return (
+    <div className="grid items-start gap-4 xl:grid-cols-2">
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">LLM 服務</CardTitle>
+          <CardDescription>
+            摘要、情緒與重要度依順序使用這些服務（數字小的先用），免費的優先；被限流或額度用完會暫停一段時間，換下一個（D-137）。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LlmProviders />
+        </CardContent>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">警示與 AI 設定</CardTitle>
+          <CardDescription>
+            只對持股與自選股：重大訊息一律通知；新聞情緒與重要度同時達門檻時通知（同股同日一次）；社群熱度只記在站內（D-145）。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <NewsSettingsPanel />
+        </CardContent>
+      </Card>
+      <Card size="sm" className="xl:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-sm">新聞來源</CardTitle>
+          <CardDescription>
+            排程每天 07:00～23:00 每分鐘檢查一次，到了間隔才抓；只存標題、摘要與連結，不存全文。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <NewsSources />
+        </CardContent>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">台股與鄉民用語</CardTitle>
+          <CardDescription>論壇貼文送給 AI 時附上這份詞典，幫助判讀反串與鄉民用語。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Slang />
+        </CardContent>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="text-sm">個股別名</CardTitle>
+          <CardDescription>
+            新聞與貼文裡的其他稱呼（代號與正式簡稱不必加）。兩個字的簡稱若是常見詞（統一、創意…）不會自動配對，可在這裡加上明確的別名。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Aliases />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function LlmProviders() {
+  await requireUser();
+  return <LlmProvidersEditor providers={await listLlmProviders(getDb())} />;
+}
+
+async function NewsSettingsPanel() {
+  await requireUser();
+  return <NewsSettingsForm settings={await getNewsSettings(getDb())} />;
+}
+
+async function NewsSources() {
+  await requireUser();
+  return <NewsSourcesEditor sources={await listSources(getDb())} />;
+}
+
+async function Slang() {
+  await requireUser();
+  return <SlangEditor terms={await listSlang(getDb())} />;
+}
+
+async function Aliases() {
+  await requireUser();
+  return <AliasEditor aliases={await listAliases(getDb())} />;
+}
+
 async function Themes() {
   await requireUser();
   return <ThemeEditor themes={await listThemes(getDb())} today={taipeiToday()} />;
@@ -207,7 +305,7 @@ function General() {
         <Card size="sm">
           <CardHeader>
             <CardTitle className="text-sm">顯示</CardTitle>
-            <CardDescription>深色模式與漲跌配色；圖表會跟著切換。</CardDescription>
+            <CardDescription>深色模式、漲跌配色與介面主色；圖表會跟著切換。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <AppearanceSettings />

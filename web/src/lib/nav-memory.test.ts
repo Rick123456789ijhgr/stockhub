@@ -16,6 +16,11 @@ describe("memoryEntry", () => {
     expect(memoryEntry("/", "")).toBeNull();
     expect(memoryEntry("/more", "")).toBeNull();
   });
+
+  it("does not remember search results", () => {
+    expect(memoryEntry("/stocks", "q=2330")).toBeNull();
+    expect(memoryEntry("/stocks", "q=")).toBeNull();
+  });
 });
 
 describe("rememberedUrl", () => {

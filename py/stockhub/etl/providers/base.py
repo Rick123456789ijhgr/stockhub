@@ -38,6 +38,7 @@ DataKind = Literal[
     "shareholding_distribution",
     "market_series",
     "macro_release",
+    "news",
 ]
 Market = Literal["twse", "tpex"]
 """twse = listed (上市), tpex = OTC (上櫃); matches stocks.market."""
@@ -431,6 +432,47 @@ class QuoteUpdate(_Model):
     ask: Decimal | None = None
 
 
+NewsKind = Literal["rss", "mops", "cnyes", "cmoney_notes", "ptt", "cmoney_forum"]
+"""news_sources.kind: which adapter reads a source."""
+Stance = Literal["bullish", "bearish"]
+
+
+@dataclass(frozen=True)
+class NewsRequest:
+    """One fetch of one news source (a row of news_sources, for one stock when per_stock)."""
+
+    source: str
+    """news_sources.code (also lands in the raw params)."""
+    kind: NewsKind
+    url: str | None
+    """The source URL with {symbol} and {market_suffix} already filled in."""
+    market: Market | None = None
+    """Market of a per-market source (mops)."""
+    symbol: str | None = None
+    """The stock a per-stock fetch is about; its items concern this stock."""
+    known: frozenset[str] = frozenset()
+    """External ids already stored: sources that read item pages one by one skip these."""
+
+
+class NewsItem(_Model):
+    """One article, announcement or post as a source published it (news_items)."""
+
+    external_id: str
+    url: str
+    title: str
+    snippet: str | None = None
+    """The source's own short description (clipped to 500 characters)."""
+    published_at: AwareDatetime
+    symbols: list[str] = Field(default_factory=list)
+    """Stocks the source itself tags the item with (announcement company, forum stock tags,
+    the stock of a per-stock feed); text mentions are found later."""
+    stances: dict[str, Stance] = Field(default_factory=dict)
+    """Author's own bullish/bearish tag per symbol (forum posts)."""
+    meta: dict[str, Any] = Field(default_factory=dict)
+    body: str | None = None
+    """Longer text for the LLM, never stored (social posts, announcement 說明)."""
+
+
 @dataclass(frozen=True)
 class RawResponse:
     """What a fetch returned, before parsing; landed in RawStore by the router."""
@@ -734,6 +776,23 @@ class QuoteStreamProvider(Provider):
         """Pure: one stored message -> updates (empty for messages that carry no quote)."""
 
 
+class NewsProvider(Provider):
+    """News articles, exchange announcements or social posts of one source."""
+
+    news_kinds: ClassVar[frozenset[NewsKind]]
+    """news_sources.kind values this adapter reads."""
+
+    def serves(self, request: NewsRequest) -> bool:
+        return request.kind in self.news_kinds
+
+    @abstractmethod
+    def fetch_news(self, request: NewsRequest) -> RawResponse:
+        """The source's latest items (several pages bundled when items need their own page)."""
+
+    @abstractmethod
+    def parse_news(self, raw: RawResponse) -> list[NewsItem]: ...
+
+
 INTERFACES: dict[DataKind, type[Provider]] = {
     "price": PriceProvider,
     "financial": FinancialProvider,
@@ -756,4 +815,5 @@ INTERFACES: dict[DataKind, type[Provider]] = {
     "shareholding_distribution": ShareholdingDistributionProvider,
     "market_series": MarketSeriesProvider,
     "macro_release": MacroReleaseProvider,
+    "news": NewsProvider,
 }

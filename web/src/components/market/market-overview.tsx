@@ -9,13 +9,15 @@ import { loadSeries, shiftDate } from "@/lib/markets";
 import { SeriesCard } from "./series-card";
 
 const SECTIONS: { title: string; categories: SeriesCategory[] }[] = [
-  { title: "台股", categories: ["tw_index"] },
   { title: "國際股市", categories: ["intl_index", "volatility"] },
   { title: "匯率與商品", categories: ["fx", "commodity"] },
   { title: "利率", categories: ["rate"] },
 ];
 
-/** 大盤與國際: every daily series with its latest value and one year of history. */
+/**
+ * 國際市場: every daily international series with its latest value and one year of history.
+ * Taiwan's indexes are on the home page.
+ */
 export async function MarketOverview({ db, today }: { db: Kysely<DB>; today: string }) {
   const all = await loadSeries(db, shiftDate(today, -370));
   const daily = all.filter((s) => s.frequency === "daily");
@@ -31,7 +33,7 @@ export async function MarketOverview({ db, today }: { db: Kysely<DB>; today: str
   return (
     <div className="space-y-5">
       <InfoNote>
-        台股指數來自證交所與櫃買中心；國際指數、匯率、黃金與原油期貨、VIX 主要來自 Yahoo
+        國際指數、匯率、黃金與原油期貨、VIX 主要來自 Yahoo
         Finance（非官方，失敗時改用 FRED），美債殖利率與 Fed 利率來自
         FRED。日期是各交易所的當地日期，所以美股的「10/20」是台灣 10/21
         早上收盤的那一天。紅漲綠跌只用在指數與商品；匯率、波動率、利率以中性色顯示變動。

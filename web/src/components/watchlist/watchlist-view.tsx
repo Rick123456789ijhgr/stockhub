@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { FlashValue } from "@/components/flash-value";
 import { PriceChange } from "@/components/price-change";
 import { Button } from "@/components/ui/button";
 import { formatPrice, formatTaipeiDateTime } from "@/lib/format";
@@ -155,11 +156,13 @@ export function WatchlistView({ items }: { items: WatchItem[] }) {
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <Link href={`/stocks/${item.symbol}`} className="truncate font-medium hover:underline">
-                    <span className="font-mono">{item.symbol}</span> {item.name}
+                    <span className="font-semibold tabular-nums">{item.symbol}</span> {item.name}
                     {item.type === "etf" ? <span className="ml-1 text-xs text-muted-foreground">ETF</span> : null}
                   </Link>
                   <span className="shrink-0 text-right tabular-nums">
-                    {item.price !== null ? formatPrice(String(item.price)) : "—"}{" "}
+                    <FlashValue value={item.price}>
+                      {item.price !== null ? formatPrice(String(item.price)) : "—"}
+                    </FlashValue>{" "}
                     {item.mark && item.mark.prevClose !== null ? (
                       <PriceChange value={item.mark.price - item.mark.prevClose} className="text-xs" />
                     ) : null}{" "}

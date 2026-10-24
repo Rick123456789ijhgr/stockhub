@@ -7,6 +7,7 @@ serve the same tables with slightly different keys (TPEx mixes English and Chine
 - t187ap07_*_ci  balance sheet of general companies, latest filed quarter
 - t187ap05_*     monthly revenue of the latest published month
 - t187ap03_*     company profile (industry code, par value, issued shares)
+- t187ap04_*     today's 重大訊息 (material announcements), a snapshot of the day so far
 
 Amounts are in thousands of TWD; per-share items are in TWD. Each row carries its own
 year and quarter (ROC calendar). The other statement templates (_basi, _bd, _fh, _ins, _mim)
@@ -15,14 +16,17 @@ belong to financial companies (M3b).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, ClassVar
 
 import httpx
 
+from stockhub.common.timeutil import TAIPEI
+from stockhub.engine.news import clip, one_line
 from stockhub.etl.providers.base import (
     CompanyProfile,
     CompanyProfileProvider,
@@ -31,11 +35,15 @@ from stockhub.etl.providers.base import (
     Market,
     MonthlyRevenue,
     MonthlyRevenueSnapshotProvider,
+    NewsItem,
+    NewsKind,
+    NewsProvider,
+    NewsRequest,
     PermanentProviderError,
     RawResponse,
     Statement,
 )
-from stockhub.etl.providers.http import get_json_bytes, maybe_decimal
+from stockhub.etl.providers.http import get_json_bytes, maybe_decimal, roc_date
 
 THOUSAND = Decimal(1000)
 
@@ -167,14 +175,61 @@ def parse_company_profiles(rows: list[dict[str, Any]], market: Market) -> list[C
     return out
 
 
+MOPS_LINK = "https://mops.twse.com.tw/mops/#/web/t05st01?companyId={symbol}"
+"""Where a person reads a company's announcements (the OpenAPI rows carry no link)."""
+
+
+def _announcement_time(day: str, clock: str) -> datetime:
+    """發言日期 '1151021' + 發言時間 '70004' (HHMMSS without the leading zero) in Taipei."""
+    digits = clock.strip().zfill(6)
+    at = time(int(digits[:2]), int(digits[2:4]), int(digits[4:6]))
+    return datetime.combine(roc_date(day), at, TAIPEI)
+
+
+def parse_announcements(rows: list[dict[str, Any]], market: Market) -> list[NewsItem]:
+    """Rows of t187ap04_L / mopsfin_t187ap04_O (keys differ slightly; TWSE writes '主旨 ')."""
+    out = []
+    for raw_row in rows:
+        row = {str(k).strip(): v for k, v in raw_row.items()}
+        symbol = _first(row, SYMBOL_KEYS)
+        subject = one_line(str(row.get("主旨") or ""))
+        if not subject:
+            continue
+        day, clock = str(row["發言日期"]), str(row["發言時間"])
+        lines = str(row.get("說明") or "").replace("\r\n", "\n").split("\n")
+        detail = "\n".join(line.strip() for line in lines).strip()
+        digest = hashlib.sha1(subject.encode(), usedforsecurity=False).hexdigest()[:8]
+        fact = str(row.get("事實發生日") or "").strip()
+        out.append(
+            NewsItem(
+                external_id=f"{symbol}-{day.strip()}-{clock.strip()}-{digest}",
+                url=MOPS_LINK.format(symbol=symbol),
+                title=subject,
+                snippet=clip(detail),
+                published_at=_announcement_time(day, clock),
+                symbols=[symbol],
+                meta={
+                    "market": market,
+                    "company": str(row.get("公司名稱") or row.get("CompanyName") or "").strip(),
+                    "clause": str(row.get("符合條款") or "").strip() or None,
+                    "factDate": roc_date(fact).isoformat() if fact.isdigit() else None,
+                },
+                body=f"{subject}\n{detail}" if detail else subject,
+            )
+        )
+    return out
+
+
 class MopsOpenApiMixin(
-    FinancialSnapshotProvider, MonthlyRevenueSnapshotProvider, CompanyProfileProvider
+    FinancialSnapshotProvider, MonthlyRevenueSnapshotProvider, CompanyProfileProvider, NewsProvider
 ):
-    """The three snapshot capabilities, for an exchange adapter that sets the class vars."""
+    """The snapshot capabilities and the day's 重大訊息, for an exchange adapter that sets the
+    class vars."""
 
     mops_market: ClassVar[Market]
     mops_urls: ClassVar[dict[str, str]]
-    """Keys IS, BS, revenue, profiles -> endpoint URL."""
+    """Keys IS, BS, revenue, profiles, announcements -> endpoint URL."""
+    news_kinds: ClassVar[frozenset[NewsKind]] = frozenset({"mops"})
     client: httpx.Client
 
     def _mops_get(self, market: Market, key: str) -> RawResponse:
@@ -203,3 +258,17 @@ class MopsOpenApiMixin(
 
     def parse_company_profiles(self, raw: RawResponse) -> list[CompanyProfile]:
         return parse_company_profiles(loads(raw.payload), raw.params["market"])
+
+    def serves(self, request: NewsRequest) -> bool:
+        return request.kind == "mops" and request.market == self.mops_market
+
+    def fetch_news(self, request: NewsRequest) -> RawResponse:
+        if request.market is None:
+            raise PermanentProviderError("a mops source needs its market")
+        response = self._mops_get(request.market, "announcements")
+        return RawResponse(
+            response.dataset, response.payload, {**response.params, "source": request.source}
+        )
+
+    def parse_news(self, raw: RawResponse) -> list[NewsItem]:
+        return parse_announcements(loads(raw.payload), raw.params["market"])

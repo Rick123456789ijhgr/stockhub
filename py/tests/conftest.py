@@ -11,6 +11,7 @@ already be migrated (`make migrate-test`; `make py-test` does it for you).
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 
 import psycopg
@@ -31,8 +32,11 @@ MUTABLE_TABLES = (
     "fundamentals_quarterly, fundamental_signals, job_requests, institutional_trades_daily, "
     "margin_daily, foreign_holdings_daily, shareholding_distribution, market_institutional_daily, "
     "market_margin_daily, chip_coverage, chip_quarantine, chip_summary, market_series_values, "
-    "market_series_quarantine, themes, stock_themes"
+    "market_series_quarantine, themes, stock_themes, news_items, news_item_stocks, stock_aliases, "
+    "llm_usage, sentiment_daily"
 )
+SEEDED_TABLES = ("news_sources", "llm_providers", "slang_terms")
+"""M6 catalogs with seed rows that tests may change: restored to the migrated state."""
 
 
 def _env_file_value(key: str) -> str | None:
@@ -89,9 +93,24 @@ def sa_conn(engine: Engine) -> Iterator[Connection]:
             trans.rollback()
 
 
+@pytest.fixture(scope="session")
+def seed_statements() -> list[str]:
+    """The seed INSERTs of the M6 catalogs, read from the migration (not from the test
+    database, which an earlier run may have left changed)."""
+    out = []
+    for migration in sorted((PROJECT_ROOT / "db" / "migrations").glob("*.sql")):
+        up = migration.read_text(encoding="utf-8").split("-- migrate:down")[0]
+        for table in SEEDED_TABLES:
+            out += re.findall(rf"INSERT INTO {table} \(.*?\);\n", up, flags=re.S)
+    return out
+
+
 @pytest.fixture
-def clean_db(engine: Engine) -> Engine:
+def clean_db(engine: Engine, seed_statements: list[str]) -> Engine:
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {MUTABLE_TABLES} RESTART IDENTITY CASCADE"))
         conn.execute(text("DELETE FROM macro_events WHERE source <> 'seed'"))
+        conn.execute(text(f"TRUNCATE {', '.join(SEEDED_TABLES)} RESTART IDENTITY CASCADE"))
+        for statement in seed_statements:
+            conn.exec_driver_sql(statement)
     return engine

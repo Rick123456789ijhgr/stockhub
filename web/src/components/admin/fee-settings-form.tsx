@@ -27,7 +27,7 @@ const EXAMPLES = [
 ];
 
 const field =
-  "h-8 rounded-md border bg-background px-2 text-sm text-foreground tabular-nums aria-invalid:border-destructive";
+  "h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm text-foreground tabular-nums aria-invalid:border-destructive";
 
 /** Edit the one-off fee profile (rate, discount, minimums, rebate mode, rounding). */
 export function FeeSettingsForm({ initial }: { initial: FeeSettings }) {

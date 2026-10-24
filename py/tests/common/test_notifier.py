@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import io
+import json
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
+import httpx
 import pytest
 
-from stockhub.common.notifier import ConsoleNotifier, EmailNotifier, LineNotifier
+from stockhub.common.notifier import (
+    ConsoleNotifier,
+    EmailNotifier,
+    LineNotifier,
+    Notifier,
+    RoutingNotifier,
+    Severity,
+    TelegramNotifier,
+    build_notifier,
+)
 
 
 def test_console_notifier_writes_subject_and_body() -> None:
@@ -73,6 +84,107 @@ def test_email_notifier_requires_recipients() -> None:
         EmailNotifier("h", 25, "a@b", [])
 
 
-def test_line_notifier_is_a_placeholder() -> None:
-    with pytest.raises(NotImplementedError, match="M6"):
-        LineNotifier().send("s", "b")
+def _http(handler: Any) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_line_push_and_quota() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/quota"):
+            return httpx.Response(200, json={"type": "limited", "value": 200})
+        if request.url.path.endswith("/consumption"):
+            return httpx.Response(200, json={"totalUsage": 185})
+        return httpx.Response(200, json={})
+
+    line = LineNotifier("tok", "U123", _http(handler), clock=lambda: 0.0)
+    line.send("持股警示", "內容", "warning")
+    push = seen[0]
+    assert str(push.url) == "https://api.line.me/v2/bot/message/push"
+    assert push.headers["authorization"] == "Bearer tok"
+    body = json.loads(push.content)
+    assert body["to"] == "U123"
+    assert body["messages"] == [{"type": "text", "text": "⚠️ 持股警示\n\n內容"}]
+    assert line.remaining_share() == pytest.approx(0.075)
+    assert len(seen) == 3
+    line.remaining_share()  # cached
+    assert len(seen) == 3
+    failing = LineNotifier("tok", "U1", _http(lambda _: httpx.Response(401, text="bad")))
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        failing.send("s", "b")
+
+
+def test_telegram_send_cuts_long_text() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    TelegramNotifier("123:abc", "42", _http(handler)).send("s", "長" * 5000, "info")
+    assert str(seen[0].url) == "https://api.telegram.org/bot123:abc/sendMessage"
+    body = json.loads(seen[0].content)
+    assert body["chat_id"] == "42"
+    assert len(body["text"]) == 3500
+    assert body["text"].endswith("…")
+
+
+class _Recorder(Notifier):
+    def __init__(self, channel: str, fail: bool = False) -> None:
+        self.channel = channel  # type: ignore[misc]
+        self.fail, self.sent = fail, []  # type: ignore[var-annotated]
+
+    def send(self, subject: str, body: str, severity: Severity = "warning") -> None:
+        if self.fail:
+            raise RuntimeError(f"{self.channel} down")
+        self.sent.append((subject, severity))
+
+
+class _QuotaLine(LineNotifier):
+    def __init__(self, share: float | None, fail: bool = False) -> None:
+        self.share, self.fail, self.sent = share, fail, []  # type: ignore[var-annotated]
+
+    def remaining_share(self) -> float | None:
+        return self.share
+
+    def send(self, subject: str, body: str, severity: Severity = "warning") -> None:
+        if self.fail:
+            raise RuntimeError("line down")
+        self.sent.append(subject)
+
+
+def test_routing_by_severity_and_line_quota() -> None:
+    line, telegram, email = _QuotaLine(0.5), _Recorder("telegram"), _Recorder("email")
+    router = RoutingNotifier([line, telegram, email])
+    assert router.deliver("a", "b", "critical") == ["line", "telegram", "email"]
+    assert router.deliver("a", "b", "warning") == ["line"]
+    assert router.deliver("a", "b", "info") == ["email"]
+    # Under 10% of the LINE quota left: warnings go to Telegram, critical still to all.
+    low = RoutingNotifier([_QuotaLine(0.05), telegram, email])
+    assert low.deliver("a", "b", "warning") == ["telegram"]
+    assert low.deliver("a", "b", "critical") == ["line", "telegram", "email"]
+    # A failing channel falls through to the next one.
+    broken = RoutingNotifier([_QuotaLine(None, fail=True), _Recorder("email")])
+    assert broken.deliver("a", "b", "warning") == ["email"]
+    with pytest.raises(RuntimeError, match="no channel accepted"):
+        RoutingNotifier([_Recorder("email", fail=True)]).deliver("a", "b", "info")
+    # Push-only setups have nothing for info messages.
+    assert RoutingNotifier([_QuotaLine(0.5)]).deliver("a", "b", "info") == []
+
+
+def test_build_notifier_channels(monkeypatch: pytest.MonkeyPatch) -> None:
+    from stockhub.common.settings import load_settings
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/db")
+    monkeypatch.setenv("NOTIFIER", "line,telegram")
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("LINE_USER_ID", "U1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "b")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    notifier = build_notifier(load_settings())
+    assert isinstance(notifier, RoutingNotifier)
+    assert [c.channel for c in notifier.channels] == ["line", "telegram"]
+    monkeypatch.setenv("NOTIFIER", "console")
+    assert isinstance(build_notifier(load_settings()), ConsoleNotifier)

@@ -39,9 +39,15 @@ describe("parseJobRequest", () => {
       job: "sync_chips",
       params: {},
     });
-    for (const job of ["sync_markets", "sync_macro"]) {
+    for (const job of ["sync_markets", "sync_macro", "sync_news", "check_llm_providers"]) {
       expect(parseJobRequest({ job, params: { series: "SPX" } }, TODAY)).toEqual({ job, params: {} });
     }
+    expect(
+      parseJobRequest({ job: "sync_news", params: { force: "true", sources: "ctee_stock,my_feed" } }, TODAY),
+    ).toEqual({ job: "sync_news", params: { force: "true", sources: "ctee_stock,my_feed" } });
+    expect(
+      parseJobRequest({ job: "sync_news", params: { force: "yes", sources: "a;DROP" } }, TODAY),
+    ).toEqual({ job: "sync_news", params: {} });
     expect(parseJobRequest({ job: "backfill_fundamentals" }, TODAY)).toBeNull();
     expect(parseJobRequest({ job: "backfill_chips" }, TODAY)).toBeNull();
     expect(parseJobRequest({ job: "backfill_markets" }, TODAY)).toBeNull();

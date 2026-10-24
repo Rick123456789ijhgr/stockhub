@@ -119,6 +119,18 @@ class RawStore(ABC):
             raise ValueError(f"raw object {uri} is corrupt (hash mismatch)")
         return data
 
+    def delete(self, raw_object_id: int) -> bool:
+        """Remove one object and its registration (retention of social posts, D-138).
+        References in news_items are cleared by ON DELETE SET NULL; False if unknown."""
+        with self._engine.begin() as conn:
+            uri = conn.execute(
+                text("DELETE FROM raw_objects WHERE id = :id RETURNING uri"), {"id": raw_object_id}
+            ).scalar_one_or_none()
+        if uri is None:
+            return False
+        self._delete(self.key_for(uri))
+        return True
+
     def _lookup(self, sha: str) -> RawObject | None:
         with self._engine.connect() as conn:
             row = conn.execute(
@@ -142,6 +154,10 @@ class RawStore(ABC):
 
     @abstractmethod
     def _read(self, key: str) -> bytes: ...
+
+    @abstractmethod
+    def _delete(self, key: str) -> None:
+        """Remove the stored blob; a missing blob is not an error."""
 
 
 class LocalRawStore(RawStore):
@@ -177,6 +193,9 @@ class LocalRawStore(RawStore):
 
     def _read(self, key: str) -> bytes:
         return (self.root / key).read_bytes()
+
+    def _delete(self, key: str) -> None:
+        (self.root / key).unlink(missing_ok=True)
 
 
 class GCSRawStore(RawStore):
@@ -215,6 +234,12 @@ class GCSRawStore(RawStore):
 
     def _read(self, key: str) -> bytes:
         return bytes(self.bucket.blob(key).download_as_bytes())
+
+    def _delete(self, key: str) -> None:
+        from google.api_core.exceptions import NotFound
+
+        with contextlib.suppress(NotFound):
+            self.bucket.blob(key).delete()
 
 
 def build_rawstore(engine: Engine, settings: Settings) -> RawStore:

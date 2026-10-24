@@ -11,6 +11,8 @@ export const REQUESTABLE_JOBS = [
   "sync_chips",
   "sync_markets",
   "sync_macro",
+  "sync_news",
+  "check_llm_providers",
 ] as const;
 
 export type RequestableJob = (typeof REQUESTABLE_JOBS)[number];
@@ -25,10 +27,13 @@ export const JOB_LABEL: Record<RequestableJob, string> = {
   sync_chips: "籌碼更新到今天",
   sync_markets: "市場更新到今天",
   sync_macro: "總經指標更新",
+  sync_news: "新聞與社群更新",
+  check_llm_providers: "檢查 LLM 服務",
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SYMBOL = /^[0-9A-Z]{4,6}$/;
+const SOURCES = /^[a-z0-9_]{1,40}(,[a-z0-9_]{1,40}){0,19}$/;
 const FIRST_PRICE_DATE = "2004-02-11";
 
 function isRealDate(value: string): boolean {
@@ -59,7 +64,15 @@ export function parseJobRequest(body: unknown, today: string): JobRequestInput |
     case "sync_chips":
     case "sync_markets":
     case "sync_macro":
+    case "check_llm_providers":
       return { job: job as RequestableJob, params: {} };
+    case "sync_news": {
+      // force=true fetches every source now; sources= limits the round to some of them.
+      const out: Record<string, string> = {};
+      if (raw.force === "true" || raw.force === true) out.force = "true";
+      if (typeof raw.sources === "string" && SOURCES.test(raw.sources)) out.sources = raw.sources;
+      return { job: "sync_news", params: out };
+    }
     case "refetch_stock_prices":
     case "refresh_stock_fundamentals": {
       const symbol = typeof raw.symbol === "string" ? raw.symbol.trim().toUpperCase() : "";
