@@ -39,6 +39,14 @@ export function SidebarNavList({ pathname }: { pathname: string }) {
   const navRef = useRef<HTMLElement>(null);
   const [clicked, setClicked] = useState<{ href: string; from: string } | null>(null);
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
+  // A click only counts until the next page loads. Kept past that, an old click made from
+  // this same path would pull the highlight back to it on a later visit (e.g. 個股 → 首頁
+  // → a stock → back to 個股 left 首頁 highlighted).
+  const [seenPath, setSeenPath] = useState(pathname);
+  if (seenPath !== pathname) {
+    setSeenPath(pathname);
+    setClicked(null);
+  }
   const current = NAV_ITEMS.find((item) => isActive(pathname, item.href))?.href ?? null;
   // A click moves the highlight at once; it settles on the page that actually loads.
   const target = clicked && clicked.from === pathname ? clicked.href : current;
@@ -55,6 +63,7 @@ export function SidebarNavList({ pathname }: { pathname: string }) {
       ref={navRef}
       aria-label="主選單"
       data-ready={box ? "" : undefined}
+      data-highlight={target ?? undefined}
       className="group/nav relative flex flex-col"
     >
       {box ? (
