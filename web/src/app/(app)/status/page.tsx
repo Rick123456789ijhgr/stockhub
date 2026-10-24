@@ -251,7 +251,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
                 <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
                   <span>{formatTaipeiDateTime(run.startedAt)}</span>
                   <span>
-                    {formatDuration(run.durationMs)} · {formatInteger(run.rowsWritten)} 筆
+                    {formatDuration(run.durationMs)}，{formatInteger(run.rowsWritten)} 筆
                   </span>
                 </div>
                 {run.errorSummary ? (
@@ -269,7 +269,7 @@ function JobRunCards({ runs }: { runs: JobRunRow[] }) {
 /** Desktop: full table. */
 function JobRunTable({ runs }: { runs: JobRunRow[] }) {
   return (
-    <div className="hidden rounded-lg border md:block">
+    <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
       <Table>
         <TableHeader>
           <TableRow>

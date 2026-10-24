@@ -138,7 +138,7 @@ async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Rank
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            {date} 收盤 · {ranking === "marketCap" ? "股票" : KIND_LABEL[kind]}
+            {date} 收盤，{ranking === "marketCap" ? "股票" : KIND_LABEL[kind]}
             {/* A space between Latin and CJK: "ETF 成交金額", "股票成交金額". */}
             {ranking !== "marketCap" && kind !== "stock" ? " " : ""}
             {RANKING_NOTE[ranking]}

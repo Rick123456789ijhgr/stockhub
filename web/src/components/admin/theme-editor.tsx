@@ -171,7 +171,7 @@ function ThemeItem({ theme, today }: { theme: Theme; today: string }) {
             }}
           >
             <input
-              className={`${field} w-24 font-mono uppercase`}
+              className={`${field} w-24 tabular-nums uppercase`}
               placeholder="代號"
               aria-label="股票代號"
               maxLength={6}
@@ -226,7 +226,7 @@ function MemberRow({ member, base, today }: { member: ThemeMember; base: string;
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">
       <Link href={`/stocks/${member.symbol}`} className="hover:underline">
-        <span className="font-mono">{member.symbol}</span> {member.name}
+        <span className="font-semibold tabular-nums">{member.symbol}</span> {member.name}
       </Link>
       <span className="text-xs text-muted-foreground tabular-nums">
         {member.validFrom} ～ {member.validTo ?? "至今"}

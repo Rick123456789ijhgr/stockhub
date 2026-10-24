@@ -198,7 +198,7 @@ function PeerTable({
         <CardDescription>ROE 與毛利率取已公布的最新一季（ROE 為近四季）。</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border bg-card">
           <Table className="min-w-[48rem] text-xs">
             <TableHeader>
               <TableRow>
@@ -215,7 +215,7 @@ function PeerTable({
                 <TableRow key={p.stockId} className={cn(p.stockId === stockId && "bg-muted/60")}>
                   <TableCell className={cn("sticky left-0", p.stockId === stockId ? "bg-muted" : "bg-background")}>
                     <Link href={`/stocks/${p.symbol}`} className="hover:underline">
-                      <span className="font-mono">{p.symbol}</span> {p.name}
+                      <span className="font-semibold tabular-nums">{p.symbol}</span> {p.name}
                     </Link>
                   </TableCell>
                   {columns.map((c) => (

@@ -77,7 +77,7 @@ function RankList({ title, rows }: { title: string; rows: RankedFlow[] }) {
             <li key={r.symbol} className="flex items-baseline gap-2 py-1">
               <span className="w-4 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{i + 1}</span>
               <Link href={`/stocks/${r.symbol}?tab=chips`} className="min-w-0 flex-1 truncate hover:underline">
-                <span className="font-mono text-xs">{r.symbol}</span> {r.name}
+                <span className="font-semibold tabular-nums text-xs">{r.symbol}</span> {r.name}
               </Link>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {Math.round(r.netShares / 1000).toLocaleString("zh-TW")} 張

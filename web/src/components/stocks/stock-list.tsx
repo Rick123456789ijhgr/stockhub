@@ -107,7 +107,7 @@ function StockCards({
                   ) : null}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">{s.symbol}</span>
+                      <span className="font-semibold tabular-nums text-sm">{s.symbol}</span>
                       <span className="truncate font-medium">{s.name}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
@@ -147,7 +147,7 @@ function StockTable({
   const head = (column: Column) =>
     cn("text-right", sorted === column && "font-semibold text-foreground");
   return (
-    <div className="hidden rounded-lg border md:block">
+    <div className="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -170,7 +170,7 @@ function StockTable({
               {numbered ? (
                 <TableCell className="text-right text-muted-foreground tabular-nums">{i + 1}</TableCell>
               ) : null}
-              <TableCell className="font-mono">
+              <TableCell className="font-semibold tabular-nums">
                 <Link href={`/stocks/${s.symbol}`} className="underline-offset-4 hover:underline">
                   {s.symbol}
                 </Link>

@@ -18,6 +18,12 @@
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
+  /* Brand (D-125): UI chrome only (selection, focus, primary actions), never data. */
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --shadow-card: var(--card-shadow);
+  --shadow-card-hover: var(--card-shadow-hover);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --color-coverage-full: var(--coverage-full);
   --color-coverage-partial: var(--coverage-partial);
   --color-coverage-gap: var(--coverage-gap);
@@ -62,8 +68,10 @@
 }
 
 :root {
-  --app-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang TC",
-    "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  /* Inter (next/font, app/layout.tsx) sets Latin text and digits; CJK falls through to the
+     system face. */
+  --app-font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
   --app-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --red: oklch(0.577 0.215 27.3);
   --green: oklch(0.56 0.15 150);
@@ -79,38 +87,44 @@
   --series-1: #2a78d6;
   --series-2: #eda100;
   --series-3: #e87ba4;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Cool, quiet neutrals (slate hue 255-265) with an indigo brand (D-125). */
+  --brand: oklch(0.51 0.2 274);
+  --brand-soft: oklch(0.955 0.025 274);
+  --card-shadow: 0 1px 2px oklch(0.25 0.03 260 / 0.05), 0 1px 3px oklch(0.25 0.03 260 / 0.04);
+  --card-shadow-hover: 0 2px 4px oklch(0.25 0.03 260 / 0.06), 0 6px 16px oklch(0.25 0.03 260 / 0.08);
+  --background: oklch(0.978 0.004 255);
+  --foreground: oklch(0.2 0.02 262);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.2 0.02 262);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.2 0.02 262);
+  --primary: var(--brand);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.006 260);
+  --secondary-foreground: oklch(0.25 0.02 262);
+  --muted: oklch(0.96 0.005 258);
+  --muted-foreground: oklch(0.53 0.02 260);
+  --accent: oklch(0.955 0.008 262);
+  --accent-foreground: oklch(0.22 0.02 262);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.915 0.008 260);
+  --input: oklch(0.9 0.01 260);
+  --ring: oklch(0.51 0.2 274 / 0.55);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Radius by rank (D-126): panels ~11px (rounded-xl), tiles 8px (lg), controls 6px (md). */
+  --radius: 0.5rem;
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.3 0.02 262);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.96 0.006 260);
+  --sidebar-accent-foreground: oklch(0.2 0.02 262);
+  --sidebar-border: oklch(0.915 0.008 260);
+  --sidebar-ring: oklch(0.51 0.2 274 / 0.55);
 }
 
 .dark {
@@ -124,37 +138,42 @@
   --coverage-empty: #4a4a46;
   --red: oklch(0.68 0.19 25);
   --green: oklch(0.72 0.17 150);
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --brand: oklch(0.7 0.15 274);
+  --brand-soft: oklch(0.3 0.06 274 / 0.55);
+  /* Shadows barely show on dark surfaces; cards rely on the lighter surface and the ring. */
+  --card-shadow: 0 1px 2px oklch(0 0 0 / 0.3);
+  --card-shadow-hover: 0 4px 14px oklch(0 0 0 / 0.45);
+  --background: oklch(0.155 0.012 262);
+  --foreground: oklch(0.96 0.005 260);
+  --card: oklch(0.2 0.014 262);
+  --card-foreground: oklch(0.96 0.005 260);
+  --popover: oklch(0.22 0.014 262);
+  --popover-foreground: oklch(0.96 0.005 260);
+  --primary: var(--brand);
+  --primary-foreground: oklch(0.18 0.03 274);
+  --secondary: oklch(0.26 0.014 262);
+  --secondary-foreground: oklch(0.96 0.005 260);
+  --muted: oklch(0.25 0.014 262);
+  --muted-foreground: oklch(0.7 0.015 260);
+  --accent: oklch(0.27 0.016 262);
+  --accent-foreground: oklch(0.96 0.005 260);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0.15 274 / 0.6);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.175 0.013 262);
+  --sidebar-foreground: oklch(0.85 0.01 260);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: oklch(0.18 0.03 274);
+  --sidebar-accent: oklch(0.25 0.014 262);
+  --sidebar-accent-foreground: oklch(0.96 0.005 260);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.7 0.15 274 / 0.6);
 }
 
 /* Taiwan convention (default): red = up, green = down. "intl" swaps them. */
@@ -177,8 +196,30 @@
   }
   html {
     @apply font-sans;
+    font-feature-settings: "cv11";
+    /* Native checkboxes, radios and ranges take the brand color. */
+    accent-color: var(--brand);
+  }
+  /* Form fields (plain <input>/<select>/<textarea> across the app): brand focus ring. */
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  select,
+  textarea {
+    transition:
+      border-color 150ms,
+      box-shadow 150ms;
+  }
+  input:not([type="checkbox"], [type="radio"], [type="range"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+  }
+  ::selection {
+    background: var(--brand-soft);
   }
 }
+
 
 /* Navigation progress (components/nav/nav-progress.tsx): invisible for the first 150 ms,
    so quick switches show nothing; then grows towards the right while the page loads. */
@@ -208,5 +249,69 @@
   .nav-progress {
     animation: nav-progress-in 120ms ease-out 150ms forwards;
     transform: scaleX(0.9);
+  }
+}
+
+/* ---------------------------------------------------------------- motion (D-125, D-126)
+   Only in answer to an action or a change of data (120-220 ms); the session rail's dot is
+   the one thing that moves on its own. Everything is off under prefers-reduced-motion. */
+
+@keyframes fade-down {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+/* <details> content (Disclosure, InfoNote) eases in when opened. */
+details[open] > :not(summary) {
+  animation: fade-down 180ms var(--ease-out-soft);
+}
+
+@keyframes tab-underline {
+  from {
+    transform: scaleX(0.4);
+    opacity: 0;
+  }
+}
+/* PageTabs: the active tab's underline grows in from its center. */
+.tab-underline::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand);
+  animation: tab-underline 200ms var(--ease-out-soft);
+}
+
+/* A live price that just changed: a brief wash of its direction color (lib/use-flash.ts). */
+@keyframes flash-up {
+  from {
+    background-color: color-mix(in oklch, var(--price-up) 22%, transparent);
+  }
+}
+@keyframes flash-down {
+  from {
+    background-color: color-mix(in oklch, var(--price-down) 22%, transparent);
+  }
+}
+.flash-up {
+  animation: flash-up 900ms ease-out;
+}
+.flash-down {
+  animation: flash-down 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  details[open] > :not(summary),
+  .tab-underline::after,
+  .flash-up,
+  .flash-down {
+    animation: none;
+  }
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0s !important;
   }
 }

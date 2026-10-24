@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { FlashValue } from "@/components/flash-value";
 import { directionClass } from "@/components/price-change";
 import { formatHundredMillion, formatLots, formatPrice, formatTaipeiDateTime } from "@/lib/format";
 import type { QuoteFundamentals } from "@/lib/fundamentals";
@@ -141,9 +142,9 @@ export function QuotePanel({
 
   return (
     <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-center md:gap-10">
-      <div className={cn("tabular-nums", change && directionClass(change.change))}>
-        <div className="flex items-center gap-1 text-3xl font-semibold tracking-tight">
-          {formatPrice(price)}
+      <div className={cn(change && directionClass(change.change))}>
+        <div className="flex items-center gap-1 text-4xl font-semibold tracking-tight">
+          <FlashValue value={close}>{formatPrice(price)}</FlashValue>
           {change && change.change !== 0 ? (
             change.change > 0 ? (
               <ArrowUp className="size-6" aria-label="上漲" />
@@ -153,7 +154,7 @@ export function QuotePanel({
           ) : null}
         </div>
         {change ? (
-          <div className="mt-0.5 flex gap-2 text-sm">
+          <div className="mt-1 flex gap-2 text-sm font-medium tabular-nums">
             <span>
               {change.change > 0 ? "+" : ""}
               {change.change.toFixed(2)}
@@ -165,7 +166,7 @@ export function QuotePanel({
           </div>
         ) : null}
       </div>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 md:border-l md:pl-8">
         {stats.map((s) => (
           <div key={s.label} className="flex items-baseline justify-between gap-2">
             <dt className="shrink-0 text-muted-foreground">{s.label}</dt>

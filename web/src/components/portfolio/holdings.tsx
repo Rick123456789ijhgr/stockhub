@@ -41,7 +41,7 @@ export function StockName({ stock }: { stock: StockRef | undefined }) {
   if (!stock) return null;
   return (
     <Link href={`/stocks/${stock.symbol}`} className="font-medium hover:underline">
-      <span className="font-mono">{stock.symbol}</span> {stock.name}
+      <span className="font-semibold tabular-nums">{stock.symbol}</span> {stock.name}
       {stock.delistedDate ? <span className="ml-1 text-xs text-muted-foreground">已下市</span> : null}
     </Link>
   );
@@ -91,7 +91,7 @@ export function HoldingsTable({
               </div>
               <div className="text-xs text-muted-foreground">
                 <MarkLabel mark={mark} />
-                {p.dividends > 0 ? ` · 累計股利（估）${formatInteger(p.dividends)}` : ""}
+                {p.dividends > 0 ? `，累計股利（估）${formatInteger(p.dividends)}` : ""}
               </div>
             </li>
           );

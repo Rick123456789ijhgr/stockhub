@@ -4,6 +4,19 @@ import Link from "next/link";
 import { LinkPending } from "@/components/nav/nav-progress";
 import { cn } from "@/lib/utils";
 
+/**
+ * Look of every segmented control (links here, buttons in charts and forms): a muted track
+ * with the chosen option raised as a small card (D-125).
+ */
+export const SEGMENTED_GROUP = "inline-flex rounded-lg bg-muted p-0.5";
+
+export function segmentedOption(active: boolean): string {
+  return cn(
+    "rounded-md px-2.5 py-1 transition-[background-color,color,box-shadow] duration-150",
+    active ? "bg-card font-medium text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
+  );
+}
+
 /** A row of mutually exclusive options that are links (state lives in the URL). */
 export function SegmentedLinks<K extends string>({
   options,
@@ -17,7 +30,7 @@ export function SegmentedLinks<K extends string>({
   label: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex rounded-md border p-0.5 text-sm">
+    <div role="group" aria-label={label} className={cn(SEGMENTED_GROUP, "text-sm")}>
       {(Object.keys(options) as K[]).map((key) => (
         <Link
           key={key}
@@ -25,10 +38,8 @@ export function SegmentedLinks<K extends string>({
           scroll={false}
           aria-current={key === active ? "true" : undefined}
           className={cn(
-            "rounded-[5px] px-2.5 py-1",
-            key === active
-              ? "bg-muted font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground has-data-link-pending:bg-muted has-data-link-pending:text-foreground",
+            segmentedOption(key === active),
+            key !== active && "has-data-link-pending:bg-card has-data-link-pending:text-foreground",
           )}
         >
           {options[key]}
@@ -60,10 +71,10 @@ export function ToggleLinks<K extends string>({
         const on = selected.includes(key);
         const to = href(key);
         const className = cn(
-          "inline-flex items-center gap-1 rounded-md border px-2 py-1",
+          "inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors duration-150",
           on
-            ? "border-foreground/25 bg-muted font-medium text-foreground"
-            : "border-dashed text-muted-foreground hover:text-foreground has-data-link-pending:text-foreground",
+            ? "border-brand/35 bg-brand-soft font-medium text-brand"
+            : "border-dashed text-muted-foreground hover:border-solid hover:text-foreground has-data-link-pending:text-foreground",
         );
         const content = (
           <>

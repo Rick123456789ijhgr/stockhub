@@ -16,27 +16,31 @@ export async function MarketStrip({ db, today }: { db: Kysely<DB>; today: string
   if (!rows.length) {
     return <p className="text-sm text-muted-foreground">還沒有市場資料（make etl-markets）。</p>;
   }
+  // One row of figures, like a quote board (D-126): scrolls sideways on phones, four even
+  // columns on wide screens. Name and date above, the value, then the signed change.
   return (
-    <ul className="grid gap-x-6 text-sm sm:grid-cols-2">
+    <ul className="-mx-4 flex gap-x-7 overflow-x-auto px-4 pb-1 text-sm [scrollbar-width:none] md:mx-0 md:px-0 lg:grid lg:grid-cols-4 lg:gap-y-4 lg:overflow-visible">
       {rows.map(({ s, latest }) => (
-        <li key={s.code} className="flex items-baseline justify-between gap-2 border-b py-1.5 last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
-          <span>
-            {s.name}
-            <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{latest!.date.slice(5)}</span>
-          </span>
-          <span className="flex items-baseline gap-2 tabular-nums">
-            {formatSeriesValue(latest!.value, s.unit)}
+        <li key={s.code} className="shrink-0">
+          <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
+            <span>{s.name}</span>
+            <span className="tabular-nums">{latest!.date.slice(5).replace("-", "/")}</span>
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            <span className="text-lg font-semibold tracking-tight">
+              {formatSeriesValue(latest!.value, s.unit)}
+            </span>
             {latest!.change === null ? null : PRICE_LIKE.has(s.category) ? (
-              <PriceChange value={latest!.change * 100} suffix="%" className="w-16 text-right text-xs" />
+              <PriceChange value={latest!.change * 100} suffix="%" className="text-xs font-medium" />
             ) : (
-              <span className="w-16 text-right text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {latest!.change >= 0 ? "+" : "−"}
                 {changesInPoints(s)
                   ? Math.abs(latest!.change).toFixed(2)
                   : `${Math.abs(latest!.change * 100).toFixed(2)}%`}
               </span>
             )}
-          </span>
+          </div>
         </li>
       ))}
     </ul>

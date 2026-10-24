@@ -31,6 +31,7 @@ import {
 } from "@/lib/chart-data";
 import { kd, macd, rsi, type Series, sma } from "@/lib/indicators";
 import { cn } from "@/lib/utils";
+import { SEGMENTED_GROUP, segmentedOption } from "@/components/segmented-links";
 
 type IndicatorKey = "KD" | "MACD" | "RSI";
 const INDICATORS: IndicatorKey[] = ["KD", "MACD", "RSI"];
@@ -380,17 +381,14 @@ function Toggle<K extends string>({
   onChange: (key: K) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex rounded-lg border p-0.5">
+    <div role="group" aria-label={label} className={SEGMENTED_GROUP}>
       {options.map((option) => (
         <button
           key={option.key}
           type="button"
           aria-pressed={option.key === value}
           onClick={() => onChange(option.key)}
-          className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors",
-            option.key === value && "bg-secondary text-foreground",
-          )}
+          className={cn(segmentedOption(option.key === value), "text-xs font-medium")}
         >
           {option.label}
         </button>

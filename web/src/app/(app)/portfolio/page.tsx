@@ -164,11 +164,11 @@ async function PortfolioContent({
               {closed.map((p) => (
                 <li key={p.stock} className="flex items-baseline justify-between gap-3 py-2">
                   <Link href={`/stocks/${stocks[p.stock]?.symbol}`} className="hover:underline">
-                    <span className="font-mono">{stocks[p.stock]?.symbol}</span> {stocks[p.stock]?.name}
+                    <span className="font-semibold tabular-nums">{stocks[p.stock]?.symbol}</span> {stocks[p.stock]?.name}
                   </Link>
                   <span className="text-xs text-muted-foreground">
                     已實現 <Pnl value={p.realized} />
-                    {p.dividends > 0 ? ` · 股利 ${formatInteger(p.dividends)}` : ""}
+                    {p.dividends > 0 ? `，股利 ${formatInteger(p.dividends)}` : ""}
                   </span>
                 </li>
               ))}

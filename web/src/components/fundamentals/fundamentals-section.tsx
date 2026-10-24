@@ -225,7 +225,7 @@ function RevenueCard({ rows }: { rows: RevenueRow[] }) {
           />
         </div>
         <Disclosure summary="近 6 個月明細">
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border bg-card">
             <Table className="min-w-[28rem] text-xs">
               <TableHeader>
                 <TableRow>
@@ -281,7 +281,7 @@ function DupontCard({ rows }: { rows: QuarterRow[] }) {
           ]}
         />
         <Disclosure summary="杜邦拆解（近四季）">
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border bg-card">
             <Table className="min-w-[28rem] text-xs">
               <TableHeader>
                 <TableRow>
@@ -380,7 +380,7 @@ function QuarterTable({ rows }: { rows: QuarterRow[] }) {
       </CardHeader>
       <CardContent>
         {/* Wide table scrolls inside its own box on phones. */}
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border bg-card">
           <Table className="min-w-[44rem] text-xs">
             <TableHeader>
               <TableRow>
