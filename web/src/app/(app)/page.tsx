@@ -36,7 +36,7 @@ export default function HomePage() {
           </InfoNote>
           <Alerts />
         </Section>
-        <Section title="三大法人買賣超排行">
+        <Section title="三大法人買賣超">
           <Flows />
         </Section>
       </div>
