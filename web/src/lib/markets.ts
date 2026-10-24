@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Kysely } from "kysely";
 
+import type { ChartBar } from "@/lib/chart-data";
 import type { DB } from "@/lib/db";
 import type { SeriesCategory, SeriesInfo, SeriesPoint } from "@/lib/market-series";
 
@@ -61,30 +62,42 @@ export async function loadSeries(
   }));
 }
 
-export type IndexBar = { date: string; open: number; high: number; low: number; close: number };
-
 /**
- * Daily bars of an OHLC series since `since`, oldest first. Days stored with only a close
- * (older history from a fallback source) get a flat bar at the close.
+ * Daily bars of an index (a series with OHLC) for the K-line chart, oldest first, in the
+ * stock chart's shape with no volume and a factor of 1. With `recentMonths`, only bars
+ * within that many months of the latest one; `complete` tells whether older ones exist.
+ * Null when `code` is not an index.
  */
-export async function loadIndexBars(db: Kysely<DB>, code: string, since: string): Promise<IndexBar[]> {
+export async function getIndexChartBars(
+  db: Kysely<DB>,
+  code: string,
+  recentMonths?: number,
+): Promise<{ bars: ChartBar[]; complete: boolean } | null> {
+  const series = await db
+    .selectFrom("market_series")
+    .select("code")
+    .where("code", "=", code)
+    .where("has_ohlc", "=", true)
+    .executeTakeFirst();
+  if (!series) return null;
   const rows = await db
     .selectFrom("market_series_values")
     .select(["obs_date", "open", "high", "low", "value"])
     .where("series_code", "=", code)
-    .where("obs_date", ">=", since)
     .orderBy("obs_date")
     .execute();
-  return rows.map((r) => {
+  const bars: ChartBar[] = rows.map((r) => {
     const close = Number(r.value);
-    return {
-      date: String(r.obs_date),
-      open: r.open === null ? close : Number(r.open),
-      high: r.high === null ? close : Number(r.high),
-      low: r.low === null ? close : Number(r.low),
-      close,
-    };
+    // A day stored with only a close draws as a flat bar.
+    const price = (v: string | null) => (v === null ? close : Number(v));
+    return [String(r.obs_date), price(r.open), price(r.high), price(r.low), close, 0, 1];
   });
+  if (recentMonths === undefined || bars.length === 0) return { bars, complete: true };
+  const cutoff = new Date(`${bars.at(-1)![0]}T00:00:00Z`);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - recentMonths);
+  const since = cutoff.toISOString().slice(0, 10);
+  const start = bars.findIndex(([date]) => date >= since);
+  return { bars: bars.slice(start), complete: start === 0 };
 }
 
 export type MacroEvent = {

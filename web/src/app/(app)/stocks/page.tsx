@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/coming-soon";
+import { HeatmapSection, parseHeatmapParams } from "@/components/market/heatmap-section";
 import { RememberedLink } from "@/components/nav/remembered-link";
 import { activeTab, type PageTab, PageTabs, tabHref } from "@/components/page-tabs";
 import { ToggleLinks } from "@/components/segmented-links";
@@ -22,7 +23,7 @@ export const metadata: Metadata = { title: "個股" };
 export default function StocksPage({ searchParams }: PageProps<"/stocks">) {
   return (
     <>
-      <PageHeader title="個股" description="最新交易日的熱門榜單；輸入代號或名稱搜尋上市、上櫃股票與 ETF（搜尋時也會列出已下市的公司）。" />
+      <PageHeader title="個股" description="最新交易日的熱門榜單與產業、題材熱力圖；輸入代號或名稱搜尋上市、上櫃股票與 ETF（搜尋時也會列出已下市的公司）。" />
       <StockSearch searchParams={searchParams} />
     </>
   );
@@ -33,13 +34,19 @@ async function StockSearch({ searchParams }: { searchParams: PageProps<"/stocks"
   const params = await searchParams;
   const q = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
   const kind: RankingKind = params.type === "etf" || params.type === "all" ? params.type : "stock";
-  const tab = activeTab(kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS, params.tab);
+  const tab = activeTab(tabsFor(kind), params.tab);
 
   return (
     <>
       <StockSearchForm defaultValue={q} className="mb-4" />
 
-      {q ? <SearchResults q={q} /> : <RankingView kind={kind} ranking={tab} />}
+      {q ? (
+        <SearchResults q={q} />
+      ) : tab === "heatmap" ? (
+        <HeatmapView kind={kind} params={params} />
+      ) : (
+        <RankingView kind={kind} ranking={tab} />
+      )}
     </>
   );
 }
@@ -53,6 +60,13 @@ const RANKING_TABS: PageTab<Ranking>[] = [
 ];
 /** ETFs have no market value (their units are not shares of a company). */
 const ETF_RANKING_TABS = RANKING_TABS.filter((t) => t.key !== "marketCap");
+
+/** The industry and theme heatmap of common stocks, after the rankings (D-134). */
+const HEATMAP_TAB: PageTab<"heatmap"> = { key: "heatmap", label: "熱力圖" };
+const tabsFor = (kind: RankingKind): PageTab<Ranking | "heatmap">[] => [
+  ...(kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS),
+  HEATMAP_TAB,
+];
 
 type Listing = "stock" | "etf";
 const LISTING_LABEL: Record<Listing, string> = { stock: "股票", etf: "ETF" };
@@ -85,7 +99,7 @@ const kindQuery = (kind: RankingKind): Record<string, string> =>
 
 async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Ranking }) {
   const { date, rows } = await getRanking(getDb(), ranking, kind);
-  const tabs = kind === "etf" ? ETF_RANKING_TABS : RANKING_TABS;
+  const tabs = tabsFor(kind);
   return (
     <div className="space-y-3">
       <PageTabs
@@ -128,6 +142,26 @@ async function RankingView({ kind, ranking }: { kind: RankingKind; ranking: Rank
           <StockList stocks={rows} ranking={ranking} etf={kind === "etf"} />
         </>
       )}
+    </div>
+  );
+}
+
+/** The heatmap tab: common stocks only, so the stock/ETF switch is not shown. */
+async function HeatmapView({
+  kind,
+  params,
+}: {
+  kind: RankingKind;
+  params: Record<string, string | string[] | undefined>;
+}) {
+  const { by, period } = parseHeatmapParams(params);
+  // Keep the kind for when a ranking tab is chosen again.
+  const href = (b: string, p: string) =>
+    `/stocks?${new URLSearchParams({ tab: "heatmap", ...kindQuery(kind), by: b, period: p })}`;
+  return (
+    <div className="space-y-3">
+      <PageTabs tabs={tabsFor(kind)} active="heatmap" basePath="/stocks" query={kindQuery(kind)} />
+      <HeatmapSection db={getDb()} by={by} period={period} href={href} />
     </div>
   );
 }

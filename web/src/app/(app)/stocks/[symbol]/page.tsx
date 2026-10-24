@@ -126,14 +126,14 @@ async function StockContent({
                 <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
                   <QuoteStatus symbol={stock.symbol} latest={bars[0]} />
                   {stock.industry ? (
-                    <Link href="/#heatmap" className="hover:text-foreground hover:underline">
+                    <Link href="/stocks?tab=heatmap" className="hover:text-foreground hover:underline">
                       {stock.industry}
                     </Link>
                   ) : null}
                   {themes.map((t) => (
                     <Link
                       key={t.id}
-                      href="/?by=theme#heatmap"
+                      href="/stocks?tab=heatmap&by=theme"
                       className="hover:text-foreground hover:underline"
                     >
                       #{t.name}

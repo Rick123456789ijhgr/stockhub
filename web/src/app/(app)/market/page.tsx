@@ -17,11 +17,11 @@ const TABS: PageTab<Tab>[] = [
   { key: "macro", label: "總經" },
 ];
 
-/** International markets and macro; Taiwan's indexes, flows and heatmap are on the home page (D-134). */
+/** International markets and macro; Taiwan's indexes and flows are on the home page (D-134). */
 export default function MarketPage({ searchParams }: PageProps<"/market">) {
   return (
     <>
-      <PageHeader title="國際市場" description="國際股市、匯率、商品與利率，以及台美總經指標與事件。台股大盤、法人與熱力圖在首頁。" />
+      <PageHeader title="國際市場" description="國際股市、匯率、商品與利率，以及台美總經指標與事件。台股大盤與法人在首頁，熱力圖在個股頁。" />
       <MarketContent searchParams={searchParams} />
     </>
   );
@@ -30,14 +30,14 @@ export default function MarketPage({ searchParams }: PageProps<"/market">) {
 async function MarketContent({ searchParams }: { searchParams: PageProps<"/market">["searchParams"] }) {
   await requireUser();
   const query = await searchParams;
-  // The heatmap moved to the home page; old links and bookmarks follow it.
+  // The heatmap moved to a tab of /stocks; old links and bookmarks follow it.
   if (query.tab === "heatmap") {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ tab: "heatmap" });
     for (const key of ["by", "period"]) {
       const value = query[key];
       if (typeof value === "string") params.set(key, value);
     }
-    redirect(`/${params.size ? `?${params}` : ""}#heatmap`);
+    redirect(`/stocks?${params}`);
   }
   const tab = activeTab(TABS, query.tab);
   const db = getDb();
